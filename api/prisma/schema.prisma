@@ -1,0 +1,38 @@
+// DockyDoc — Prisma Schema
+// PostgreSQL datasource
+//
+// Run after changes:
+//   npx prisma migrate dev --name <migration_name>
+//   npx prisma generate
+//
+// Models will be added incrementally as features are built.
+// Next steps: User, Workspace, WorkspaceMember, Document, AuditLog
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------------------ //
+// Models are intentionally empty at this stage.
+// They will be added in subsequent tasks:
+//
+//   Phase 1 — Auth & Users:
+//     model User { ... }
+//     model RefreshToken { ... }
+//
+//   Phase 2 — Multi-tenancy:
+//     model Workspace { ... }
+//     model WorkspaceMember { ... }
+//
+//   Phase 3 — Documents:
+//     model Document { ... }
+//     model DocumentVersion { ... }
+//
+//   Phase 4 — Audit:
+//     model AuditLog { ... }
+// ------------------------------------------------------------------ //
