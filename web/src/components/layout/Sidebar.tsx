@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { useUser } from '@/context/UserContext';
+import WorkspaceSwitcher from '@/components/workspace/WorkspaceSwitcher';
 
 interface NavItem {
   label: string;
@@ -11,56 +13,42 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  {
-    label: 'Dashboard',
-    href: '/dashboard',
-    icon: <GridIcon />,
-  },
-  {
-    label: 'Documents',
-    href: '/documents',
-    icon: <DocumentIcon />,
-  },
-  {
-    label: 'Workspaces',
-    href: '/workspaces',
-    icon: <FolderIcon />,
-  },
-  {
-    label: 'Members',
-    href: '/members',
-    icon: <UsersIcon />,
-  },
-  {
-    label: 'Settings',
-    href: '/settings',
-    icon: <SettingsIcon />,
-  },
+  { label: 'Dashboard', href: '/dashboard', icon: <GridIcon /> },
+  { label: 'Documents', href: '/documents', icon: <DocumentIcon /> },
+  { label: 'Workspaces', href: '/workspaces', icon: <FolderIcon /> },
+  { label: 'Members', href: '/members', icon: <UsersIcon /> },
+  { label: 'Settings', href: '/settings', icon: <SettingsIcon /> },
 ];
 
-/**
- * Sidebar navigation component.
- * Active route is highlighted automatically via usePathname.
- */
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user, isLoading } = useUser();
+
+  // Derive initials from name, fall back to email first char
+  const initials = user
+    ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
+    : '…';
 
   return (
     <aside className="w-60 flex flex-col bg-white border-r border-gray-200 flex-shrink-0">
       {/* Logo */}
-      <div className="flex items-center gap-2 px-5 h-16 border-b border-gray-200">
+      <div className="flex items-center gap-2 px-5 h-16 border-b border-gray-200 flex-shrink-0">
         <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center">
           <span className="text-white font-bold text-sm">D</span>
         </div>
         <span className="font-semibold text-gray-900">DockyDoc</span>
       </div>
 
+      {/* Workspace switcher */}
+      <div className="px-2 pt-3 pb-1 border-b border-gray-100 flex-shrink-0">
+        <WorkspaceSwitcher />
+      </div>
+
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
         {NAV_ITEMS.map((item) => {
           const isActive =
             pathname === item.href || pathname.startsWith(item.href + '/');
-
           return (
             <Link
               key={item.href}
@@ -69,13 +57,13 @@ export default function Sidebar() {
                 'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                 isActive
                   ? 'bg-brand-50 text-brand-700'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
               )}
             >
               <span
                 className={cn(
                   'flex-shrink-0',
-                  isActive ? 'text-brand-600' : 'text-gray-400'
+                  isActive ? 'text-brand-600' : 'text-gray-400',
                 )}
               >
                 {item.icon}
@@ -86,27 +74,38 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* User section at the bottom */}
-      <div className="px-4 py-4 border-t border-gray-200">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-600">
-            {/* Will show user initials once auth is wired */}
-            U
+      {/* User card at bottom */}
+      <div className="px-4 py-4 border-t border-gray-200 flex-shrink-0">
+        {isLoading ? (
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-gray-200 animate-pulse" />
+            <div className="flex-1 space-y-1.5">
+              <div className="h-3 w-24 bg-gray-200 rounded animate-pulse" />
+              <div className="h-2.5 w-32 bg-gray-100 rounded animate-pulse" />
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-gray-900 truncate">
-              User Name
-            </p>
-            <p className="text-xs text-gray-400 truncate">user@company.com</p>
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-xs font-semibold text-brand-700 flex-shrink-0">
+              {initials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-gray-900 truncate">
+                {user ? `${user.firstName} ${user.lastName}` : '—'}
+              </p>
+              <p className="text-xs text-gray-400 truncate">
+                {user?.email ?? '—'}
+              </p>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </aside>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Icon components (inline SVGs — swap with lucide-react later)        */
+/* Icons                                                                */
 /* ------------------------------------------------------------------ */
 
 function GridIcon() {

@@ -1,33 +1,35 @@
+import { UserProvider } from '@/context/UserContext';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 
 /**
  * Dashboard shell layout.
- * Applied to all routes inside (dashboard) group.
- * Replace the auth guard comment with real session check once auth is wired up.
+ *
+ * Server component — wraps the shell with <UserProvider> (a client component).
+ * Sidebar and Header read user/workspace data from UserContext.
+ *
+ * Auth replacement path:
+ *   1. Add server-side session check here (getServerSession / cookie verify).
+ *   2. If no session, redirect('/login').
+ *   3. Remove the DevAuthGuard-based flow from UserContext.
  */
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // TODO: Add server-side session check here.
-  // Example with NextAuth:
-  //   const session = await getServerSession(authOptions);
-  //   if (!session) redirect('/login');
-
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Sidebar — fixed left column */}
-      <Sidebar />
+    <UserProvider>
+      <div className="flex h-screen bg-gray-50 overflow-hidden">
+        {/* Fixed left sidebar */}
+        <Sidebar />
 
-      {/* Main content area */}
-      <div className="flex flex-col flex-1 overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6">
-          {children}
-        </main>
+        {/* Main content area */}
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <Header />
+          <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        </div>
       </div>
-    </div>
+    </UserProvider>
   );
 }

@@ -1,32 +1,62 @@
 /**
  * Shared TypeScript types used across the web app.
- * Keep API response types in sync with the NestJS DTOs.
+ * Keep in sync with NestJS DTOs in api/src/modules/*/dto/
  */
 
 // ------------------------------------------------------------------ //
-// Auth
+// Enums (mirrored from Prisma)
 // ------------------------------------------------------------------ //
 
-export interface AuthUser {
+export type WorkspaceType = 'PERSONAL' | 'FAMILY' | 'ENTERPRISE';
+export type WorkspaceUserRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
+export type WorkspaceUserStatus = 'ACTIVE' | 'INVITED' | 'REMOVED';
+export type WorkspaceStatus = 'ACTIVE' | 'INACTIVE';
+
+// ------------------------------------------------------------------ //
+// Auth / Current user  (matches MeResponseDto + WorkspaceMembershipDto)
+// ------------------------------------------------------------------ //
+
+export interface WorkspaceMembership {
+  workspaceId: string;
+  workspaceName: string;
+  workspaceSlug: string;
+  workspaceType: WorkspaceType;
+  role: WorkspaceUserRole;
+  status: WorkspaceUserStatus;
+}
+
+export interface CurrentUser {
   id: string;
   email: string;
   firstName: string;
   lastName: string;
-  role: UserRole;
-  workspaceId: string;
+  isActive: boolean;
+  workspaces: WorkspaceMembership[];
+  defaultWorkspace: WorkspaceMembership | null;
 }
 
-export type UserRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+/** Response from POST /api/v1/auth/switch-workspace */
+export interface SwitchWorkspaceResponse {
+  workspaceId: string;
+  workspaceName: string;
+  workspaceSlug: string;
+  workspaceType: WorkspaceType;
+  role: WorkspaceUserRole;
+}
 
 // ------------------------------------------------------------------ //
-// Workspace
+// Workspaces list (matches WorkspaceResponseDto)
 // ------------------------------------------------------------------ //
 
-export interface Workspace {
+export interface WorkspaceListItem {
   id: string;
   name: string;
   slug: string;
+  type: WorkspaceType;
+  status: WorkspaceStatus;
+  memberCount: number;
   createdAt: string;
+  updatedAt: string;
 }
 
 // ------------------------------------------------------------------ //
@@ -41,7 +71,7 @@ export interface PaginatedResponse<T> {
 }
 
 // ------------------------------------------------------------------ //
-// API error shape (matches NestJS GlobalExceptionFilter output)
+// API error shape (matches NestJS HttpExceptionFilter output)
 // ------------------------------------------------------------------ //
 
 export interface ApiErrorResponse {

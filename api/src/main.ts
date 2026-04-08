@@ -23,7 +23,11 @@ async function bootstrap() {
     origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-dev-user-email', // DEV ONLY — remove when real JWT auth is implemented
+    ],
   });
 
   // ------------------------------------------------------------------ //
