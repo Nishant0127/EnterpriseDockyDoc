@@ -3,18 +3,19 @@
  * Keep in sync with NestJS DTOs in api/src/modules/*/dto/
  */
 
-// ------------------------------------------------------------------ //
+// ================================================================== //
 // Enums (mirrored from Prisma)
-// ------------------------------------------------------------------ //
+// ================================================================== //
 
 export type WorkspaceType = 'PERSONAL' | 'FAMILY' | 'ENTERPRISE';
 export type WorkspaceUserRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
 export type WorkspaceUserStatus = 'ACTIVE' | 'INVITED' | 'REMOVED';
 export type WorkspaceStatus = 'ACTIVE' | 'INACTIVE';
+export type DocumentStatus = 'ACTIVE' | 'ARCHIVED' | 'DELETED';
 
-// ------------------------------------------------------------------ //
-// Auth / Current user  (matches MeResponseDto + WorkspaceMembershipDto)
-// ------------------------------------------------------------------ //
+// ================================================================== //
+// Auth / Current user
+// ================================================================== //
 
 export interface WorkspaceMembership {
   workspaceId: string;
@@ -35,7 +36,6 @@ export interface CurrentUser {
   defaultWorkspace: WorkspaceMembership | null;
 }
 
-/** Response from POST /api/v1/auth/switch-workspace */
 export interface SwitchWorkspaceResponse {
   workspaceId: string;
   workspaceName: string;
@@ -44,9 +44,9 @@ export interface SwitchWorkspaceResponse {
   role: WorkspaceUserRole;
 }
 
-// ------------------------------------------------------------------ //
-// Workspaces list (matches WorkspaceResponseDto)
-// ------------------------------------------------------------------ //
+// ================================================================== //
+// Workspaces
+// ================================================================== //
 
 export interface WorkspaceListItem {
   id: string;
@@ -59,9 +59,100 @@ export interface WorkspaceListItem {
   updatedAt: string;
 }
 
-// ------------------------------------------------------------------ //
-// Pagination
-// ------------------------------------------------------------------ //
+// ================================================================== //
+// Folders
+// ================================================================== //
+
+export interface FolderCreatedBy {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+export interface FolderListItem {
+  id: string;
+  workspaceId: string;
+  name: string;
+  parentFolderId: string | null;
+  createdBy: FolderCreatedBy;
+  documentCount: number;
+  childCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ================================================================== //
+// Documents
+// ================================================================== //
+
+export interface DocOwner {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+export interface DocTagRef {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+export interface DocumentListItem {
+  id: string;
+  workspaceId: string;
+  name: string;
+  fileName: string;
+  fileType: string;
+  status: DocumentStatus;
+  currentVersionNumber: number;
+  folder: { id: string; name: string } | null;
+  owner: DocOwner;
+  tags: DocTagRef[];
+  versionCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DocumentVersion {
+  id: string;
+  versionNumber: number;
+  storageKey: string;
+  fileSizeBytes: string; // BigInt serialised as string
+  mimeType: string;
+  uploadedBy: DocOwner;
+  createdAt: string;
+}
+
+export interface DocumentMetadataEntry {
+  id: string;
+  key: string;
+  value: string;
+}
+
+export interface DocumentDetail extends DocumentListItem {
+  description: string | null;
+  workspace: { id: string; name: string };
+  versions: DocumentVersion[];
+  metadata: DocumentMetadataEntry[];
+}
+
+// ================================================================== //
+// Tags
+// ================================================================== //
+
+export interface Tag {
+  id: string;
+  workspaceId: string;
+  name: string;
+  color: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ================================================================== //
+// Pagination + API error
+// ================================================================== //
 
 export interface PaginatedResponse<T> {
   data: T[];
@@ -69,10 +160,6 @@ export interface PaginatedResponse<T> {
   page: number;
   pageSize: number;
 }
-
-// ------------------------------------------------------------------ //
-// API error shape (matches NestJS HttpExceptionFilter output)
-// ------------------------------------------------------------------ //
 
 export interface ApiErrorResponse {
   statusCode: number;

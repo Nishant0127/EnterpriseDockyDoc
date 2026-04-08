@@ -6,6 +6,9 @@ import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
+import { FoldersModule } from './modules/folders/folders.module';
+import { DocumentsModule } from './modules/documents/documents.module';
+import { TagsModule } from './modules/tags/tags.module';
 
 /**
  * Root application module.
@@ -13,23 +16,19 @@ import { WorkspacesModule } from './modules/workspaces/workspaces.module';
  */
 @Module({
   imports: [
-    // Config — load env vars globally so all modules can inject ConfigService
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
       envFilePath: '.env',
     }),
-
-    // Database
     PrismaModule,
-
-    // Infrastructure
     HealthModule,
-
-    // Feature modules
     AuthModule,
     UsersModule,
     WorkspacesModule,
+    FoldersModule,
+    DocumentsModule,
+    TagsModule,
   ],
 })
 export class AppModule {}

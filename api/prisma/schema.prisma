@@ -14,9 +14,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ------------------------------------------------------------------ //
+// ================================================================== //
 // Enums
-// ------------------------------------------------------------------ //
+// ================================================================== //
 
 enum WorkspaceType {
   PERSONAL
@@ -42,20 +42,29 @@ enum WorkspaceUserStatus {
   REMOVED
 }
 
-// ------------------------------------------------------------------ //
-// Models
-// ------------------------------------------------------------------ //
+enum DocumentStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+// ================================================================== //
+// Core models
+// ================================================================== //
 
 model User {
-  id         String   @id @default(cuid())
-  email      String   @unique
-  firstName  String
-  lastName   String
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  email     String   @unique
+  firstName String
+  lastName  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  workspaces WorkspaceUser[]
+  workspaces       WorkspaceUser[]
+  createdFolders   Folder[]          @relation("FolderCreator")
+  ownedDocuments   Document[]        @relation("DocumentOwner")
+  uploadedVersions DocumentVersion[] @relation("VersionUploader")
 
   @@map("users")
 }
@@ -69,7 +78,10 @@ model Workspace {
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
-  members WorkspaceUser[]
+  members      WorkspaceUser[]
+  folders      Folder[]
+  documents    Document[]
+  documentTags DocumentTag[]
 
   @@map("workspaces")
 }
@@ -88,4 +100,115 @@ model WorkspaceUser {
 
   @@unique([userId, workspaceId])
   @@map("workspace_users")
+}
+
+// ================================================================== //
+// Document domain
+// ================================================================== //
+
+model Folder {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  name           String
+  parentFolderId String?
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy    User      @relation("FolderCreator", fields: [createdById], references: [id])
+  parentFolder Folder?   @relation("FolderChildren", fields: [parentFolderId], references: [id])
+  children     Folder[]  @relation("FolderChildren")
+  documents    Document[]
+
+  @@index([workspaceId])
+  @@index([parentFolderId])
+  @@map("folders")
+}
+
+model Document {
+  id                   String         @id @default(cuid())
+  workspaceId          String
+  folderId             String?
+  ownerUserId          String
+  name                 String
+  description          String?
+  fileName             String
+  fileType             String
+  status               DocumentStatus @default(ACTIVE)
+  currentVersionNumber Int            @default(1)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  workspace Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  folder    Folder?             @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  owner     User                @relation("DocumentOwner", fields: [ownerUserId], references: [id])
+  versions  DocumentVersion[]
+  tags      DocumentTagMapping[]
+  metadata  DocumentMetadata[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, folderId])
+  @@index([workspaceId, status])
+  @@index([ownerUserId])
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  versionNumber Int
+  storageKey    String
+  fileSizeBytes BigInt
+  mimeType      String
+  uploadedById  String
+  createdAt     DateTime @default(now())
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  uploadedBy User     @relation("VersionUploader", fields: [uploadedById], references: [id])
+
+  @@unique([documentId, versionNumber])
+  @@map("document_versions")
+}
+
+model DocumentTag {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  color       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  documents DocumentTagMapping[]
+
+  @@index([workspaceId])
+  @@map("document_tags")
+}
+
+model DocumentTagMapping {
+  id         String @id @default(cuid())
+  documentId String
+  tagId      String
+
+  document Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  tag      DocumentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, tagId])
+  @@map("document_tag_mappings")
+}
+
+model DocumentMetadata {
+  id         String   @id @default(cuid())
+  documentId String
+  key        String
+  value      String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([documentId, key])
+  @@map("document_metadata")
 }
