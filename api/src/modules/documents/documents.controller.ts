@@ -10,6 +10,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UploadedFile,
@@ -32,6 +33,8 @@ import {
   DocumentDetailDto,
   DocumentListItemDto,
   DocumentQueryDto,
+  DocumentReminderDto,
+  SetDocumentRemindersDto,
   UpdateDocumentDto,
 } from './dto/document.dto';
 import { UploadDocumentDto, UploadVersionDto } from './dto/upload-document.dto';
@@ -276,6 +279,35 @@ export class DocumentsController {
     @CurrentUser() user: DevUserPayload,
   ): Promise<DocumentListItemDto> {
     return this.documentsService.update(id, dto, user);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Reminders
+  // ------------------------------------------------------------------ //
+
+  @Get(':id/reminders')
+  @ApiOperation({ summary: 'Get reminders for a document' })
+  @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 200, type: [DocumentReminderDto] })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  getReminders(
+    @Param('id') id: string,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<DocumentReminderDto[]> {
+    return this.documentsService.getReminders(id, user);
+  }
+
+  @Put(':id/reminders')
+  @ApiOperation({ summary: 'Set reminders for a document (replaces existing PENDING reminders)' })
+  @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 200, type: [DocumentReminderDto] })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  setReminders(
+    @Param('id') id: string,
+    @Body() dto: SetDocumentRemindersDto,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<DocumentReminderDto[]> {
+    return this.documentsService.setReminders(id, dto, user);
   }
 
   // ------------------------------------------------------------------ //

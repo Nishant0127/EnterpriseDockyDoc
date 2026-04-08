@@ -1,7 +1,28 @@
-import { Controller, Get, Param } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { DevAuthGuard } from '../../common/guards/dev-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import { WorkspacesService } from './workspaces.service';
-import { WorkspaceResponseDto, WorkspaceDetailResponseDto } from './dto/workspace-response.dto';
+import {
+  WorkspaceMemberDto,
+  WorkspaceResponseDto,
+  WorkspaceDetailResponseDto,
+} from './dto/workspace-response.dto';
+import { AddWorkspaceMemberDto, UpdateWorkspaceMemberDto } from './dto/add-member.dto';
 
 /**
  * Workspaces endpoints.
@@ -14,7 +35,6 @@ export class WorkspacesController {
 
   /**
    * GET /api/v1/workspaces
-   * Returns all active workspaces with member counts.
    */
   @Get()
   @ApiOperation({ summary: 'List all active workspaces' })
@@ -25,7 +45,6 @@ export class WorkspacesController {
 
   /**
    * GET /api/v1/workspaces/:id
-   * Returns workspace details including all active members.
    */
   @Get(':id')
   @ApiOperation({ summary: 'Get workspace by ID with members' })
@@ -34,5 +53,50 @@ export class WorkspacesController {
   @ApiResponse({ status: 404, description: 'Workspace not found' })
   findOne(@Param('id') id: string): Promise<WorkspaceDetailResponseDto> {
     return this.workspacesService.findById(id);
+  }
+
+  /**
+   * POST /api/v1/workspaces/:id/members
+   * Add a member to the workspace. OWNER/ADMIN only.
+   * Creates the user if they don't exist yet (find-or-create).
+   */
+  @Post(':id/members')
+  @UseGuards(DevAuthGuard)
+  @ApiOperation({ summary: 'Add member to workspace (OWNER/ADMIN only)' })
+  @ApiParam({ name: 'id', description: 'Workspace cuid' })
+  @ApiResponse({ status: 201, type: WorkspaceMemberDto })
+  @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({ status: 403, description: 'Insufficient role' })
+  @ApiResponse({ status: 404, description: 'Workspace not found' })
+  @ApiResponse({ status: 409, description: 'User already an active member' })
+  addMember(
+    @Param('id') id: string,
+    @Body() dto: AddWorkspaceMemberDto,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<WorkspaceMemberDto> {
+    return this.workspacesService.addMember(id, dto, user);
+  }
+
+  /**
+   * PATCH /api/v1/workspaces/:id/members/:memberId
+   * Update a member's role or status. OWNER/ADMIN only.
+   * Guards against removing/demoting the last OWNER.
+   */
+  @Patch(':id/members/:memberId')
+  @UseGuards(DevAuthGuard)
+  @ApiOperation({ summary: 'Update workspace member role/status (OWNER/ADMIN only)' })
+  @ApiParam({ name: 'id', description: 'Workspace cuid' })
+  @ApiParam({ name: 'memberId', description: 'WorkspaceUser cuid' })
+  @ApiResponse({ status: 200, type: WorkspaceMemberDto })
+  @ApiResponse({ status: 400, description: 'Cannot remove last owner' })
+  @ApiResponse({ status: 403, description: 'Insufficient role' })
+  @ApiResponse({ status: 404, description: 'Member not found' })
+  updateMember(
+    @Param('id') id: string,
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateWorkspaceMemberDto,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<WorkspaceMemberDto> {
+    return this.workspacesService.updateMember(id, memberId, dto, user);
   }
 }

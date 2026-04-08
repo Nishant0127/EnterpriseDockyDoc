@@ -1,12 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
+  IsDateString,
   IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
   ValidateIf,
 } from 'class-validator';
-import { DocumentStatus } from '@prisma/client';
+import { DocumentStatus, ReminderChannel, ReminderStatus } from '@prisma/client';
 
 // ------------------------------------------------------------------ //
 // Request DTOs
@@ -64,6 +66,68 @@ export class UpdateDocumentDto {
   @IsOptional()
   @IsEnum(DocumentStatus)
   status?: DocumentStatus;
+
+  @ApiPropertyOptional({ nullable: true, description: 'ISO date string or null to clear' })
+  @IsOptional()
+  @ValidateIf((o) => o.expiryDate !== null)
+  @IsDateString()
+  expiryDate?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @ValidateIf((o) => o.renewalDueDate !== null)
+  @IsDateString()
+  renewalDueDate?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isReminderEnabled?: boolean;
+}
+
+// ------------------------------------------------------------------ //
+// Reminder DTOs
+// ------------------------------------------------------------------ //
+
+export class DocumentReminderDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() documentId!: string;
+  @ApiProperty() remindAt!: Date;
+  @ApiProperty({ enum: ReminderChannel }) channel!: ReminderChannel;
+  @ApiProperty({ enum: ReminderStatus }) status!: ReminderStatus;
+  @ApiProperty() createdAt!: Date;
+  @ApiProperty() updatedAt!: Date;
+}
+
+export class SetDocumentRemindersDto {
+  @ApiPropertyOptional({ nullable: true, description: 'ISO date string or null to clear' })
+  @IsOptional()
+  @ValidateIf((o) => o.expiryDate !== null)
+  @IsDateString()
+  expiryDate?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @ValidateIf((o) => o.renewalDueDate !== null)
+  @IsDateString()
+  renewalDueDate?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isReminderEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Days before expiry to remind (e.g. [30, 15, 7, 1])',
+    type: [Number],
+  })
+  @IsOptional()
+  offsetDays?: number[];
+
+  @ApiPropertyOptional({ enum: ReminderChannel })
+  @IsOptional()
+  @IsEnum(ReminderChannel)
+  channel?: ReminderChannel;
 }
 
 // ------------------------------------------------------------------ //
@@ -117,6 +181,9 @@ export class DocumentListItemDto {
   @ApiProperty({ type: DocOwnerDto }) owner!: DocOwnerDto;
   @ApiProperty({ type: [DocTagRefDto] }) tags!: DocTagRefDto[];
   @ApiProperty() versionCount!: number;
+  @ApiPropertyOptional({ nullable: true }) expiryDate!: Date | null;
+  @ApiPropertyOptional({ nullable: true }) renewalDueDate!: Date | null;
+  @ApiProperty() isReminderEnabled!: boolean;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }
@@ -127,3 +194,5 @@ export class DocumentDetailDto extends DocumentListItemDto {
   @ApiProperty({ type: [DocumentVersionDto] }) versions!: DocumentVersionDto[];
   @ApiProperty({ type: [DocumentMetadataDto] }) metadata!: DocumentMetadataDto[];
 }
+
+export { ReminderChannel, ReminderStatus };

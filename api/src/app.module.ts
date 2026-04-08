@@ -11,6 +11,7 @@ import { WorkspacesModule } from './modules/workspaces/workspaces.module';
 import { FoldersModule } from './modules/folders/folders.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { TagsModule } from './modules/tags/tags.module';
+import { RemindersModule } from './modules/reminders/reminders.module';
 
 /**
  * Root application module.
@@ -33,6 +34,7 @@ import { TagsModule } from './modules/tags/tags.module';
     FoldersModule,
     DocumentsModule,
     TagsModule,
+    RemindersModule,
   ],
 })
 export class AppModule {}

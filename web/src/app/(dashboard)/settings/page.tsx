@@ -1,11 +1,25 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useUser } from '@/context/UserContext';
+import { fetchWorkspaceDetail } from '@/lib/documents';
+import type { WorkspaceDetail } from '@/types';
 
 export default function SettingsPage() {
   const { user, activeWorkspace, isLoading } = useUser();
+  const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
-  if (isLoading) return <PageSkeleton />;
+  useEffect(() => {
+    if (!activeWorkspace) return;
+    setDetailLoading(true);
+    fetchWorkspaceDetail(activeWorkspace.workspaceId)
+      .then(setDetail)
+      .catch(() => setDetail(null))
+      .finally(() => setDetailLoading(false));
+  }, [activeWorkspace?.workspaceId]);
+
+  if (isLoading || detailLoading) return <PageSkeleton />;
 
   return (
     <div className="max-w-2xl">
@@ -30,7 +44,16 @@ export default function SettingsPage() {
                 : '—'
             }
           />
-          <SettingsRow label="Your role" value={activeWorkspace?.role ?? '—'} last />
+          <SettingsRow label="Your role" value={activeWorkspace?.role ?? '—'} />
+          <SettingsRow
+            label="Members"
+            value={detail ? String(detail.memberCount) : '—'}
+          />
+          <SettingsRow
+            label="Documents"
+            value={detail ? String(detail.documentCount) : '—'}
+            last
+          />
         </SettingsCard>
 
         {/* Account info */}
@@ -52,6 +75,18 @@ export default function SettingsPage() {
         <SettingsCard title="Security">
           <p className="text-sm text-gray-400 py-1">
             Password and authentication settings — coming soon.
+          </p>
+        </SettingsCard>
+
+        <SettingsCard title="Retention &amp; Storage">
+          <p className="text-sm text-gray-400 py-1">
+            Document retention policies and storage settings — coming soon.
+          </p>
+        </SettingsCard>
+
+        <SettingsCard title="Integrations">
+          <p className="text-sm text-gray-400 py-1">
+            Connect with third-party tools — coming soon.
           </p>
         </SettingsCard>
 

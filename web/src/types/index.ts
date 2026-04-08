@@ -12,6 +12,8 @@ export type WorkspaceUserRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
 export type WorkspaceUserStatus = 'ACTIVE' | 'INVITED' | 'REMOVED';
 export type WorkspaceStatus = 'ACTIVE' | 'INACTIVE';
 export type DocumentStatus = 'ACTIVE' | 'ARCHIVED' | 'DELETED';
+export type ReminderChannel = 'IN_APP' | 'EMAIL';
+export type ReminderStatus = 'PENDING' | 'SENT' | 'CANCELLED';
 
 // ================================================================== //
 // Auth / Current user
@@ -57,6 +59,22 @@ export interface WorkspaceListItem {
   memberCount: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface WorkspaceMember {
+  id: string;
+  userId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: WorkspaceUserRole;
+  status: WorkspaceUserStatus;
+  joinedAt: string;
+}
+
+export interface WorkspaceDetail extends WorkspaceListItem {
+  documentCount: number;
+  members: WorkspaceMember[];
 }
 
 // ================================================================== //
@@ -110,6 +128,9 @@ export interface DocumentListItem {
   owner: DocOwner;
   tags: DocTagRef[];
   versionCount: number;
+  expiryDate: string | null;
+  renewalDueDate: string | null;
+  isReminderEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -135,6 +156,46 @@ export interface DocumentDetail extends DocumentListItem {
   workspace: { id: string; name: string };
   versions: DocumentVersion[];
   metadata: DocumentMetadataEntry[];
+}
+
+export interface DocumentReminder {
+  id: string;
+  documentId: string;
+  remindAt: string;
+  channel: ReminderChannel;
+  status: ReminderStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SetRemindersPayload {
+  expiryDate?: string | null;
+  renewalDueDate?: string | null;
+  isReminderEnabled?: boolean;
+  offsetDays?: number[];
+  channel?: ReminderChannel;
+}
+
+export interface ExpiringDocument {
+  id: string;
+  name: string;
+  workspaceId: string;
+  expiryDate: string | null;
+  renewalDueDate: string | null;
+  isReminderEnabled: boolean;
+  folderName: string | null;
+  ownerEmail: string;
+  daysUntilExpiry: number;
+}
+
+export interface UpcomingReminder {
+  id: string;
+  documentId: string;
+  documentName: string;
+  remindAt: string;
+  channel: ReminderChannel;
+  status: ReminderStatus;
+  expiryDate: string | null;
 }
 
 // ================================================================== //

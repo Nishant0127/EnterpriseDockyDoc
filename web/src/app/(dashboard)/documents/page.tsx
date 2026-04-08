@@ -665,8 +665,22 @@ function FolderTreeNode({
   );
 }
 
+function expiryBadge(expiryDate: string | null | undefined): {
+  label: string;
+  class: string;
+} | null {
+  if (!expiryDate) return null;
+  const now = new Date();
+  const expiry = new Date(expiryDate);
+  const daysLeft = Math.round((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysLeft < 0) return { label: 'Expired', class: 'bg-red-100 text-red-700' };
+  if (daysLeft <= 30) return { label: `Exp. ${daysLeft}d`, class: 'bg-orange-100 text-orange-700' };
+  return null;
+}
+
 function DocumentRow({ doc, snippet }: { doc: DocumentListItem; snippet?: string }) {
   const badge = STATUS_BADGE[doc.status];
+  const expiry = expiryBadge(doc.expiryDate);
   const date = new Date(doc.createdAt).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -717,14 +731,26 @@ function DocumentRow({ doc, snippet }: { doc: DocumentListItem; snippet?: string
 
       {/* Status */}
       <td className="px-4 py-3">
-        <span
-          className={cn(
-            'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-            badge.class,
+        <div className="flex flex-wrap items-center gap-1">
+          <span
+            className={cn(
+              'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+              badge.class,
+            )}
+          >
+            {badge.label}
+          </span>
+          {expiry && (
+            <span
+              className={cn(
+                'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+                expiry.class,
+              )}
+            >
+              {expiry.label}
+            </span>
           )}
-        >
-          {badge.label}
-        </span>
+        </div>
       </td>
 
       {/* Versions */}

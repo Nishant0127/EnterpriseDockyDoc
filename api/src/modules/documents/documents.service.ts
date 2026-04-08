@@ -10,6 +10,8 @@ import {
   CreateDocumentDto,
   DocumentDetailDto,
   DocumentListItemDto,
+  DocumentReminderDto,
+  SetDocumentRemindersDto,
   UpdateDocumentDto,
   DocumentQueryDto,
 } from './dto/document.dto';
@@ -366,6 +368,13 @@ export class DocumentsService {
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.folderId !== undefined && { folderId: dto.folderId }),
         ...(dto.status !== undefined && { status: dto.status }),
+        ...(dto.expiryDate !== undefined && {
+          expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : null,
+        }),
+        ...(dto.renewalDueDate !== undefined && {
+          renewalDueDate: dto.renewalDueDate ? new Date(dto.renewalDueDate) : null,
+        }),
+        ...(dto.isReminderEnabled !== undefined && { isReminderEnabled: dto.isReminderEnabled }),
       },
       include: DOC_LIST_INCLUDE,
     });
@@ -394,6 +403,88 @@ export class DocumentsService {
     // Physical deletion (shredding) is a separate operation.
 
     return { id: deleted.id, status: deleted.status };
+  }
+
+  // ------------------------------------------------------------------ //
+  // Reminders
+  // ------------------------------------------------------------------ //
+
+  async getReminders(id: string, user: DevUserPayload): Promise<DocumentReminderDto[]> {
+    const doc = await this.prisma.document.findUnique({ where: { id } });
+    if (!doc) throw new NotFoundException(`Document "${id}" not found`);
+    assertWorkspaceMembership(user, doc.workspaceId);
+
+    const reminders = await this.prisma.documentReminder.findMany({
+      where: { documentId: id },
+      orderBy: { remindAt: 'asc' },
+    });
+
+    return reminders.map((r) => ({
+      id: r.id,
+      documentId: r.documentId,
+      remindAt: r.remindAt,
+      channel: r.channel,
+      status: r.status,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    }));
+  }
+
+  async setReminders(
+    id: string,
+    dto: SetDocumentRemindersDto,
+    user: DevUserPayload,
+  ): Promise<DocumentReminderDto[]> {
+    const doc = await this.prisma.document.findUnique({ where: { id } });
+    if (!doc) throw new NotFoundException(`Document "${id}" not found`);
+    assertWorkspaceMembership(user, doc.workspaceId);
+
+    const expiryDate = dto.expiryDate !== undefined
+      ? (dto.expiryDate ? new Date(dto.expiryDate) : null)
+      : doc.expiryDate;
+
+    await this.prisma.$transaction(async (tx) => {
+      // Update expiry fields on the document
+      await tx.document.update({
+        where: { id },
+        data: {
+          ...(dto.expiryDate !== undefined && {
+            expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : null,
+          }),
+          ...(dto.renewalDueDate !== undefined && {
+            renewalDueDate: dto.renewalDueDate ? new Date(dto.renewalDueDate) : null,
+          }),
+          ...(dto.isReminderEnabled !== undefined && { isReminderEnabled: dto.isReminderEnabled }),
+        },
+      });
+
+      // Cancel existing PENDING reminders
+      await tx.documentReminder.updateMany({
+        where: { documentId: id, status: 'PENDING' },
+        data: { status: 'CANCELLED' },
+      });
+
+      // Generate new reminders from offsetDays
+      if (expiryDate && dto.offsetDays && dto.offsetDays.length > 0) {
+        const now = new Date();
+        for (const days of dto.offsetDays) {
+          const remindAt = new Date(expiryDate);
+          remindAt.setDate(remindAt.getDate() - days);
+          if (remindAt > now) {
+            await tx.documentReminder.create({
+              data: {
+                documentId: id,
+                remindAt,
+                channel: dto.channel ?? 'IN_APP',
+                status: 'PENDING',
+              },
+            });
+          }
+        }
+      }
+    });
+
+    return this.getReminders(id, user);
   }
 
   // ------------------------------------------------------------------ //
@@ -433,6 +524,9 @@ export class DocumentsService {
       workspace: doc!.workspace,
       tags: doc!.tags.map((t) => t.tag),
       versionCount: doc!._count.versions,
+      expiryDate: doc!.expiryDate,
+      renewalDueDate: doc!.renewalDueDate,
+      isReminderEnabled: doc!.isReminderEnabled,
       versions: doc!.versions.map((v) => ({
         id: v.id,
         versionNumber: v.versionNumber,
@@ -468,6 +562,9 @@ export class DocumentsService {
       owner: d.owner,
       tags: d.tags.map((t) => t.tag),
       versionCount: d._count.versions,
+      expiryDate: d.expiryDate,
+      renewalDueDate: d.renewalDueDate,
+      isReminderEnabled: d.isReminderEnabled,
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
     };

@@ -1,18 +1,37 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
 import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { WorkspaceUserRole, WorkspaceUserStatus } from '@prisma/client';
+import { PrismaService } from '../../prisma/prisma.service';
+import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
+import {
+  WorkspaceMemberDto,
   WorkspaceResponseDto,
   WorkspaceDetailResponseDto,
-  WorkspaceMemberDto,
 } from './dto/workspace-response.dto';
+import type {
+  AddWorkspaceMemberDto,
+  UpdateWorkspaceMemberDto,
+} from './dto/add-member.dto';
+
+// Roles that can manage members
+const MANAGER_ROLES = new Set<WorkspaceUserRole>([
+  WorkspaceUserRole.OWNER,
+  WorkspaceUserRole.ADMIN,
+]);
 
 @Injectable()
 export class WorkspacesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Return all ACTIVE workspaces with member count.
-   */
+  // ------------------------------------------------------------------ //
+  // Read
+  // ------------------------------------------------------------------ //
+
   async findAll(): Promise<WorkspaceResponseDto[]> {
     const workspaces = await this.prisma.workspace.findMany({
       where: { status: 'ACTIVE' },
@@ -34,10 +53,6 @@ export class WorkspacesService {
     }));
   }
 
-  /**
-   * Return a single workspace with full member list.
-   * Throws 404 if not found.
-   */
   async findById(id: string): Promise<WorkspaceDetailResponseDto> {
     const workspace = await this.prisma.workspace.findUnique({
       where: { id },
@@ -47,11 +62,12 @@ export class WorkspacesService {
           include: { user: true },
           orderBy: { createdAt: 'asc' },
         },
+        _count: { select: { documents: true } },
       },
     });
 
     if (!workspace) {
-      throw new NotFoundException(`Workspace with id "${id}" not found`);
+      throw new NotFoundException(`Workspace "${id}" not found`);
     }
 
     const members: WorkspaceMemberDto[] = workspace.members.map((m) => ({
@@ -72,9 +88,163 @@ export class WorkspacesService {
       type: workspace.type,
       status: workspace.status,
       memberCount: members.length,
+      documentCount: workspace._count.documents,
       members,
       createdAt: workspace.createdAt,
       updatedAt: workspace.updatedAt,
+    };
+  }
+
+  // ------------------------------------------------------------------ //
+  // Add member
+  // ------------------------------------------------------------------ //
+
+  async addMember(
+    workspaceId: string,
+    dto: AddWorkspaceMemberDto,
+    currentUser: DevUserPayload,
+  ): Promise<WorkspaceMemberDto> {
+    this.assertManagerRole(currentUser, workspaceId);
+
+    // Ensure workspace exists
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+    });
+    if (!workspace) throw new NotFoundException(`Workspace "${workspaceId}" not found`);
+
+    // Find or create the user by email
+    let user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          email: dto.email,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          isActive: true,
+        },
+      });
+    }
+
+    // Check for existing membership
+    const existing = await this.prisma.workspaceUser.findUnique({
+      where: {
+        userId_workspaceId: { userId: user.id, workspaceId },
+      },
+    });
+
+    if (existing?.status === WorkspaceUserStatus.ACTIVE) {
+      throw new ConflictException(
+        `${dto.email} is already an active member of this workspace`,
+      );
+    }
+
+    // Create or reactivate
+    const membership = existing
+      ? await this.prisma.workspaceUser.update({
+          where: { id: existing.id },
+          data: { role: dto.role, status: WorkspaceUserStatus.ACTIVE },
+          include: { user: true },
+        })
+      : await this.prisma.workspaceUser.create({
+          data: {
+            workspaceId,
+            userId: user.id,
+            role: dto.role,
+            status: WorkspaceUserStatus.ACTIVE,
+          },
+          include: { user: true },
+        });
+
+    return this.toMemberDto(membership);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Update member role / status
+  // ------------------------------------------------------------------ //
+
+  async updateMember(
+    workspaceId: string,
+    memberId: string,
+    dto: UpdateWorkspaceMemberDto,
+    currentUser: DevUserPayload,
+  ): Promise<WorkspaceMemberDto> {
+    this.assertManagerRole(currentUser, workspaceId);
+
+    const membership = await this.prisma.workspaceUser.findFirst({
+      where: { id: memberId, workspaceId },
+      include: { user: true },
+    });
+    if (!membership) throw new NotFoundException('Member not found');
+
+    // Guard: cannot demote or remove the last OWNER
+    if (
+      membership.role === WorkspaceUserRole.OWNER &&
+      (dto.role !== WorkspaceUserRole.OWNER ||
+        dto.status === WorkspaceUserStatus.REMOVED)
+    ) {
+      const ownerCount = await this.prisma.workspaceUser.count({
+        where: {
+          workspaceId,
+          role: WorkspaceUserRole.OWNER,
+          status: WorkspaceUserStatus.ACTIVE,
+        },
+      });
+      if (ownerCount <= 1) {
+        throw new BadRequestException(
+          'Cannot change or remove the only owner of this workspace',
+        );
+      }
+    }
+
+    const updated = await this.prisma.workspaceUser.update({
+      where: { id: memberId },
+      data: {
+        ...(dto.role !== undefined && { role: dto.role }),
+        ...(dto.status !== undefined && { status: dto.status }),
+      },
+      include: { user: true },
+    });
+
+    return this.toMemberDto(updated);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Private helpers
+  // ------------------------------------------------------------------ //
+
+  private assertManagerRole(user: DevUserPayload, workspaceId: string): void {
+    const membership = user.workspaces.find(
+      (w) => w.workspaceId === workspaceId,
+    );
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this workspace');
+    }
+    if (!MANAGER_ROLES.has(membership.role as WorkspaceUserRole)) {
+      throw new ForbiddenException(
+        'Only OWNER or ADMIN can manage workspace members',
+      );
+    }
+  }
+
+  private toMemberDto(m: {
+    id: string;
+    userId: string;
+    role: WorkspaceUserRole;
+    status: WorkspaceUserStatus;
+    createdAt: Date;
+    user: { firstName: string; lastName: string; email: string };
+  }): WorkspaceMemberDto {
+    return {
+      id: m.id,
+      userId: m.userId,
+      firstName: m.user.firstName,
+      lastName: m.user.lastName,
+      email: m.user.email,
+      role: m.role,
+      status: m.status,
+      joinedAt: m.createdAt,
     };
   }
 }

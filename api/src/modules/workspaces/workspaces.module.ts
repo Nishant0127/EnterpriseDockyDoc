@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { WorkspacesController } from './workspaces.controller';
 import { WorkspacesService } from './workspaces.service';
+import { DevAuthGuard } from '../../common/guards/dev-auth.guard';
 
 /**
  * WorkspacesModule — multi-tenant workspace management.
@@ -10,7 +11,7 @@ import { WorkspacesService } from './workspaces.service';
  */
 @Module({
   controllers: [WorkspacesController],
-  providers: [WorkspacesService],
+  providers: [WorkspacesService, DevAuthGuard],
   exports: [WorkspacesService],
 })
 export class WorkspacesModule {}

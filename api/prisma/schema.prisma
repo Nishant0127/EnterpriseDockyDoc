@@ -48,6 +48,17 @@ enum DocumentStatus {
   DELETED
 }
 
+enum ReminderChannel {
+  IN_APP
+  EMAIL
+}
+
+enum ReminderStatus {
+  PENDING
+  SENT
+  CANCELLED
+}
+
 // ================================================================== //
 // Core models
 // ================================================================== //
@@ -137,6 +148,9 @@ model Document {
   fileType             String
   status               DocumentStatus @default(ACTIVE)
   currentVersionNumber Int            @default(1)
+  expiryDate           DateTime?
+  renewalDueDate       DateTime?
+  isReminderEnabled    Boolean        @default(false)
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 
@@ -146,6 +160,7 @@ model Document {
   versions      DocumentVersion[]
   tags          DocumentTagMapping[]
   metadata      DocumentMetadata[]
+  reminders     DocumentReminder[]
   searchContent DocumentSearchContent?
 
   @@index([workspaceId])
@@ -229,4 +244,20 @@ model DocumentSearchContent {
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@map("document_search_content")
+}
+
+model DocumentReminder {
+  id         String          @id @default(cuid())
+  documentId String
+  remindAt   DateTime
+  channel    ReminderChannel @default(IN_APP)
+  status     ReminderStatus  @default(PENDING)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([status, remindAt])
+  @@map("document_reminders")
 }

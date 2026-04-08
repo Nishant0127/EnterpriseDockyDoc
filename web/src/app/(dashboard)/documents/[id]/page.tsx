@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { fetchDocument, downloadDocument, downloadDocumentVersion, uploadDocumentVersion } from '@/lib/documents';
+import { fetchDocument, downloadDocument, downloadDocumentVersion, uploadDocumentVersion, setDocumentReminders } from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import type { DocumentDetail, DocumentStatus } from '@/types';
 
@@ -330,6 +330,11 @@ export default function DocumentDetailPage() {
             </dl>
           )}
         </Section>
+
+        {/* ---- Expiry & Reminders (full width) -------------------- */}
+        <div className="lg:col-span-2">
+          <ExpiryReminderSection doc={doc} onSaved={reload} />
+        </div>
       </div>
 
       {/* Version upload modal */}
@@ -346,6 +351,147 @@ export default function DocumentDetailPage() {
         />
       )}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Expiry & Reminder section
+// ------------------------------------------------------------------ //
+
+const OFFSET_OPTIONS = [
+  { days: 30, label: '30 days before' },
+  { days: 15, label: '15 days before' },
+  { days: 7,  label: '7 days before' },
+  { days: 1,  label: '1 day before' },
+];
+
+function toDateInput(iso: string | null | undefined): string {
+  if (!iso) return '';
+  return iso.slice(0, 10); // 'YYYY-MM-DD'
+}
+
+function ExpiryReminderSection({
+  doc,
+  onSaved,
+}: {
+  doc: DocumentDetail;
+  onSaved: () => void;
+}) {
+  const [expiryDate, setExpiryDate] = useState(toDateInput(doc.expiryDate));
+  const [renewalDueDate, setRenewalDueDate] = useState(toDateInput(doc.renewalDueDate));
+  const [isReminderEnabled, setIsReminderEnabled] = useState(doc.isReminderEnabled);
+  const [offsetDays, setOffsetDays] = useState<number[]>([30, 15, 7]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function toggleOffset(days: number) {
+    setOffsetDays((prev) =>
+      prev.includes(days) ? prev.filter((d) => d !== days) : [...prev, days],
+    );
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await setDocumentReminders(doc.id, {
+        expiryDate: expiryDate || null,
+        renewalDueDate: renewalDueDate || null,
+        isReminderEnabled,
+        offsetDays: isReminderEnabled ? offsetDays : [],
+      });
+      setSaved(true);
+      onSaved();
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Section title="Expiry &amp; Reminders">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">
+            Expiry date
+          </label>
+          <input
+            type="date"
+            value={expiryDate}
+            onChange={(e) => setExpiryDate(e.target.value)}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">
+            Renewal due date
+          </label>
+          <input
+            type="date"
+            value={renewalDueDate}
+            onChange={(e) => setRenewalDueDate(e.target.value)}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={isReminderEnabled}
+            onChange={(e) => setIsReminderEnabled(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+          />
+          <span className="text-sm text-gray-700 font-medium">Enable reminders</span>
+        </label>
+      </div>
+
+      {isReminderEnabled && (
+        <div className="mt-3 pl-6">
+          <p className="text-xs text-gray-500 mb-2">
+            Remind me before expiry:
+          </p>
+          <div className="flex flex-wrap gap-3">
+            {OFFSET_OPTIONS.map(({ days, label }) => (
+              <label key={days} className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={offsetDays.includes(days)}
+                  onChange={() => toggleOffset(days)}
+                  className="w-3.5 h-3.5 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                />
+                <span className="text-xs text-gray-600">{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <p className="mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {error}
+        </p>
+      )}
+
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {saved && (
+          <span className="text-xs text-green-600 font-medium">Saved!</span>
+        )}
+      </div>
+    </Section>
   );
 }
 

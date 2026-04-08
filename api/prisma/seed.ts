@@ -77,6 +77,12 @@ async function main() {
     update: {},
     create: { userId: dave.id, workspaceId: daveWs.id, role: WorkspaceUserRole.OWNER, status: WorkspaceUserStatus.ACTIVE },
   });
+  // Alice is a VIEWER in Dave's workspace so workspace switching is testable
+  await prisma.workspaceUser.upsert({
+    where: { userId_workspaceId: { userId: alice.id, workspaceId: daveWs.id } },
+    update: {},
+    create: { userId: alice.id, workspaceId: daveWs.id, role: WorkspaceUserRole.VIEWER, status: WorkspaceUserStatus.ACTIVE },
+  });
   console.log('Workspace memberships created');
 
   // ================================================================== //
@@ -354,7 +360,7 @@ async function main() {
 
   console.log('\nSeed complete.\n');
   console.log('Users:');
-  console.log('  alice@acmecorp.com  (Acme: OWNER)');
+  console.log('  alice@acmecorp.com  (Acme: OWNER, Dave\'s: VIEWER)');
   console.log('  bob@acmecorp.com    (Acme: ADMIN)');
   console.log('  carol@acmecorp.com  (Acme: EDITOR)');
   console.log('  dave@personal.com   (Personal: OWNER)');

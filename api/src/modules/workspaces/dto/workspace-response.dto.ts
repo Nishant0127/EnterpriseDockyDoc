@@ -54,6 +54,9 @@ export class WorkspaceResponseDto {
 }
 
 export class WorkspaceDetailResponseDto extends WorkspaceResponseDto {
+  @ApiProperty()
+  documentCount!: number;
+
   @ApiProperty({ type: [WorkspaceMemberDto] })
   members!: WorkspaceMemberDto[];
 }

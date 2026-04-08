@@ -6,9 +6,15 @@ import { apiFetch, apiUpload, apiDownload } from './api';
 import type {
   DocumentDetail,
   DocumentListItem,
+  DocumentReminder,
+  ExpiringDocument,
   FolderListItem,
   SearchResult,
+  SetRemindersPayload,
   Tag,
+  UpcomingReminder,
+  WorkspaceDetail,
+  WorkspaceMember,
 } from '@/types';
 
 // ------------------------------------------------------------------ //
@@ -158,5 +164,74 @@ export function searchDocuments(params: SearchParams): Promise<SearchResult[]> {
 export function fetchTags(workspaceId: string): Promise<Tag[]> {
   return apiFetch<Tag[]>(
     `/api/v1/tags?workspaceId=${encodeURIComponent(workspaceId)}`,
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Workspaces — detail + member management
+// ------------------------------------------------------------------ //
+
+export function fetchWorkspaceDetail(workspaceId: string): Promise<WorkspaceDetail> {
+  return apiFetch<WorkspaceDetail>(`/api/v1/workspaces/${workspaceId}`);
+}
+
+export interface AddMemberParams {
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+}
+
+export function addWorkspaceMember(
+  workspaceId: string,
+  params: AddMemberParams,
+): Promise<WorkspaceMember> {
+  return apiFetch<WorkspaceMember>(`/api/v1/workspaces/${workspaceId}/members`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+export function updateWorkspaceMember(
+  workspaceId: string,
+  memberId: string,
+  params: { role?: string; status?: string },
+): Promise<WorkspaceMember> {
+  return apiFetch<WorkspaceMember>(
+    `/api/v1/workspaces/${workspaceId}/members/${memberId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(params),
+    },
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Reminders
+// ------------------------------------------------------------------ //
+
+export function fetchDocumentReminders(documentId: string): Promise<DocumentReminder[]> {
+  return apiFetch<DocumentReminder[]>(`/api/v1/documents/${documentId}/reminders`);
+}
+
+export function setDocumentReminders(
+  documentId: string,
+  payload: SetRemindersPayload,
+): Promise<DocumentReminder[]> {
+  return apiFetch<DocumentReminder[]>(`/api/v1/documents/${documentId}/reminders`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchExpiringDocuments(workspaceId: string): Promise<ExpiringDocument[]> {
+  return apiFetch<ExpiringDocument[]>(
+    `/api/v1/reminders/expiring?workspaceId=${encodeURIComponent(workspaceId)}`,
+  );
+}
+
+export function fetchWorkspaceReminders(workspaceId: string): Promise<UpcomingReminder[]> {
+  return apiFetch<UpcomingReminder[]>(
+    `/api/v1/reminders?workspaceId=${encodeURIComponent(workspaceId)}`,
   );
 }
