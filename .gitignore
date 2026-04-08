@@ -46,3 +46,7 @@ coverage/
 
 # Docker
 docker-compose.override.yml
+
+# Uploaded files (local dev storage — keep dir, ignore contents)
+api/uploads/*
+!api/uploads/.gitkeep

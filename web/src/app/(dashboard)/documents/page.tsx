@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useUser } from '@/context/UserContext';
-import { fetchFolders, fetchDocuments } from '@/lib/documents';
+import { fetchFolders, fetchDocuments, uploadDocument } from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import type { DocumentListItem, DocumentStatus, FolderListItem } from '@/types';
 
@@ -26,6 +26,9 @@ const FILE_ICON: Record<string, string> = {
   pptx: '📊',
   png: '🖼',
   jpg: '🖼',
+  jpeg: '🖼',
+  webp: '🖼',
+  gif: '🖼',
 };
 
 function fileIcon(fileType: string) {
@@ -64,6 +67,7 @@ export default function DocumentsPage() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showUpload, setShowUpload] = useState(false);
 
   // Fetch folders + documents whenever the active workspace changes
   useEffect(() => {
@@ -106,6 +110,16 @@ export default function DocumentsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFolderId]);
 
+  function refreshDocuments() {
+    if (!activeWorkspace) return;
+    fetchDocuments({
+      workspaceId: activeWorkspace.workspaceId,
+      folderId: selectedFolderId ?? undefined,
+    })
+      .then(setDocuments)
+      .catch(() => {});
+  }
+
   if (userLoading || (!activeWorkspace && !error)) {
     return <PageSkeleton />;
   }
@@ -131,6 +145,16 @@ export default function DocumentsPage() {
             {documents.length !== 1 ? 's' : ''}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => setShowUpload(true)}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+        >
+          <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+            <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+          </svg>
+          Upload Document
+        </button>
       </div>
 
       {error && (
@@ -200,6 +224,13 @@ export default function DocumentsPage() {
                     Clear folder filter
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setShowUpload(true)}
+                  className="mt-3 text-xs text-brand-600 hover:underline"
+                >
+                  Upload your first document →
+                </button>
               </div>
             ) : (
               <table className="w-full text-sm">
@@ -237,6 +268,234 @@ export default function DocumentsPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Upload modal */}
+      {showUpload && activeWorkspace && (
+        <UploadModal
+          workspaceId={activeWorkspace.workspaceId}
+          folders={folders}
+          defaultFolderId={selectedFolderId ?? undefined}
+          onClose={() => setShowUpload(false)}
+          onSuccess={() => {
+            setShowUpload(false);
+            refreshDocuments();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Upload modal
+// ------------------------------------------------------------------ //
+
+function UploadModal({
+  workspaceId,
+  folders,
+  defaultFolderId,
+  onClose,
+  onSuccess,
+}: {
+  workspaceId: string;
+  folders: FolderListItem[];
+  defaultFolderId?: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [folderId, setFolderId] = useState(defaultFolderId ?? '');
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null;
+    setFile(f);
+    if (f && !name) {
+      // Auto-fill name from filename (strip extension)
+      setName(f.name.replace(/\.[^.]+$/, ''));
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file) { setError('Please select a file.'); return; }
+    if (!name.trim()) { setError('Document name is required.'); return; }
+
+    setUploading(true);
+    setError(null);
+
+    try {
+      await uploadDocument({
+        workspaceId,
+        name: name.trim(),
+        file,
+        description: description.trim() || undefined,
+        folderId: folderId || undefined,
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  // Close on backdrop click
+  function handleBackdrop(e: React.MouseEvent<HTMLDivElement>) {
+    if (e.target === e.currentTarget) onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      onClick={handleBackdrop}
+    >
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="text-base font-semibold text-gray-900">Upload Document</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          {/* File picker */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">
+              File <span className="text-red-500">*</span>
+            </label>
+            <div
+              className={cn(
+                'relative border-2 border-dashed rounded-lg px-4 py-5 text-center cursor-pointer transition-colors',
+                file ? 'border-brand-300 bg-brand-50' : 'border-gray-200 hover:border-gray-300',
+              )}
+              onClick={() => fileRef.current?.click()}
+            >
+              {file ? (
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-lg">{fileIcon(file.name.split('.').pop() ?? '')}</span>
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-gray-800 truncate max-w-xs">{file.name}</p>
+                    <p className="text-xs text-gray-400">{(file.size / 1024).toFixed(1)} KB</p>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <svg className="mx-auto mb-2 text-gray-300" width="28" height="28" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                    <path d="M4 16.004V17a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M16 8l-4-4-4 4M12 4v12" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <p className="text-sm text-gray-500">Click to choose a file</p>
+                  <p className="text-xs text-gray-400 mt-1">PDF, Word, Excel, images, text — up to 50 MB</p>
+                </div>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                className="sr-only"
+                onChange={handleFileChange}
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.webp,.txt,.csv,.zip,.json"
+              />
+            </div>
+          </div>
+
+          {/* Name */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">
+              Document name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Q4 Budget Report"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">
+              Description
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Optional description…"
+              rows={2}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
+            />
+          </div>
+
+          {/* Folder */}
+          {folders.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                Folder
+              </label>
+              <select
+                value={folderId}
+                onChange={(e) => setFolderId(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent bg-white"
+              >
+                <option value="">No folder</option>
+                {folders.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+              {error}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={uploading}
+              className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={uploading || !file}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploading ? (
+                <>
+                  <svg className="animate-spin" width="14" height="14" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Uploading…
+                </>
+              ) : (
+                'Upload'
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

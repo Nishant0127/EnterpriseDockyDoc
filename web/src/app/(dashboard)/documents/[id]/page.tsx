@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { fetchDocument } from '@/lib/documents';
+import { fetchDocument, downloadDocument, downloadDocumentVersion, uploadDocumentVersion } from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import type { DocumentDetail, DocumentStatus } from '@/types';
 
@@ -56,6 +56,15 @@ export default function DocumentDetailPage() {
   const [doc, setDoc] = useState<DocumentDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null); // 'latest' | versionNumber string
+  const [showVersionUpload, setShowVersionUpload] = useState(false);
+
+  function reload() {
+    if (!params.id) return;
+    fetchDocument(params.id)
+      .then(setDoc)
+      .catch(() => setError('Document not found or API unavailable.'));
+  }
 
   useEffect(() => {
     if (!params.id) return;
@@ -65,6 +74,30 @@ export default function DocumentDetailPage() {
       .catch(() => setError('Document not found or API unavailable.'))
       .finally(() => setLoading(false));
   }, [params.id]);
+
+  async function handleDownloadLatest() {
+    if (!doc) return;
+    setDownloading('latest');
+    try {
+      await downloadDocument(doc.id, doc.fileName);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  async function handleDownloadVersion(versionNumber: number) {
+    if (!doc) return;
+    setDownloading(String(versionNumber));
+    try {
+      await downloadDocumentVersion(doc.id, versionNumber, doc.fileName);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   if (loading) return <DetailSkeleton />;
 
@@ -104,15 +137,47 @@ export default function DocumentDetailPage() {
           </h1>
           <p className="mt-1 text-sm text-gray-400">{doc.fileName}</p>
         </div>
-        <span
-          className={cn(
-            'flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border',
-            badge.bg,
-          )}
-        >
-          <span className={cn('w-1.5 h-1.5 rounded-full', badge.dot)} />
-          {badge.label}
-        </span>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span
+            className={cn(
+              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border',
+              badge.bg,
+            )}
+          >
+            <span className={cn('w-1.5 h-1.5 rounded-full', badge.dot)} />
+            {badge.label}
+          </span>
+          {/* Download latest button */}
+          <button
+            type="button"
+            onClick={handleDownloadLatest}
+            disabled={downloading === 'latest'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
+          >
+            {downloading === 'latest' ? (
+              <svg className="animate-spin" width="12" height="12" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            ) : (
+              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+            Download
+          </button>
+          {/* Upload version button */}
+          <button
+            type="button"
+            onClick={() => setShowVersionUpload(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path d="M4 16.004V17a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M16 8l-4-4-4 4M12 4v12" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Upload new version
+          </button>
+        </div>
       </div>
 
       {/* 2-column grid */}
@@ -186,9 +251,32 @@ export default function DocumentDetailPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="text-right flex-shrink-0 ml-2">
-                    <p className="text-xs text-gray-500">{formatBytes(v.fileSizeBytes)}</p>
-                    <p className="text-[10px] text-gray-400 truncate max-w-32">{v.mimeType}</p>
+                  <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">{formatBytes(v.fileSizeBytes)}</p>
+                      <p className="text-[10px] text-gray-400 truncate max-w-28">{v.mimeType}</p>
+                    </div>
+                    {/* Per-version download */}
+                    {parseInt(v.fileSizeBytes, 10) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadVersion(v.versionNumber)}
+                        disabled={downloading === String(v.versionNumber)}
+                        title={`Download v${v.versionNumber}`}
+                        className="p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors disabled:opacity-50"
+                      >
+                        {downloading === String(v.versionNumber) ? (
+                          <svg className="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                        ) : (
+                          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                            <path d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -242,6 +330,182 @@ export default function DocumentDetailPage() {
             </dl>
           )}
         </Section>
+      </div>
+
+      {/* Version upload modal */}
+      {showVersionUpload && (
+        <VersionUploadModal
+          documentId={doc.id}
+          fileName={doc.fileName}
+          currentVersion={doc.currentVersionNumber}
+          onClose={() => setShowVersionUpload(false)}
+          onSuccess={() => {
+            setShowVersionUpload(false);
+            reload();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Version upload modal
+// ------------------------------------------------------------------ //
+
+function VersionUploadModal({
+  documentId,
+  fileName,
+  currentVersion,
+  onClose,
+  onSuccess,
+}: {
+  documentId: string;
+  fileName: string;
+  currentVersion: number;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [notes, setNotes] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file) { setError('Please select a file.'); return; }
+
+    setUploading(true);
+    setError(null);
+
+    try {
+      await uploadDocumentVersion(documentId, file, notes.trim() || undefined);
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function handleBackdrop(e: React.MouseEvent<HTMLDivElement>) {
+    if (e.target === e.currentTarget) onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      onClick={handleBackdrop}
+    >
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Upload New Version</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {fileName} · current v{currentVersion} → v{currentVersion + 1}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          {/* File picker */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">
+              New file <span className="text-red-500">*</span>
+            </label>
+            <div
+              className={cn(
+                'relative border-2 border-dashed rounded-lg px-4 py-5 text-center cursor-pointer transition-colors',
+                file ? 'border-brand-300 bg-brand-50' : 'border-gray-200 hover:border-gray-300',
+              )}
+              onClick={() => fileRef.current?.click()}
+            >
+              {file ? (
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-sm font-medium text-gray-800 truncate max-w-xs">{file.name}</span>
+                  <span className="text-xs text-gray-400">({(file.size / 1024).toFixed(1)} KB)</span>
+                </div>
+              ) : (
+                <div>
+                  <svg className="mx-auto mb-2 text-gray-300" width="28" height="28" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                    <path d="M4 16.004V17a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M16 8l-4-4-4 4M12 4v12" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <p className="text-sm text-gray-500">Click to choose the updated file</p>
+                  <p className="text-xs text-gray-400 mt-1">Up to 50 MB</p>
+                </div>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                className="sr-only"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.webp,.txt,.csv,.zip,.json"
+              />
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">
+              Change notes
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="What changed in this version?"
+              rows={2}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
+            />
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+              {error}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={uploading}
+              className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={uploading || !file}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploading ? (
+                <>
+                  <svg className="animate-spin" width="14" height="14" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Uploading…
+                </>
+              ) : (
+                `Upload v${currentVersion + 1}`
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

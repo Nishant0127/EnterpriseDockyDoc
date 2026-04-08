@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -6,12 +7,25 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import type { Response } from 'express';
 import { DocumentsService } from './documents.service';
 import {
   CreateDocumentDto,
@@ -20,8 +34,54 @@ import {
   DocumentQueryDto,
   UpdateDocumentDto,
 } from './dto/document.dto';
+import { UploadDocumentDto, UploadVersionDto } from './dto/upload-document.dto';
 import { DevAuthGuard, type DevUserPayload } from '../../common/guards/dev-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+
+// ------------------------------------------------------------------ //
+// File upload configuration
+// ------------------------------------------------------------------ //
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'text/plain',
+  'text/csv',
+  'application/zip',
+  'application/json',
+  'application/octet-stream',
+]);
+
+function uploadFileInterceptor() {
+  return FileInterceptor('file', {
+    storage: undefined, // use default memoryStorage
+    limits: { fileSize: MAX_FILE_SIZE },
+    fileFilter: (_req, file, callback) => {
+      if (ALLOWED_MIME_TYPES.has(file.mimetype)) {
+        callback(null, true);
+      } else {
+        callback(
+          new BadRequestException(
+            `File type "${file.mimetype}" is not allowed. ` +
+              `Accepted: PDF, Word, Excel, PowerPoint, images, text, CSV, ZIP, JSON.`,
+          ),
+          false,
+        );
+      }
+    },
+  });
+}
 
 /**
  * Documents endpoints.
@@ -33,11 +93,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 
-  /**
-   * GET /api/v1/documents?workspaceId=...
-   * List documents. Optional filters: folderId, status, ownerUserId.
-   * DELETED documents are excluded by default unless status=DELETED is passed.
-   */
+  // ------------------------------------------------------------------ //
+  // List
+  // ------------------------------------------------------------------ //
+
   @Get()
   @ApiOperation({ summary: 'List documents in a workspace' })
   @ApiResponse({ status: 200, type: [DocumentListItemDto] })
@@ -48,10 +107,43 @@ export class DocumentsController {
     return this.documentsService.findAll(query, user);
   }
 
-  /**
-   * GET /api/v1/documents/:id
-   * Full document detail: versions, tags, metadata, folder, owner.
-   */
+  // ------------------------------------------------------------------ //
+  // Upload — POST /documents/upload  (must be before :id routes)
+  // ------------------------------------------------------------------ //
+
+  @Post('upload')
+  @UseInterceptors(uploadFileInterceptor())
+  @ApiOperation({ summary: 'Upload a new document with file' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file', 'workspaceId', 'name'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        workspaceId: { type: 'string' },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        folderId: { type: 'string' },
+        tags: { type: 'string', description: 'Comma-separated tag IDs' },
+        metadata: { type: 'string', description: 'JSON array of {key, value} objects' },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, type: DocumentDetailDto })
+  uploadDocument(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: UploadDocumentDto,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<DocumentDetailDto> {
+    if (!file) throw new BadRequestException('No file provided');
+    return this.documentsService.upload(dto, file, user);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Detail
+  // ------------------------------------------------------------------ //
+
   @Get(':id')
   @ApiOperation({ summary: 'Get document detail by ID' })
   @ApiParam({ name: 'id', description: 'Document cuid' })
@@ -64,12 +156,72 @@ export class DocumentsController {
     return this.documentsService.findById(id, user);
   }
 
-  /**
-   * POST /api/v1/documents
-   * Create a document record + initial version (v1). No file binary yet.
-   */
+  // ------------------------------------------------------------------ //
+  // Download latest version
+  // ------------------------------------------------------------------ //
+
+  @Get(':id/download')
+  @ApiOperation({ summary: 'Download the latest version of a document' })
+  @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 200, description: 'File stream' })
+  @ApiResponse({ status: 404, description: 'Document or file not found' })
+  async downloadLatest(
+    @Param('id') id: string,
+    @CurrentUser() user: DevUserPayload,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { absolutePath, fileName, mimeType } =
+      await this.documentsService.getDownloadInfo(id, user);
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(fileName)}"`,
+    );
+    res.sendFile(absolutePath, (err) => {
+      if (err && !res.headersSent) {
+        res.status(500).json({ message: 'Failed to stream file' });
+      }
+    });
+  }
+
+  // ------------------------------------------------------------------ //
+  // Download specific version
+  // ------------------------------------------------------------------ //
+
+  @Get(':id/versions/:versionNumber/download')
+  @ApiOperation({ summary: 'Download a specific version of a document' })
+  @ApiParam({ name: 'id' })
+  @ApiParam({ name: 'versionNumber', type: Number })
+  @ApiResponse({ status: 200, description: 'File stream' })
+  @ApiResponse({ status: 404, description: 'Version or file not found' })
+  async downloadVersion(
+    @Param('id') id: string,
+    @Param('versionNumber', ParseIntPipe) versionNumber: number,
+    @CurrentUser() user: DevUserPayload,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { absolutePath, fileName, mimeType } =
+      await this.documentsService.getVersionDownloadInfo(id, versionNumber, user);
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(fileName)}"`,
+    );
+    res.sendFile(absolutePath, (err) => {
+      if (err && !res.headersSent) {
+        res.status(500).json({ message: 'Failed to stream file' });
+      }
+    });
+  }
+
+  // ------------------------------------------------------------------ //
+  // Create (metadata-only, no file — legacy endpoint)
+  // ------------------------------------------------------------------ //
+
   @Post()
-  @ApiOperation({ summary: 'Create a document record with initial version' })
+  @ApiOperation({ summary: 'Create a document record with placeholder version (no file)' })
   @ApiResponse({ status: 201, type: DocumentDetailDto })
   create(
     @Body() dto: CreateDocumentDto,
@@ -78,10 +230,41 @@ export class DocumentsController {
     return this.documentsService.create(dto, user);
   }
 
-  /**
-   * PATCH /api/v1/documents/:id
-   * Update document name, description, folder, or status.
-   */
+  // ------------------------------------------------------------------ //
+  // Upload new version
+  // ------------------------------------------------------------------ //
+
+  @Post(':id/versions')
+  @UseInterceptors(uploadFileInterceptor())
+  @ApiOperation({ summary: 'Upload a new version of an existing document' })
+  @ApiConsumes('multipart/form-data')
+  @ApiParam({ name: 'id' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        notes: { type: 'string' },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, type: DocumentDetailDto })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  uploadVersion(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: UploadVersionDto,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<DocumentDetailDto> {
+    if (!file) throw new BadRequestException('No file provided');
+    return this.documentsService.uploadVersion(id, file, dto, user);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Update
+  // ------------------------------------------------------------------ //
+
   @Patch(':id')
   @ApiOperation({ summary: 'Update document fields' })
   @ApiParam({ name: 'id' })
@@ -95,10 +278,10 @@ export class DocumentsController {
     return this.documentsService.update(id, dto, user);
   }
 
-  /**
-   * DELETE /api/v1/documents/:id
-   * Soft delete — sets status to DELETED. Document record is preserved.
-   */
+  // ------------------------------------------------------------------ //
+  // Soft delete
+  // ------------------------------------------------------------------ //
+
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Soft delete a document (status → DELETED)' })

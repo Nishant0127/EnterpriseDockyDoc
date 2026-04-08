@@ -1,8 +1,8 @@
 /**
  * Document, Folder, and Tag API helpers.
- * All calls go through apiFetch which handles auth headers centrally.
+ * All calls go through apiFetch / apiUpload / apiDownload which handle auth headers centrally.
  */
-import { apiFetch } from './api';
+import { apiFetch, apiUpload, apiDownload } from './api';
 import type {
   DocumentDetail,
   DocumentListItem,
@@ -36,7 +36,7 @@ export function createFolder(params: {
 }
 
 // ------------------------------------------------------------------ //
-// Documents
+// Documents — list & detail
 // ------------------------------------------------------------------ //
 
 export interface FetchDocumentsParams {
@@ -56,6 +56,80 @@ export function fetchDocuments(params: FetchDocumentsParams): Promise<DocumentLi
 
 export function fetchDocument(id: string): Promise<DocumentDetail> {
   return apiFetch<DocumentDetail>(`/api/v1/documents/${id}`);
+}
+
+// ------------------------------------------------------------------ //
+// Documents — upload
+// ------------------------------------------------------------------ //
+
+export interface UploadDocumentParams {
+  workspaceId: string;
+  name: string;
+  file: File;
+  description?: string;
+  folderId?: string;
+  tags?: string[];   // tag IDs
+  metadata?: { key: string; value: string }[];
+}
+
+/**
+ * Upload a new document with file binary.
+ * Sends multipart/form-data to POST /api/v1/documents/upload.
+ */
+export function uploadDocument(params: UploadDocumentParams): Promise<DocumentDetail> {
+  const form = new FormData();
+  form.append('file', params.file);
+  form.append('workspaceId', params.workspaceId);
+  form.append('name', params.name);
+  if (params.description) form.append('description', params.description);
+  if (params.folderId) form.append('folderId', params.folderId);
+  if (params.tags?.length) form.append('tags', params.tags.join(','));
+  if (params.metadata?.length) form.append('metadata', JSON.stringify(params.metadata));
+
+  return apiUpload<DocumentDetail>('/api/v1/documents/upload', form);
+}
+
+/**
+ * Upload a new version of an existing document.
+ * Sends multipart/form-data to POST /api/v1/documents/:id/versions.
+ */
+export function uploadDocumentVersion(
+  documentId: string,
+  file: File,
+  notes?: string,
+): Promise<DocumentDetail> {
+  const form = new FormData();
+  form.append('file', file);
+  if (notes) form.append('notes', notes);
+
+  return apiUpload<DocumentDetail>(`/api/v1/documents/${documentId}/versions`, form);
+}
+
+// ------------------------------------------------------------------ //
+// Documents — download
+// ------------------------------------------------------------------ //
+
+/**
+ * Download the latest version of a document.
+ * Triggers a browser file download.
+ */
+export function downloadDocument(documentId: string, fileName: string): Promise<void> {
+  return apiDownload(`/api/v1/documents/${documentId}/download`, fileName);
+}
+
+/**
+ * Download a specific version of a document.
+ * Triggers a browser file download.
+ */
+export function downloadDocumentVersion(
+  documentId: string,
+  versionNumber: number,
+  fileName: string,
+): Promise<void> {
+  return apiDownload(
+    `/api/v1/documents/${documentId}/versions/${versionNumber}/download`,
+    fileName,
+  );
 }
 
 // ------------------------------------------------------------------ //

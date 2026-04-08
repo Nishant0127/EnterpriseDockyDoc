@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DocumentStatus } from '@prisma/client';
+import * as path from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
+import { LocalStorageService } from '../storage/local-storage.service';
 import { assertWorkspaceMembership } from '../../common/helpers/workspace-access.helper';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import {
@@ -10,8 +12,12 @@ import {
   UpdateDocumentDto,
   DocumentQueryDto,
 } from './dto/document.dto';
+import type { UploadDocumentDto, UploadVersionDto } from './dto/upload-document.dto';
 
-// Prisma include shape reused by findAll and findById
+// ------------------------------------------------------------------ //
+// Prisma include shapes
+// ------------------------------------------------------------------ //
+
 const DOC_LIST_INCLUDE = {
   folder: { select: { id: true, name: true } },
   owner: { select: { id: true, firstName: true, lastName: true, email: true } },
@@ -34,9 +40,32 @@ const DOC_DETAIL_INCLUDE = {
   _count: { select: { versions: true } },
 } as const;
 
+// ------------------------------------------------------------------ //
+// Helpers
+// ------------------------------------------------------------------ //
+
+/** Build a structured, safe storage key for a file version. */
+function buildStorageKey(
+  workspaceId: string,
+  documentId: string,
+  versionNumber: number,
+  originalName: string,
+): string {
+  const sanitized = path.basename(originalName).replace(/[^a-zA-Z0-9._-]/g, '_');
+  return `${workspaceId}/${documentId}/v${versionNumber}/${sanitized}`;
+}
+
+/** Extract file extension from original filename, defaulting to 'bin'. */
+function fileExtension(originalName: string): string {
+  return path.extname(originalName).replace('.', '').toLowerCase() || 'bin';
+}
+
 @Injectable()
 export class DocumentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: LocalStorageService,
+  ) {}
 
   // ------------------------------------------------------------------ //
   // List
@@ -48,7 +77,6 @@ export class DocumentsService {
     const docs = await this.prisma.document.findMany({
       where: {
         workspaceId: query.workspaceId,
-        // Default: hide DELETED unless explicitly requested
         status: query.status ?? { not: DocumentStatus.DELETED },
         ...(query.folderId && { folderId: query.folderId }),
         ...(query.ownerUserId && { ownerUserId: query.ownerUserId }),
@@ -73,43 +101,13 @@ export class DocumentsService {
     if (!doc) throw new NotFoundException(`Document "${id}" not found`);
     assertWorkspaceMembership(user, doc.workspaceId);
 
-    return {
-      id: doc.id,
-      workspaceId: doc.workspaceId,
-      name: doc.name,
-      description: doc.description,
-      fileName: doc.fileName,
-      fileType: doc.fileType,
-      status: doc.status,
-      currentVersionNumber: doc.currentVersionNumber,
-      folder: doc.folder,
-      owner: doc.owner,
-      workspace: doc.workspace,
-      tags: doc.tags.map((t) => t.tag),
-      versionCount: doc._count.versions,
-      versions: doc.versions.map((v) => ({
-        id: v.id,
-        versionNumber: v.versionNumber,
-        storageKey: v.storageKey,
-        fileSizeBytes: v.fileSizeBytes.toString(),
-        mimeType: v.mimeType,
-        uploadedBy: v.uploadedBy,
-        createdAt: v.createdAt,
-      })),
-      metadata: doc.metadata,
-      createdAt: doc.createdAt,
-      updatedAt: doc.updatedAt,
-    };
+    return this.toDetailDto(doc);
   }
 
   // ------------------------------------------------------------------ //
-  // Create
+  // Create (metadata-only, no file binary)
   // ------------------------------------------------------------------ //
 
-  /**
-   * Creates a Document record and its initial DocumentVersion (v1) in a transaction.
-   * No file binary yet — storageKey is a placeholder path for future upload integration.
-   */
   async create(dto: CreateDocumentDto, user: DevUserPayload): Promise<DocumentDetailDto> {
     assertWorkspaceMembership(user, dto.workspaceId);
 
@@ -133,7 +131,7 @@ export class DocumentsService {
           documentId: doc.id,
           versionNumber: 1,
           storageKey: `pending/${dto.workspaceId}/${doc.id}/v1/${dto.fileName}`,
-          fileSizeBytes: BigInt(0), // replaced on actual upload
+          fileSizeBytes: BigInt(0),
           mimeType: dto.mimeType,
           uploadedById: dto.ownerUserId,
         },
@@ -143,6 +141,201 @@ export class DocumentsService {
     });
 
     return this.findById(created.id, user);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Upload — create document + save file in one operation
+  // ------------------------------------------------------------------ //
+
+  async upload(
+    dto: UploadDocumentDto,
+    file: Express.Multer.File,
+    user: DevUserPayload,
+  ): Promise<DocumentDetailDto> {
+    assertWorkspaceMembership(user, dto.workspaceId);
+
+    const ext = fileExtension(file.originalname);
+
+    // 1. Create DB records in a transaction
+    const { docId, storageKey } = await this.prisma.$transaction(async (tx) => {
+      const doc = await tx.document.create({
+        data: {
+          workspaceId: dto.workspaceId,
+          folderId: dto.folderId ?? null,
+          ownerUserId: user.id,
+          name: dto.name,
+          description: dto.description ?? null,
+          fileName: file.originalname,
+          fileType: ext,
+          status: DocumentStatus.ACTIVE,
+          currentVersionNumber: 1,
+        },
+      });
+
+      const storageKey = buildStorageKey(dto.workspaceId, doc.id, 1, file.originalname);
+
+      await tx.documentVersion.create({
+        data: {
+          documentId: doc.id,
+          versionNumber: 1,
+          storageKey,
+          fileSizeBytes: BigInt(file.size),
+          mimeType: file.mimetype,
+          uploadedById: user.id,
+        },
+      });
+
+      // Attach tags (comma-separated IDs)
+      if (dto.tags) {
+        const tagIds = dto.tags
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean);
+        for (const tagId of tagIds) {
+          await tx.documentTagMapping
+            .create({ data: { documentId: doc.id, tagId } })
+            .catch(() => {}); // skip unknown tags
+        }
+      }
+
+      // Attach metadata (JSON array)
+      if (dto.metadata) {
+        try {
+          const entries = JSON.parse(dto.metadata) as { key: string; value: string }[];
+          for (const entry of entries) {
+            if (entry.key && entry.value !== undefined) {
+              await tx.documentMetadata.create({
+                data: { documentId: doc.id, key: entry.key, value: String(entry.value) },
+              });
+            }
+          }
+        } catch {
+          // Invalid JSON metadata — skip silently
+        }
+      }
+
+      return { docId: doc.id, storageKey };
+    });
+
+    // 2. Persist file after transaction commits
+    await this.storage.save(storageKey, file.buffer);
+
+    return this.findById(docId, user);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Upload new version
+  // ------------------------------------------------------------------ //
+
+  async uploadVersion(
+    id: string,
+    file: Express.Multer.File,
+    _dto: UploadVersionDto,
+    user: DevUserPayload,
+  ): Promise<DocumentDetailDto> {
+    const existing = await this.prisma.document.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException(`Document "${id}" not found`);
+    assertWorkspaceMembership(user, existing.workspaceId);
+
+    const nextVersion = existing.currentVersionNumber + 1;
+
+    const { storageKey } = await this.prisma.$transaction(async (tx) => {
+      const storageKey = buildStorageKey(
+        existing.workspaceId,
+        id,
+        nextVersion,
+        file.originalname,
+      );
+
+      await tx.documentVersion.create({
+        data: {
+          documentId: id,
+          versionNumber: nextVersion,
+          storageKey,
+          fileSizeBytes: BigInt(file.size),
+          mimeType: file.mimetype,
+          uploadedById: user.id,
+        },
+      });
+
+      await tx.document.update({
+        where: { id },
+        data: { currentVersionNumber: nextVersion },
+      });
+
+      return { storageKey };
+    });
+
+    await this.storage.save(storageKey, file.buffer);
+
+    return this.findById(id, user);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Download info — returns absolute path + headers for streaming
+  // ------------------------------------------------------------------ //
+
+  async getDownloadInfo(
+    id: string,
+    user: DevUserPayload,
+  ): Promise<{ absolutePath: string; fileName: string; mimeType: string }> {
+    const doc = await this.prisma.document.findUnique({
+      where: { id },
+      include: {
+        versions: {
+          orderBy: { versionNumber: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!doc) throw new NotFoundException(`Document "${id}" not found`);
+    assertWorkspaceMembership(user, doc.workspaceId);
+
+    const version = doc.versions[0];
+    if (!version) throw new NotFoundException(`No versions found for document "${id}"`);
+
+    if (!this.storage.exists(version.storageKey)) {
+      throw new NotFoundException(
+        `File not found in storage. The document may have been created before file upload was supported.`,
+      );
+    }
+
+    return {
+      absolutePath: this.storage.getAbsolutePath(version.storageKey),
+      fileName: doc.fileName,
+      mimeType: version.mimeType,
+    };
+  }
+
+  async getVersionDownloadInfo(
+    id: string,
+    versionNumber: number,
+    user: DevUserPayload,
+  ): Promise<{ absolutePath: string; fileName: string; mimeType: string }> {
+    const doc = await this.prisma.document.findUnique({ where: { id } });
+    if (!doc) throw new NotFoundException(`Document "${id}" not found`);
+    assertWorkspaceMembership(user, doc.workspaceId);
+
+    const version = await this.prisma.documentVersion.findUnique({
+      where: { documentId_versionNumber: { documentId: id, versionNumber } },
+    });
+
+    if (!version) {
+      throw new NotFoundException(`Version ${versionNumber} not found for document "${id}"`);
+    }
+
+    if (!this.storage.exists(version.storageKey)) {
+      throw new NotFoundException(
+        `File not found in storage for version ${versionNumber}.`,
+      );
+    }
+
+    return {
+      absolutePath: this.storage.getAbsolutePath(version.storageKey),
+      fileName: doc.fileName,
+      mimeType: version.mimeType,
+    };
   }
 
   // ------------------------------------------------------------------ //
@@ -176,7 +369,10 @@ export class DocumentsService {
   // Soft delete
   // ------------------------------------------------------------------ //
 
-  async softDelete(id: string, user: DevUserPayload): Promise<{ id: string; status: DocumentStatus }> {
+  async softDelete(
+    id: string,
+    user: DevUserPayload,
+  ): Promise<{ id: string; status: DocumentStatus }> {
     const existing = await this.prisma.document.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Document "${id}" not found`);
     assertWorkspaceMembership(user, existing.workspaceId);
@@ -186,12 +382,63 @@ export class DocumentsService {
       data: { status: DocumentStatus.DELETED },
     });
 
+    // File is intentionally NOT removed from storage on soft delete.
+    // Physical deletion (shredding) is a separate operation.
+
     return { id: deleted.id, status: deleted.status };
   }
 
   // ------------------------------------------------------------------ //
   // Private helpers
   // ------------------------------------------------------------------ //
+
+  private toDetailDto(
+    doc: Awaited<ReturnType<typeof this.prisma.document.findUnique>> & {
+      folder: { id: string; name: string } | null;
+      owner: { id: string; firstName: string; lastName: string; email: string };
+      workspace: { id: string; name: string };
+      tags: { tag: { id: string; name: string; color: string | null } }[];
+      versions: {
+        id: string;
+        versionNumber: number;
+        storageKey: string;
+        fileSizeBytes: bigint;
+        mimeType: string;
+        uploadedBy: { id: string; firstName: string; lastName: string; email: string };
+        createdAt: Date;
+      }[];
+      metadata: { id: string; key: string; value: string }[];
+      _count: { versions: number };
+    },
+  ): DocumentDetailDto {
+    return {
+      id: doc!.id,
+      workspaceId: doc!.workspaceId,
+      name: doc!.name,
+      description: doc!.description,
+      fileName: doc!.fileName,
+      fileType: doc!.fileType,
+      status: doc!.status,
+      currentVersionNumber: doc!.currentVersionNumber,
+      folder: doc!.folder,
+      owner: doc!.owner,
+      workspace: doc!.workspace,
+      tags: doc!.tags.map((t) => t.tag),
+      versionCount: doc!._count.versions,
+      versions: doc!.versions.map((v) => ({
+        id: v.id,
+        versionNumber: v.versionNumber,
+        storageKey: v.storageKey,
+        fileSizeBytes: v.fileSizeBytes.toString(),
+        mimeType: v.mimeType,
+        uploadedBy: v.uploadedBy,
+        createdAt: v.createdAt,
+      })),
+      metadata: doc!.metadata,
+      createdAt: doc!.createdAt,
+      updatedAt: doc!.updatedAt,
+    };
+  }
 
   private toListItemDto(
     d: Awaited<ReturnType<typeof this.prisma.document.findMany>>[number] & {

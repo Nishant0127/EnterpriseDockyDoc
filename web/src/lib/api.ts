@@ -47,6 +47,63 @@ export async function apiFetch<T>(
   return res.json() as Promise<T>;
 }
 
+/**
+ * Send multipart/form-data to the API (for file uploads).
+ * Do NOT set Content-Type manually — the browser sets it with the boundary.
+ */
+export async function apiUpload<T>(
+  path: string,
+  formData: FormData,
+): Promise<T> {
+  const headers = new Headers();
+  // DEV ONLY — replace with Bearer token when auth is implemented
+  headers.set('x-dev-user-email', DEV_USER_EMAIL);
+
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, body?.message ?? res.statusText);
+  }
+
+  return res.json() as Promise<T>;
+}
+
+/**
+ * Download a file from the API as a Blob and trigger a browser download.
+ * Uses the x-dev-user-email header so auth is applied.
+ */
+export async function apiDownload(path: string, fallbackFileName: string): Promise<void> {
+  const headers = new Headers();
+  headers.set('x-dev-user-email', DEV_USER_EMAIL);
+
+  const res = await fetch(`${API_URL}${path}`, { headers });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, body?.message ?? res.statusText);
+  }
+
+  const blob = await res.blob();
+
+  // Extract filename from Content-Disposition if present
+  const disposition = res.headers.get('content-disposition') ?? '';
+  const match = disposition.match(/filename="([^"]+)"/);
+  const fileName = match ? decodeURIComponent(match[1]) : fallbackFileName;
+
+  // Trigger browser download
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 // ------------------------------------------------------------------ //
 // Auth API calls — used by UserContext
 // ------------------------------------------------------------------ //
