@@ -1,0 +1,59 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { WorkspaceType, WorkspaceStatus, WorkspaceUserRole, WorkspaceUserStatus } from '@prisma/client';
+
+export class WorkspaceMemberDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  userId!: string;
+
+  @ApiProperty()
+  firstName!: string;
+
+  @ApiProperty()
+  lastName!: string;
+
+  @ApiProperty()
+  email!: string;
+
+  @ApiProperty({ enum: WorkspaceUserRole })
+  role!: WorkspaceUserRole;
+
+  @ApiProperty({ enum: WorkspaceUserStatus })
+  status!: WorkspaceUserStatus;
+
+  @ApiProperty()
+  joinedAt!: Date;
+}
+
+export class WorkspaceResponseDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty()
+  slug!: string;
+
+  @ApiProperty({ enum: WorkspaceType })
+  type!: WorkspaceType;
+
+  @ApiProperty({ enum: WorkspaceStatus })
+  status!: WorkspaceStatus;
+
+  @ApiProperty()
+  memberCount!: number;
+
+  @ApiProperty()
+  createdAt!: Date;
+
+  @ApiProperty()
+  updatedAt!: Date;
+}
+
+export class WorkspaceDetailResponseDto extends WorkspaceResponseDto {
+  @ApiProperty({ type: [WorkspaceMemberDto] })
+  members!: WorkspaceMemberDto[];
+}

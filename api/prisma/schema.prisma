@@ -1,12 +1,9 @@
 // DockyDoc — Prisma Schema
 // PostgreSQL datasource
 //
-// Run after changes:
+// After any schema change:
 //   npx prisma migrate dev --name <migration_name>
 //   npx prisma generate
-//
-// Models will be added incrementally as features are built.
-// Next steps: User, Workspace, WorkspaceMember, Document, AuditLog
 
 generator client {
   provider = "prisma-client-js"
@@ -18,21 +15,77 @@ datasource db {
 }
 
 // ------------------------------------------------------------------ //
-// Models are intentionally empty at this stage.
-// They will be added in subsequent tasks:
-//
-//   Phase 1 — Auth & Users:
-//     model User { ... }
-//     model RefreshToken { ... }
-//
-//   Phase 2 — Multi-tenancy:
-//     model Workspace { ... }
-//     model WorkspaceMember { ... }
-//
-//   Phase 3 — Documents:
-//     model Document { ... }
-//     model DocumentVersion { ... }
-//
-//   Phase 4 — Audit:
-//     model AuditLog { ... }
+// Enums
 // ------------------------------------------------------------------ //
+
+enum WorkspaceType {
+  PERSONAL
+  FAMILY
+  ENTERPRISE
+}
+
+enum WorkspaceStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum WorkspaceUserRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum WorkspaceUserStatus {
+  ACTIVE
+  INVITED
+  REMOVED
+}
+
+// ------------------------------------------------------------------ //
+// Models
+// ------------------------------------------------------------------ //
+
+model User {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  firstName  String
+  lastName   String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  workspaces WorkspaceUser[]
+
+  @@map("users")
+}
+
+model Workspace {
+  id        String          @id @default(cuid())
+  name      String
+  slug      String          @unique
+  type      WorkspaceType   @default(PERSONAL)
+  status    WorkspaceStatus @default(ACTIVE)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  members WorkspaceUser[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceUser {
+  id          String              @id @default(cuid())
+  userId      String
+  workspaceId String
+  role        WorkspaceUserRole   @default(VIEWER)
+  status      WorkspaceUserStatus @default(ACTIVE)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@map("workspace_users")
+}

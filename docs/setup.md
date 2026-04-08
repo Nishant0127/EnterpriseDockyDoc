@@ -100,17 +100,51 @@ npm run dev
 
 ---
 
-## Database Migrations
+## Database Migrations & Seeding
 
-Once you add models to `api/prisma/schema.prisma`:
+### Run the initial migration
 
 ```bash
-# Create and apply a migration
 cd api
-npx prisma migrate dev --name add_users_table
+npx prisma migrate dev --name init_users_workspaces
+```
 
-# Open Prisma Studio (visual DB browser)
+This creates the tables: `users`, `workspaces`, `workspace_users`.
+
+### Seed sample data
+
+```bash
+cd api
+npm run db:seed
+```
+
+This inserts realistic sample data:
+
+| Entity | Detail |
+|--------|--------|
+| Enterprise workspace | **Acme Corporation** (slug: `acme-corp`) |
+| → alice@acmecorp.com | OWNER |
+| → bob@acmecorp.com | ADMIN |
+| → carol@acmecorp.com | EDITOR |
+| Personal workspace | **Dave's Workspace** (slug: `dave-personal`) |
+| → dave@personal.com | OWNER |
+
+The seed is idempotent — safe to run multiple times (uses `upsert`).
+
+### Other database commands
+
+```bash
+npm run db:migrate   # Create + apply migration interactively
+npm run db:seed      # Run seed script
+npm run db:studio    # Open Prisma Studio (visual DB browser at localhost:5555)
+npm run db:reset     # ⚠ Drop all data and re-run migrations + seed
+```
+
+### Open Prisma Studio (visual browser)
+```bash
+cd api
 npx prisma studio
+# Opens at http://localhost:5555
 ```
 
 ---
@@ -124,6 +158,9 @@ npm run build        # Compile TypeScript
 npm run type-check   # Check types without building
 npm run lint         # Run ESLint
 npm test             # Run tests
+npm run db:migrate   # Create and apply Prisma migration
+npm run db:seed      # Seed database with sample data
+npm run db:studio    # Open Prisma Studio
 ```
 
 ### Web
