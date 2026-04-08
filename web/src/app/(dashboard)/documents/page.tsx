@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useUser } from '@/context/UserContext';
-import { fetchFolders, fetchDocuments, uploadDocument } from '@/lib/documents';
+import { fetchFolders, fetchDocuments, uploadDocument, searchDocuments } from '@/lib/documents';
 import { cn } from '@/lib/utils';
-import type { DocumentListItem, DocumentStatus, FolderListItem } from '@/types';
+import type { DocumentListItem, DocumentStatus, FolderListItem, SearchResult } from '@/types';
 
 // ------------------------------------------------------------------ //
 // Status helpers
@@ -69,6 +69,12 @@ export default function DocumentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Fetch folders + documents whenever the active workspace changes
   useEffect(() => {
     if (!activeWorkspace || userLoading) return;
@@ -110,6 +116,33 @@ export default function DocumentsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFolderId]);
 
+  // Debounced search — fires 350 ms after the user stops typing
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+
+    if (!searchQuery.trim() || !activeWorkspace) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    searchTimerRef.current = setTimeout(() => {
+      searchDocuments({
+        workspaceId: activeWorkspace.workspaceId,
+        q: searchQuery.trim(),
+      })
+        .then(setSearchResults)
+        .catch(() => setSearchResults([]))
+        .finally(() => setSearching(false));
+    }, 350);
+
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, activeWorkspace?.workspaceId]);
+
   function refreshDocuments() {
     if (!activeWorkspace) return;
     fetchDocuments({
@@ -133,16 +166,20 @@ export default function DocumentsPage() {
   }
 
   const { roots, childMap } = buildTree(folders);
+  const isSearching = searchQuery.trim().length > 0;
+  const displayDocs = isSearching ? searchResults : documents;
 
   return (
     <div>
       {/* Page header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Documents</h1>
           <p className="mt-0.5 text-sm text-gray-500">
-            {activeWorkspace.workspaceName} &middot; {documents.length} document
-            {documents.length !== 1 ? 's' : ''}
+            {activeWorkspace.workspaceName} &middot;{' '}
+            {isSearching
+              ? `${searchResults.length} result${searchResults.length !== 1 ? 's' : ''} for "${searchQuery}"`
+              : `${documents.length} document${documents.length !== 1 ? 's' : ''}`}
           </p>
         </div>
         <button
@@ -155,6 +192,41 @@ export default function DocumentsPage() {
           </svg>
           Upload Document
         </button>
+      </div>
+
+      {/* Search bar */}
+      <div className="relative mb-6">
+        <svg
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+          width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.35-4.35" strokeLinecap="round" />
+        </svg>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by name, tags, content…"
+          className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent bg-white"
+        />
+        {searching && (
+          <svg className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400" width="14" height="14" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        )}
+        {!searching && searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {error && (
@@ -209,13 +281,26 @@ export default function DocumentsPage() {
         {/* --------------------------------------------------------- */}
         <div className="flex-1 min-w-0">
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {loading ? (
+            {loading || searching ? (
               <TableSkeleton />
-            ) : documents.length === 0 ? (
+            ) : displayDocs.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                <span className="text-4xl mb-3">📂</span>
-                <p className="text-sm">No documents found</p>
-                {selectedFolderId && (
+                <span className="text-4xl mb-3">{isSearching ? '🔍' : '📂'}</span>
+                <p className="text-sm">
+                  {isSearching
+                    ? `No results for "${searchQuery}"`
+                    : 'No documents found'}
+                </p>
+                {isSearching && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="mt-2 text-xs text-brand-600 hover:underline"
+                  >
+                    Clear search
+                  </button>
+                )}
+                {!isSearching && selectedFolderId && (
                   <button
                     type="button"
                     onClick={() => setSelectedFolderId(null)}
@@ -224,13 +309,15 @@ export default function DocumentsPage() {
                     Clear folder filter
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setShowUpload(true)}
-                  className="mt-3 text-xs text-brand-600 hover:underline"
-                >
-                  Upload your first document →
-                </button>
+                {!isSearching && (
+                  <button
+                    type="button"
+                    onClick={() => setShowUpload(true)}
+                    className="mt-3 text-xs text-brand-600 hover:underline"
+                  >
+                    Upload your first document →
+                  </button>
+                )}
               </div>
             ) : (
               <table className="w-full text-sm">
@@ -260,8 +347,8 @@ export default function DocumentsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {documents.map((doc) => (
-                    <DocumentRow key={doc.id} doc={doc} />
+                  {displayDocs.map((doc) => (
+                    <DocumentRow key={doc.id} doc={doc} snippet={(doc as SearchResult).snippet} />
                   ))}
                 </tbody>
               </table>
@@ -578,7 +665,7 @@ function FolderTreeNode({
   );
 }
 
-function DocumentRow({ doc }: { doc: DocumentListItem }) {
+function DocumentRow({ doc, snippet }: { doc: DocumentListItem; snippet?: string }) {
   const badge = STATUS_BADGE[doc.status];
   const date = new Date(doc.createdAt).toLocaleDateString('en-US', {
     month: 'short',
@@ -600,6 +687,11 @@ function DocumentRow({ doc }: { doc: DocumentListItem }) {
               {doc.name}
             </p>
             <p className="text-xs text-gray-400 truncate">{doc.fileName}</p>
+            {snippet && (
+              <p className="text-xs text-gray-500 mt-0.5 italic truncate max-w-xs">
+                {snippet}
+              </p>
+            )}
           </div>
         </Link>
       </td>

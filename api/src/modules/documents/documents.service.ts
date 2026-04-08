@@ -3,6 +3,7 @@ import { DocumentStatus } from '@prisma/client';
 import * as path from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
+import { SearchIndexerService } from '../search/search-indexer.service';
 import { assertWorkspaceMembership } from '../../common/helpers/workspace-access.helper';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import {
@@ -65,6 +66,7 @@ export class DocumentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: LocalStorageService,
+    private readonly indexer: SearchIndexerService,
   ) {}
 
   // ------------------------------------------------------------------ //
@@ -220,6 +222,9 @@ export class DocumentsService {
     // 2. Persist file after transaction commits
     await this.storage.save(storageKey, file.buffer);
 
+    // 3. Index for search (non-blocking — never fails the upload)
+    void this.indexer.indexDocument(docId, file);
+
     return this.findById(docId, user);
   }
 
@@ -267,6 +272,9 @@ export class DocumentsService {
     });
 
     await this.storage.save(storageKey, file.buffer);
+
+    // Re-index with updated file content
+    void this.indexer.indexDocument(id, file);
 
     return this.findById(id, user);
   }

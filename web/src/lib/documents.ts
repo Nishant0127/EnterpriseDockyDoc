@@ -7,6 +7,7 @@ import type {
   DocumentDetail,
   DocumentListItem,
   FolderListItem,
+  SearchResult,
   Tag,
 } from '@/types';
 
@@ -130,6 +131,24 @@ export function downloadDocumentVersion(
     `/api/v1/documents/${documentId}/versions/${versionNumber}/download`,
     fileName,
   );
+}
+
+// ------------------------------------------------------------------ //
+// Search
+// ------------------------------------------------------------------ //
+
+export interface SearchParams {
+  workspaceId: string;
+  q: string;
+  folderId?: string;
+  status?: string;
+}
+
+export function searchDocuments(params: SearchParams): Promise<SearchResult[]> {
+  const qs = new URLSearchParams({ workspaceId: params.workspaceId, q: params.q });
+  if (params.folderId) qs.set('folderId', params.folderId);
+  if (params.status) qs.set('status', params.status);
+  return apiFetch<SearchResult[]>(`/api/v1/search?${qs.toString()}`);
 }
 
 // ------------------------------------------------------------------ //

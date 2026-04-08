@@ -151,6 +151,28 @@ export interface Tag {
 }
 
 // ================================================================== //
+// Search
+// ================================================================== //
+
+export interface SearchResult {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description: string | null;
+  fileName: string;
+  fileType: string;
+  status: DocumentStatus;
+  currentVersionNumber: number;
+  folder: { id: string; name: string } | null;
+  owner: DocOwner;
+  tags: DocTagRef[];
+  versionCount: number;
+  snippet?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ================================================================== //
 // Pagination + API error
 // ================================================================== //
 

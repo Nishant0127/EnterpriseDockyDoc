@@ -140,12 +140,13 @@ model Document {
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 
-  workspace Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  folder    Folder?             @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  owner     User                @relation("DocumentOwner", fields: [ownerUserId], references: [id])
-  versions  DocumentVersion[]
-  tags      DocumentTagMapping[]
-  metadata  DocumentMetadata[]
+  workspace     Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  folder        Folder?                @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  owner         User                   @relation("DocumentOwner", fields: [ownerUserId], references: [id])
+  versions      DocumentVersion[]
+  tags          DocumentTagMapping[]
+  metadata      DocumentMetadata[]
+  searchContent DocumentSearchContent?
 
   @@index([workspaceId])
   @@index([workspaceId, folderId])
@@ -211,4 +212,21 @@ model DocumentMetadata {
   @@index([documentId])
   @@index([documentId, key])
   @@map("document_metadata")
+}
+
+// ================================================================== //
+// Search
+// ================================================================== //
+
+model DocumentSearchContent {
+  id            String   @id @default(cuid())
+  documentId    String   @unique
+  extractedText String   @db.Text
+  lastIndexedAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_search_content")
 }

@@ -4,6 +4,7 @@ import configuration from './config/configuration';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { SearchModule } from './modules/search/search.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
@@ -25,6 +26,7 @@ import { TagsModule } from './modules/tags/tags.module';
     PrismaModule,
     HealthModule,
     StorageModule,
+    SearchModule,
     AuthModule,
     UsersModule,
     WorkspacesModule,

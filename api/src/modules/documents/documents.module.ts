@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
+import { SearchModule } from '../search/search.module';
 import { DevAuthGuard } from '../../common/guards/dev-auth.guard';
 
 @Module({
+  imports: [SearchModule],
   controllers: [DocumentsController],
   providers: [DocumentsService, DevAuthGuard],
   exports: [DocumentsService],
