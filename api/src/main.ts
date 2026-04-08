@@ -8,8 +8,8 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  const port = process.env.PORT ?? 3001;
-  const corsOrigins = process.env.CORS_ORIGINS?.split(',') ?? ['http://localhost:3000'];
+  const port = process.env.PORT ?? 8081;
+  const corsOrigins = process.env.CORS_ORIGINS?.split(',') ?? ['http://localhost:8080'];
 
   // ------------------------------------------------------------------ //
   // Global prefix — all routes under /api/v1
@@ -68,9 +68,9 @@ async function bootstrap() {
   // Start
   // ------------------------------------------------------------------ //
   await app.listen(port);
-  console.log(`DockyDoc API running on http://localhost:${port}`);
-  console.log(`Swagger docs at  http://localhost:${port}/api/docs`);
-  console.log(`Health check at  http://localhost:${port}/api/v1/health`);
+  console.log(`DockyDoc API  → http://localhost:${port}`);
+  console.log(`Swagger docs  → http://localhost:${port}/api/docs`);
+  console.log(`Health check  → http://localhost:${port}/api/v1/health`);
 }
 
 bootstrap();

@@ -62,8 +62,8 @@ npm run start:dev
 ```
 
 **Verify the API:**
-- Health: http://localhost:3001/api/v1/health → `{ "status": "ok" }`
-- Swagger: http://localhost:3001/api/docs
+- Health: http://localhost:8081/api/v1/health → `{ "status": "ok" }`
+- Swagger: http://localhost:8081/api/docs
 
 ---
 
@@ -85,7 +85,7 @@ npm run dev
 ```
 
 **Verify the web:**
-- http://localhost:3000 → redirects to http://localhost:3000/login
+- http://localhost:8080 → redirects to http://localhost:8080/login
 
 ---
 
@@ -93,10 +93,10 @@ npm run dev
 
 | Check | URL | Expected |
 |-------|-----|---------|
-| Web app loads | http://localhost:3000/login | Login page |
-| Dashboard shell | http://localhost:3000/dashboard | Dashboard layout |
-| API health | http://localhost:3001/api/v1/health | `{"status":"ok"}` |
-| Swagger UI | http://localhost:3001/api/docs | API documentation |
+| Web app loads | http://localhost:8080/login | Login page |
+| Dashboard shell | http://localhost:8080/dashboard | Dashboard layout |
+| API health | http://localhost:8081/api/v1/health | `{"status":"ok"}` |
+| Swagger UI | http://localhost:8081/api/docs | API documentation |
 
 ---
 
@@ -157,9 +157,9 @@ cd api && npm install && npx prisma generate
 ```
 
 ### "CORS error" in browser
-Check that `CORS_ORIGINS` in `api/.env` includes `http://localhost:3000`.
+Check that `CORS_ORIGINS` in `api/.env` includes `http://localhost:8080`.
 
 ### Port conflicts
-- API uses port `3001` — change `PORT` in `api/.env`
-- Web uses port `3000` — change with `npm run dev -- -p 3002`
+- API uses port `8081` — change `PORT` in `api/.env`
+- Web uses port `8080` — change with `npm run dev -- -p 8082`
 - PostgreSQL uses port `5432` — change in `docker-compose.yml`

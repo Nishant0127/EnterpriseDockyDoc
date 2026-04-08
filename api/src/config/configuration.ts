@@ -7,7 +7,7 @@
 export default () => ({
   app: {
     nodeEnv: process.env.NODE_ENV ?? 'development',
-    port: parseInt(process.env.PORT ?? '3001', 10),
+    port: parseInt(process.env.PORT ?? '8081', 10),
   },
 
   database: {
@@ -24,6 +24,6 @@ export default () => ({
   },
 
   cors: {
-    origins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000').split(','),
+    origins: (process.env.CORS_ORIGINS ?? 'http://localhost:8080').split(','),
   },
 });

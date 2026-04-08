@@ -3,7 +3,7 @@
  * All requests go through this file — easy to swap base URL or add auth headers later.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081';
 
 interface RequestOptions extends RequestInit {
   token?: string;

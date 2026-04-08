@@ -32,7 +32,7 @@ npm install
 npx prisma generate
 npm run start:dev
 ```
-API runs at: http://localhost:3001
+API runs at: http://localhost:8081
 
 ### 3. Set up the Web
 ```bash
@@ -41,12 +41,12 @@ cp .env.local.example .env.local
 npm install
 npm run dev
 ```
-Web runs at: http://localhost:3000
+Web runs at: http://localhost:8080
 
 ## Verify it works
-- Web: http://localhost:3000 → redirects to `/login`
-- API health: http://localhost:3001/health
-- API docs: http://localhost:3001/api/docs (Swagger)
+- Web: http://localhost:8080 → redirects to `/login`
+- API health: http://localhost:8081/health
+- API docs: http://localhost:8081/api/docs (Swagger)
 
 ## Documentation
 - [Architecture Overview](docs/architecture.md)
