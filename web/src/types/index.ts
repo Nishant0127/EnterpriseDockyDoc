@@ -14,6 +14,58 @@ export type WorkspaceStatus = 'ACTIVE' | 'INACTIVE';
 export type DocumentStatus = 'ACTIVE' | 'ARCHIVED' | 'DELETED';
 export type ReminderChannel = 'IN_APP' | 'EMAIL';
 export type ReminderStatus = 'PENDING' | 'SENT' | 'CANCELLED';
+export type ShareType = 'INTERNAL' | 'EXTERNAL_LINK';
+export type SharePermission = 'VIEW' | 'DOWNLOAD';
+
+// ================================================================== //
+// Sharing
+// ================================================================== //
+
+export interface ShareUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+export interface InternalShare {
+  id: string;
+  shareId: string;
+  sharedWith: ShareUser;
+  permission: SharePermission;
+  createdAt: string;
+}
+
+export interface ExternalShare {
+  id: string;
+  token: string;
+  expiresAt: string | null;
+  allowDownload: boolean;
+  hasPassword: boolean;
+  isActive: boolean;
+  createdAt: string;
+  createdBy: ShareUser;
+}
+
+export interface DocumentShares {
+  internalShares: InternalShare[];
+  externalShares: ExternalShare[];
+}
+
+export interface PublicShareInfo {
+  id: string;
+  documentId: string;
+  documentName: string;
+  allowDownload: boolean;
+  expiresAt: string | null;
+  requiresPassword: boolean;
+  shareType: ShareType;
+}
+
+export interface VerifyShareResponse {
+  accessGrant: string;
+  expiresIn: number;
+}
 
 // ================================================================== //
 // Auth / Current user

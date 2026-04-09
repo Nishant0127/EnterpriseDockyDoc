@@ -1,0 +1,15 @@
+import { Module } from '@nestjs/common';
+import { SharesService } from './shares.service';
+import { DocumentSharesController, ShareManagementController } from './shares.controller';
+import { PublicSharesController } from './public-shares.controller';
+import { DevAuthGuard } from '../../common/guards/dev-auth.guard';
+
+@Module({
+  controllers: [
+    DocumentSharesController,
+    ShareManagementController,
+    PublicSharesController,
+  ],
+  providers: [SharesService, DevAuthGuard],
+})
+export class SharesModule {}

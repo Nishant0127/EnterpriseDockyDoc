@@ -12,6 +12,7 @@ import { FoldersModule } from './modules/folders/folders.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { TagsModule } from './modules/tags/tags.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
+import { SharesModule } from './modules/shares/shares.module';
 
 /**
  * Root application module.
@@ -35,6 +36,7 @@ import { RemindersModule } from './modules/reminders/reminders.module';
     DocumentsModule,
     TagsModule,
     RemindersModule,
+    SharesModule,
   ],
 })
 export class AppModule {}

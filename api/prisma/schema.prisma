@@ -59,6 +59,21 @@ enum ReminderStatus {
   CANCELLED
 }
 
+enum ShareType {
+  INTERNAL
+  EXTERNAL_LINK
+}
+
+enum SharePermission {
+  VIEW
+  DOWNLOAD
+}
+
+enum ShareAccessType {
+  VIEW
+  DOWNLOAD
+}
+
 // ================================================================== //
 // Core models
 // ================================================================== //
@@ -72,10 +87,13 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  workspaces       WorkspaceUser[]
-  createdFolders   Folder[]          @relation("FolderCreator")
-  ownedDocuments   Document[]        @relation("DocumentOwner")
-  uploadedVersions DocumentVersion[] @relation("VersionUploader")
+  workspaces             WorkspaceUser[]
+  createdFolders         Folder[]                @relation("FolderCreator")
+  ownedDocuments         Document[]              @relation("DocumentOwner")
+  uploadedVersions       DocumentVersion[]       @relation("VersionUploader")
+  createdShares          DocumentShare[]         @relation("ShareCreator")
+  receivedInternalShares InternalDocumentShare[] @relation("InternalShareRecipient")
+  shareAccessLogs        ShareAccessLog[]        @relation("ShareAccessor")
 
   @@map("users")
 }
@@ -161,6 +179,7 @@ model Document {
   tags          DocumentTagMapping[]
   metadata      DocumentMetadata[]
   reminders     DocumentReminder[]
+  shares        DocumentShare[]
   searchContent DocumentSearchContent?
 
   @@index([workspaceId])
@@ -244,6 +263,67 @@ model DocumentSearchContent {
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@map("document_search_content")
+}
+
+// ================================================================== //
+// Document Sharing
+// ================================================================== //
+
+model DocumentShare {
+  id            String     @id @default(cuid())
+  documentId    String
+  createdById   String
+  shareType     ShareType
+  token         String?    @unique
+  passwordHash  String?
+  expiresAt     DateTime?
+  allowDownload Boolean    @default(true)
+  isActive      Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  document       Document               @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdBy      User                   @relation("ShareCreator", fields: [createdById], references: [id])
+  internalShares InternalDocumentShare[]
+  accessLogs     ShareAccessLog[]
+
+  @@index([documentId])
+  @@index([token])
+  @@index([documentId, isActive])
+  @@map("document_shares")
+}
+
+model InternalDocumentShare {
+  id               String          @id @default(cuid())
+  documentShareId  String
+  sharedWithUserId String
+  permission       SharePermission @default(VIEW)
+  createdAt        DateTime        @default(now())
+
+  documentShare  DocumentShare @relation(fields: [documentShareId], references: [id], onDelete: Cascade)
+  sharedWithUser User          @relation("InternalShareRecipient", fields: [sharedWithUserId], references: [id])
+
+  @@unique([documentShareId, sharedWithUserId])
+  @@index([sharedWithUserId])
+  @@map("internal_document_shares")
+}
+
+model ShareAccessLog {
+  id               String          @id @default(cuid())
+  documentShareId  String
+  accessedAt       DateTime        @default(now())
+  ipAddress        String?
+  userAgent        String?
+  accessType       ShareAccessType
+  accessedByUserId String?
+  createdAt        DateTime        @default(now())
+
+  documentShare  DocumentShare @relation(fields: [documentShareId], references: [id], onDelete: Cascade)
+  accessedByUser User?         @relation("ShareAccessor", fields: [accessedByUserId], references: [id])
+
+  @@index([documentShareId])
+  @@index([accessedAt])
+  @@map("share_access_logs")
 }
 
 model DocumentReminder {

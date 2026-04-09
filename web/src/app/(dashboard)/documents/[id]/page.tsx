@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { fetchDocument, downloadDocument, downloadDocumentVersion, uploadDocumentVersion, setDocumentReminders } from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import type { DocumentDetail, DocumentStatus } from '@/types';
+import ShareSection from './ShareSection';
 
 // ------------------------------------------------------------------ //
 // Status config
@@ -334,6 +335,11 @@ export default function DocumentDetailPage() {
         {/* ---- Expiry & Reminders (full width) -------------------- */}
         <div className="lg:col-span-2">
           <ExpiryReminderSection doc={doc} onSaved={reload} />
+        </div>
+
+        {/* ---- Sharing (full width) -------------------------------- */}
+        <div className="lg:col-span-2">
+          <ShareSection documentId={doc.id} />
         </div>
       </div>
 
