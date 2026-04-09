@@ -57,7 +57,11 @@ export default function WorkspacesPage() {
       )}
 
       <div className="space-y-3">
-        {workspaces.map((ws) => {
+        {[...workspaces].sort((a, b) => {
+          const aActive = a.id === activeWorkspace?.workspaceId ? 0 : 1;
+          const bActive = b.id === activeWorkspace?.workspaceId ? 0 : 1;
+          return aActive - bActive;
+        }).map((ws) => {
           const badge = TYPE_BADGE[ws.type];
           const isActive = ws.id === activeWorkspace?.workspaceId;
           const membership = user?.workspaces.find((m) => m.workspaceId === ws.id);

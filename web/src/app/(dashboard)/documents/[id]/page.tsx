@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { fetchDocument, downloadDocument, downloadDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders, fetchTags, setDocumentTags } from '@/lib/documents';
+import { fetchDocument, downloadDocument, downloadDocumentVersion, deleteDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders, fetchTags, setDocumentTags } from '@/lib/documents';
 import { fetchDocumentActivity, describeAuditLog, auditActionCategory, formatAuditAction } from '@/lib/audit';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
@@ -74,6 +74,8 @@ export default function DocumentDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [shredding, setShredding] = useState(false);
   const [showShredConfirm, setShowShredConfirm] = useState(false);
+  const [deletingVersion, setDeletingVersion] = useState<number | null>(null);
+  const [pendingDeleteVersion, setPendingDeleteVersion] = useState<number | null>(null);
 
   function reload() {
     if (!params.id) return;
@@ -158,6 +160,21 @@ export default function DocumentDetailPage() {
     }
   }
 
+  async function handleDeleteVersion(versionNumber: number) {
+    if (!doc) return;
+    setPendingDeleteVersion(null);
+    setDeletingVersion(versionNumber);
+    try {
+      const updated = await deleteDocumentVersion(doc.id, versionNumber);
+      setDoc(updated);
+      toast.success(`Version ${versionNumber} deleted.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete version.');
+    } finally {
+      setDeletingVersion(null);
+    }
+  }
+
   if (loading) return <DetailSkeleton />;
 
   if (error || !doc) {
@@ -225,19 +242,6 @@ export default function DocumentDetailPage() {
             )}
             Download
           </button>
-          {/* Upload version button — editor+ only */}
-          {canEdit && (
-            <button
-              type="button"
-              onClick={() => setShowVersionUpload(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                <path d="M4 16.004V17a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M16 8l-4-4-4 4M12 4v12" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              Upload new version
-            </button>
-          )}
           {/* Edit button — editor+ only */}
           {canEdit && (
             <button
@@ -347,7 +351,23 @@ export default function DocumentDetailPage() {
         </Section>
 
         {/* ---- Versions ------------------------------------------- */}
-        <Section title={`Versions (${doc.versionCount})`}>
+        <Section
+          title={`Versions (${doc.versionCount})`}
+          action={
+            canEdit && doc.status !== 'DELETED' ? (
+              <button
+                type="button"
+                onClick={() => setShowVersionUpload(true)}
+                className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline"
+              >
+                <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path d="M4 16.004V17a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M16 8l-4-4-4 4M12 4v12" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Upload new version
+              </button>
+            ) : undefined
+          }
+        >
           {doc.versions.length === 0 ? (
             <p className="text-sm text-gray-400">No versions yet.</p>
           ) : (
@@ -382,8 +402,8 @@ export default function DocumentDetailPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                    <div className="text-right">
+                  <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                    <div className="text-right mr-1">
                       <p className="text-xs text-gray-500">{formatBytes(v.fileSizeBytes)}</p>
                       <p className="text-[10px] text-gray-400 truncate max-w-28">{v.mimeType}</p>
                     </div>
@@ -404,6 +424,30 @@ export default function DocumentDetailPage() {
                         ) : (
                           <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                             <path d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </button>
+                    )}
+                    {/* Per-version delete — editor+, only when > 1 version exists */}
+                    {canEdit && doc.versions.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setPendingDeleteVersion(v.versionNumber)}
+                        disabled={deletingVersion === v.versionNumber}
+                        title={`Delete v${v.versionNumber}`}
+                        className="p-1.5 rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                      >
+                        {deletingVersion === v.versionNumber ? (
+                          <svg className="animate-spin" width="12" height="12" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                        ) : (
+                          <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
                           </svg>
                         )}
                       </button>
@@ -508,6 +552,23 @@ export default function DocumentDetailPage() {
           loading={shredding}
           onConfirm={handleShred}
           onClose={() => { if (!shredding) setShowShredConfirm(false); }}
+        />
+      )}
+
+      {/* Version delete confirmation modal */}
+      {pendingDeleteVersion !== null && (
+        <ConfirmModal
+          title={`Delete version ${pendingDeleteVersion}`}
+          body={
+            pendingDeleteVersion === doc.currentVersionNumber
+              ? `v${pendingDeleteVersion} is the current version. Deleting it will roll back to v${doc.currentVersionNumber - 1}. The file will be permanently removed.`
+              : `v${pendingDeleteVersion} will be permanently removed. This cannot be undone.`
+          }
+          confirmLabel="Delete Version"
+          danger
+          loading={deletingVersion === pendingDeleteVersion}
+          onConfirm={() => handleDeleteVersion(pendingDeleteVersion)}
+          onClose={() => { if (deletingVersion === null) setPendingDeleteVersion(null); }}
         />
       )}
     </div>
@@ -1218,14 +1279,19 @@ function DocumentActivitySection({ documentId }: { documentId: string }) {
 
 function Section({
   title,
+  action,
   children,
 }: {
   title: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <h2 className="text-sm font-semibold text-gray-900 mb-4">{title}</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+        {action && <div>{action}</div>}
+      </div>
       {children}
     </div>
   );

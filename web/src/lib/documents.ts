@@ -161,6 +161,20 @@ export function downloadDocument(documentId: string, fileName: string): Promise<
 }
 
 /**
+ * Delete a specific version of a document.
+ * Cannot delete the only version — delete the document instead.
+ */
+export function deleteDocumentVersion(
+  documentId: string,
+  versionNumber: number,
+): Promise<import('@/types').DocumentDetail> {
+  return apiFetch<import('@/types').DocumentDetail>(
+    `/api/v1/documents/${documentId}/versions/${versionNumber}`,
+    { method: 'DELETE' },
+  );
+}
+
+/**
  * Download a specific version of a document.
  * Triggers a browser file download.
  */

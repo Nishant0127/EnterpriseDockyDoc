@@ -288,6 +288,26 @@ export class DocumentsController {
   }
 
   // ------------------------------------------------------------------ //
+  // Delete a specific version
+  // ------------------------------------------------------------------ //
+
+  @Delete(':id/versions/:versionNumber')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete a specific version of a document (cannot delete the only version)' })
+  @ApiParam({ name: 'id' })
+  @ApiParam({ name: 'versionNumber', type: Number })
+  @ApiResponse({ status: 200, type: DocumentDetailDto })
+  @ApiResponse({ status: 400, description: 'Cannot delete the only version' })
+  @ApiResponse({ status: 404, description: 'Document or version not found' })
+  deleteVersion(
+    @Param('id') id: string,
+    @Param('versionNumber', ParseIntPipe) versionNumber: number,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<DocumentDetailDto> {
+    return this.documentsService.deleteVersion(id, versionNumber, user);
+  }
+
+  // ------------------------------------------------------------------ //
   // Tags — assign/unassign
   // ------------------------------------------------------------------ //
 

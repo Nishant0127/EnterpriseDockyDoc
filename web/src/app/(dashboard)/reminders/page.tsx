@@ -9,6 +9,25 @@ import type { ExpiringDocument, UpcomingReminder } from '@/types';
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
+// ------------------------------------------------------------------ //
+// Time filter options for "Expiring Soon" tab
+// ------------------------------------------------------------------ //
+
+const TIME_FILTERS = [
+  { label: '7 days',   days: 7 },
+  { label: '14 days',  days: 14 },
+  { label: '31 days',  days: 31 },
+  { label: '3 months', days: 90 },
+  { label: '6 months', days: 180 },
+  { label: '1 year',   days: 365 },
+] as const;
+
+type TabId = 'reminders' | 'expiring' | 'expired';
+
+// ------------------------------------------------------------------ //
+// Helpers
+// ------------------------------------------------------------------ //
+
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-US', {
@@ -36,12 +55,19 @@ function daysLabel(days: number): { text: string; class: string } {
   return { text: `${days}d left`, class: 'text-gray-500' };
 }
 
+// ------------------------------------------------------------------ //
+// Page
+// ------------------------------------------------------------------ //
+
 export default function RemindersPage() {
   const { activeWorkspace, isLoading: userLoading } = useUser();
   const [expiring, setExpiring] = useState<ExpiringDocument[]>([]);
   const [reminders, setReminders] = useState<UpcomingReminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [activeTab, setActiveTab] = useState<TabId>('reminders');
+  const [expiringDays, setExpiringDays] = useState(31);
 
   useEffect(() => {
     if (!activeWorkspace) return;
@@ -72,9 +98,16 @@ export default function RemindersPage() {
     );
   }
 
-  const now = new Date();
   const expired = expiring.filter((d) => d.daysUntilExpiry < 0);
-  const expiringSoon = expiring.filter((d) => d.daysUntilExpiry >= 0);
+  const expiringSoon = expiring.filter(
+    (d) => d.daysUntilExpiry >= 0 && d.daysUntilExpiry <= expiringDays,
+  );
+
+  const TABS: { id: TabId; label: string; count: number }[] = [
+    { id: 'reminders', label: 'Upcoming Reminders', count: reminders.length },
+    { id: 'expiring',  label: 'Expiring Soon',      count: expiringSoon.length },
+    { id: 'expired',   label: 'Expired',            count: expired.length },
+  ];
 
   return (
     <div className="max-w-4xl">
@@ -85,43 +118,117 @@ export default function RemindersPage() {
         </p>
       </div>
 
-      <div className="space-y-6">
-        {/* ---- Expired -------------------------------------------- */}
-        <Section
-          title="Expired"
-          count={expired.length}
-          emptyText="No expired documents."
-          accent="red"
-        >
-          {expired.map((doc) => (
-            <ExpiringDocRow key={doc.id} doc={doc} />
+      {/* ---- Tab bar + optional time filter ---- */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                activeTab === tab.id
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700',
+              )}
+            >
+              {tab.label}
+              <span
+                className={cn(
+                  'text-xs font-semibold px-1.5 py-0.5 rounded-full',
+                  activeTab === tab.id ? 'bg-gray-100 text-gray-600' : 'bg-gray-200 text-gray-400',
+                )}
+              >
+                {tab.count}
+              </span>
+            </button>
           ))}
-        </Section>
+        </div>
 
-        {/* ---- Expiring Soon -------------------------------------- */}
-        <Section
-          title="Expiring soon"
-          subtitle="within 90 days"
-          count={expiringSoon.length}
-          emptyText="No documents expiring in the next 90 days."
-          accent="orange"
-        >
-          {expiringSoon.map((doc) => (
-            <ExpiringDocRow key={doc.id} doc={doc} />
-          ))}
-        </Section>
+        {/* Time filter — only shown for "Expiring Soon" tab */}
+        {activeTab === 'expiring' && (
+          <select
+            value={expiringDays}
+            onChange={(e) => setExpiringDays(Number(e.target.value))}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            {TIME_FILTERS.map((f) => (
+              <option key={f.days} value={f.days}>
+                Next {f.label}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
 
-        {/* ---- Upcoming Reminders --------------------------------- */}
-        <Section
-          title="Upcoming reminders"
-          count={reminders.length}
-          emptyText="No pending reminders."
-          accent="blue"
-        >
-          {reminders.map((r) => (
-            <ReminderRow key={r.id} reminder={r} />
-          ))}
-        </Section>
+      {/* ---- Tab content ---- */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {activeTab === 'reminders' && (
+          <>
+            <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100">
+              <span className="w-2 h-2 rounded-full bg-brand-500 flex-shrink-0" />
+              <h2 className="text-sm font-semibold text-gray-900">Upcoming Reminders</h2>
+              <span className="ml-auto text-xs font-medium text-gray-400">{reminders.length}</span>
+            </div>
+            {reminders.length === 0 ? (
+              <div className="px-5 py-10 text-center">
+                <p className="text-3xl mb-2">🔔</p>
+                <p className="text-sm text-gray-400">No pending reminders.</p>
+                <p className="text-xs text-gray-300 mt-1">Set reminders on documents with expiry dates.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {reminders.map((r) => <ReminderRow key={r.id} reminder={r} />)}
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === 'expiring' && (
+          <>
+            <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100">
+              <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
+              <h2 className="text-sm font-semibold text-gray-900">Expiring Soon</h2>
+              <span className="text-xs text-gray-400">
+                (within {TIME_FILTERS.find((f) => f.days === expiringDays)?.label ?? `${expiringDays} days`})
+              </span>
+              <span className="ml-auto text-xs font-medium text-gray-400">{expiringSoon.length}</span>
+            </div>
+            {expiringSoon.length === 0 ? (
+              <div className="px-5 py-10 text-center">
+                <p className="text-3xl mb-2">📅</p>
+                <p className="text-sm text-gray-400">
+                  No documents expiring in the next {TIME_FILTERS.find((f) => f.days === expiringDays)?.label ?? `${expiringDays} days`}.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {expiringSoon.map((doc) => <ExpiringDocRow key={doc.id} doc={doc} />)}
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === 'expired' && (
+          <>
+            <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100">
+              <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+              <h2 className="text-sm font-semibold text-gray-900">Expired</h2>
+              <span className="ml-auto text-xs font-medium text-gray-400">{expired.length}</span>
+            </div>
+            {expired.length === 0 ? (
+              <div className="px-5 py-10 text-center">
+                <p className="text-3xl mb-2">✅</p>
+                <p className="text-sm text-gray-400">No expired documents.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {expired.map((doc) => <ExpiringDocRow key={doc.id} doc={doc} />)}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
@@ -217,48 +324,6 @@ function ReminderRow({ reminder }: { reminder: UpcomingReminder }) {
 }
 
 // ------------------------------------------------------------------ //
-// Section wrapper
-// ------------------------------------------------------------------ //
-
-const ACCENT_COLORS = {
-  red: 'bg-red-500',
-  orange: 'bg-orange-400',
-  blue: 'bg-brand-500',
-};
-
-function Section({
-  title,
-  subtitle,
-  count,
-  emptyText,
-  accent,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  count: number;
-  emptyText: string;
-  accent: keyof typeof ACCENT_COLORS;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100">
-        <span className={cn('w-2 h-2 rounded-full flex-shrink-0', ACCENT_COLORS[accent])} />
-        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-        {subtitle && <span className="text-xs text-gray-400">({subtitle})</span>}
-        <span className="ml-auto text-xs font-medium text-gray-400">{count}</span>
-      </div>
-      {count === 0 ? (
-        <div className="px-5 py-4 text-sm text-gray-400">{emptyText}</div>
-      ) : (
-        <div className="divide-y divide-gray-100">{children}</div>
-      )}
-    </div>
-  );
-}
-
-// ------------------------------------------------------------------ //
 // Loading skeleton
 // ------------------------------------------------------------------ //
 
@@ -267,11 +332,8 @@ function PageSkeleton() {
     <div className="max-w-4xl animate-pulse">
       <div className="h-7 w-32 bg-gray-200 rounded mb-2" />
       <div className="h-4 w-56 bg-gray-100 rounded mb-6" />
-      <div className="space-y-5">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="bg-white rounded-xl border border-gray-200 h-40" />
-        ))}
-      </div>
+      <div className="h-10 w-80 bg-gray-100 rounded-lg mb-4" />
+      <div className="bg-white rounded-xl border border-gray-200 h-80" />
     </div>
   );
 }

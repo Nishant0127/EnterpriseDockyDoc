@@ -503,6 +503,8 @@ export default function DocumentsPage() {
       {showNewFolder && activeWorkspace && (
         <FolderModal
           workspaceId={activeWorkspace.workspaceId}
+          folders={folders}
+          defaultParentId={selectedFolderId ?? undefined}
           onClose={() => setShowNewFolder(false)}
           onSaved={() => {
             setShowNewFolder(false);
@@ -549,17 +551,25 @@ export default function DocumentsPage() {
 function FolderModal({
   workspaceId,
   folder,
+  folders = [],
+  defaultParentId,
   onClose,
   onSaved,
 }: {
   workspaceId: string;
   folder?: FolderListItem;
+  folders?: FolderListItem[];
+  defaultParentId?: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [name, setName] = useState(folder?.name ?? '');
+  const [parentFolderId, setParentFolderId] = useState(defaultParentId ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // When renaming, don't show parent picker (parent doesn't change on rename)
+  const isRename = !!folder;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -567,10 +577,14 @@ function FolderModal({
     setSaving(true);
     setError(null);
     try {
-      if (folder) {
-        await renameFolder(folder.id, name.trim());
+      if (isRename) {
+        await renameFolder(folder!.id, name.trim());
       } else {
-        await createFolder({ workspaceId, name: name.trim() });
+        await createFolder({
+          workspaceId,
+          name: name.trim(),
+          parentFolderId: parentFolderId || undefined,
+        });
       }
       onSaved();
     } catch (err) {
@@ -580,12 +594,15 @@ function FolderModal({
     }
   }
 
+  // Exclude self (and descendants) from parent options — for rename this is moot since we hide it
+  const parentOptions = folders.filter((f) => !isRename || f.id !== folder?.id);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-gray-900">
-            {folder ? 'Rename Folder' : 'New Folder'}
+            {isRename ? 'Rename Folder' : 'New Folder'}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
@@ -604,6 +621,26 @@ function FolderModal({
             />
           </div>
 
+          {!isRename && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Parent folder <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <select
+                value={parentFolderId}
+                onChange={(e) => setParentFolderId(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+              >
+                <option value="">— Root level —</option>
+                {parentOptions.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.parentFolderId ? '  └ ' : ''}{f.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {error && (
             <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
           )}
@@ -613,7 +650,7 @@ function FolderModal({
               Cancel
             </button>
             <button type="submit" disabled={saving} className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
-              {saving ? 'Saving…' : folder ? 'Rename' : 'Create'}
+              {saving ? 'Saving…' : isRename ? 'Rename' : 'Create'}
             </button>
           </div>
         </form>

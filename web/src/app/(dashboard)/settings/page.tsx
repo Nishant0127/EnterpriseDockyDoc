@@ -168,9 +168,20 @@ export default function SettingsPage() {
         </SettingsCard>
 
         <SettingsCard title="Retention &amp; Storage">
-          <p className="text-sm text-gray-400 py-1">
-            Document retention policies and storage settings — coming soon.
-          </p>
+          <div className="flex items-center justify-between py-2.5 border-b border-gray-50">
+            <div>
+              <p className="text-sm text-gray-800 font-medium">Auto-empty Trash</p>
+              <p className="text-xs text-gray-400 mt-0.5">Automatically shred deleted documents after a set period</p>
+            </div>
+            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">Coming soon</span>
+          </div>
+          <div className="flex items-center justify-between py-2.5">
+            <div>
+              <p className="text-sm text-gray-800 font-medium">Document retention policy</p>
+              <p className="text-xs text-gray-400 mt-0.5">Set default expiry rules for document types</p>
+            </div>
+            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">Coming soon</span>
+          </div>
         </SettingsCard>
 
         <SettingsCard title="Integrations">

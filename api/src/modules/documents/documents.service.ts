@@ -508,6 +508,73 @@ export class DocumentsService {
   }
 
   // ------------------------------------------------------------------ //
+  // Delete a specific version
+  // ------------------------------------------------------------------ //
+
+  async deleteVersion(
+    id: string,
+    versionNumber: number,
+    user: DevUserPayload,
+  ): Promise<DocumentDetailDto> {
+    const doc = await this.prisma.document.findUnique({
+      where: { id },
+      include: { versions: { orderBy: { versionNumber: 'asc' } } },
+    });
+    if (!doc) throw new NotFoundException(`Document "${id}" not found`);
+    assertEditorOrAbove(user, doc.workspaceId);
+
+    if (doc.versions.length <= 1) {
+      throw new BadRequestException(
+        'Cannot delete the only version of a document. Delete the document instead.',
+      );
+    }
+
+    const version = doc.versions.find((v) => v.versionNumber === versionNumber);
+    if (!version) {
+      throw new NotFoundException(`Version ${versionNumber} not found for document "${id}"`);
+    }
+
+    // If deleting the current version, roll back to the highest remaining version
+    let newCurrentVersion = doc.currentVersionNumber;
+    if (versionNumber === doc.currentVersionNumber) {
+      const remaining = doc.versions
+        .filter((v) => v.versionNumber !== versionNumber)
+        .map((v) => v.versionNumber);
+      newCurrentVersion = Math.max(...remaining);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.documentVersion.delete({
+        where: { documentId_versionNumber: { documentId: id, versionNumber } },
+      });
+      if (newCurrentVersion !== doc.currentVersionNumber) {
+        await tx.document.update({
+          where: { id },
+          data: { currentVersionNumber: newCurrentVersion },
+        });
+      }
+    });
+
+    // Remove physical file (non-fatal)
+    try {
+      await this.storage.delete(version.storageKey);
+    } catch {
+      // File may not exist or already deleted
+    }
+
+    this.audit.log({
+      workspaceId: doc.workspaceId,
+      userId: user.id,
+      action: AuditAction.DOCUMENT_VERSION_ADDED, // reuse closest existing action
+      entityType: AuditEntityType.DOCUMENT,
+      entityId: id,
+      metadata: { documentName: doc.name, deletedVersion: versionNumber, newCurrentVersion },
+    });
+
+    return this.findById(id, user);
+  }
+
+  // ------------------------------------------------------------------ //
   // Tags — set/replace
   // ------------------------------------------------------------------ //
 
