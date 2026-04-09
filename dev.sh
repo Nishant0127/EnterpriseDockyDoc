@@ -19,8 +19,9 @@ done
 echo "==> Installing API dependencies..."
 cd "$ROOT/api" && npm install --silent
 
-echo "==> Running migrations..."
-./node_modules/.bin/prisma migrate deploy
+echo "==> Syncing database schema..."
+./node_modules/.bin/prisma db push --accept-data-loss 2>/dev/null || \
+  ./node_modules/.bin/prisma migrate deploy 2>/dev/null || true
 
 echo "==> Seeding database (skips if already seeded)..."
 ./node_modules/.bin/prisma db seed 2>/dev/null || true
