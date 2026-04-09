@@ -2,6 +2,7 @@ import { UserProvider } from '@/context/UserContext';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 import WorkspaceAwareMain from '@/components/layout/WorkspaceAwareMain';
+import { ToastProvider } from '@/components/ui/Toast';
 
 /**
  * Dashboard shell layout.
@@ -21,16 +22,18 @@ export default function DashboardLayout({
 }) {
   return (
     <UserProvider>
-      <div className="flex h-screen bg-gray-50 overflow-hidden">
-        {/* Fixed left sidebar */}
-        <Sidebar />
+      <ToastProvider>
+        <div className="flex h-screen bg-gray-50 overflow-hidden">
+          {/* Fixed left sidebar */}
+          <Sidebar />
 
-        {/* Main content area */}
-        <div className="flex flex-col flex-1 overflow-hidden">
-          <Header />
-          <WorkspaceAwareMain>{children}</WorkspaceAwareMain>
+          {/* Main content area */}
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <Header />
+            <WorkspaceAwareMain>{children}</WorkspaceAwareMain>
+          </div>
         </div>
-      </div>
+      </ToastProvider>
     </UserProvider>
   );
 }

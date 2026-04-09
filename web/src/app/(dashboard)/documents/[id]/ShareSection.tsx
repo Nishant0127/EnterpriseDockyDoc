@@ -11,6 +11,8 @@ import {
 } from '@/lib/shares';
 import { fetchWorkspaceDetail } from '@/lib/documents';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/Toast';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 import type {
   DocumentShares,
   ExternalShare,
@@ -128,12 +130,19 @@ function ActiveSharesTab({
   loading: boolean;
   onRevoke: (shareId: string) => void;
 }) {
+  const toast = useToast();
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [pendingRevoke, setPendingRevoke] = useState<string | null>(null);
 
   async function handleRevoke(shareId: string) {
     setRevoking(shareId);
+    setPendingRevoke(null);
     try {
+      await revokeShare(shareId);
+      toast.success('Share revoked.');
       onRevoke(shareId);
+    } catch {
+      toast.error('Failed to revoke share.');
     } finally {
       setRevoking(null);
     }
@@ -190,7 +199,7 @@ function ActiveSharesTab({
                   <RevokeButton
                     shareId={s.shareId}
                     revoking={revoking}
-                    onRevoke={handleRevoke}
+                    onRevoke={setPendingRevoke}
                   />
                 </div>
               </div>
@@ -211,11 +220,23 @@ function ActiveSharesTab({
                 key={s.id}
                 share={s}
                 revoking={revoking}
-                onRevoke={handleRevoke}
+                onRevoke={setPendingRevoke}
               />
             ))}
           </div>
         </div>
+      )}
+
+      {pendingRevoke && (
+        <ConfirmModal
+          title="Revoke share"
+          body="This share will be immediately deactivated. Recipients will lose access."
+          confirmLabel="Revoke"
+          danger
+          loading={revoking === pendingRevoke}
+          onConfirm={() => handleRevoke(pendingRevoke)}
+          onClose={() => setPendingRevoke(null)}
+        />
       )}
     </div>
   );
@@ -286,11 +307,11 @@ function InternalShareTab({
   members: WorkspaceMember[];
   onShared: () => void;
 }) {
+  const toast = useToast();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [permission, setPermission] = useState<SharePermission>('VIEW');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const { user } = useUser();
 
   // Exclude self from list
@@ -307,10 +328,10 @@ function InternalShareTab({
     setError(null);
     setSubmitting(true);
     try {
+      const count = selectedIds.length;
       await createInternalShare(documentId, selectedIds, permission);
       setSelectedIds([]);
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 2500);
+      toast.success(`Shared with ${count} ${count === 1 ? 'person' : 'people'}.`);
       onShared();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to share.');
@@ -393,7 +414,6 @@ function InternalShareTab({
       >
         {submitting ? 'Sharing…' : `Share with ${selectedIds.length || ''} ${selectedIds.length === 1 ? 'person' : 'people'}`}
       </button>
-      {success && <p className="text-xs text-green-600 text-center">Shared successfully!</p>}
     </div>
   );
 }

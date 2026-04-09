@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import { fetchWorkspaceDetail, fetchTags, createTag, updateTag, deleteTag } from '@/lib/documents';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/Toast';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 import type { Tag, WorkspaceDetail } from '@/types';
 
 export default function SettingsPage() {
@@ -178,12 +180,15 @@ function TagsCard({
   tags: Tag[];
   onChanged: () => void;
 }) {
+  const toast = useToast();
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Tag | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -196,6 +201,7 @@ function TagsCard({
       setNewColor(PRESET_COLORS[0]);
       setShowNew(false);
       onChanged();
+      toast.success(`Tag "${newName.trim()}" created.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create tag.');
     } finally {
@@ -203,13 +209,18 @@ function TagsCard({
     }
   }
 
-  async function handleDelete(tag: Tag) {
-    if (!confirm(`Delete tag "${tag.name}"?`)) return;
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
     try {
-      await deleteTag(tag.id);
+      await deleteTag(pendingDelete.id);
+      toast.success(`Tag "${pendingDelete.name}" deleted.`);
+      setPendingDelete(null);
       onChanged();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete tag.');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete tag.');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -221,6 +232,7 @@ function TagsCard({
       await updateTag(editingTag.id, { name, color });
       setEditingTag(null);
       onChanged();
+      toast.success('Tag updated.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update tag.');
     } finally {
@@ -281,7 +293,7 @@ function TagsCard({
                   Edit
                 </button>
                 <button
-                  onClick={() => handleDelete(tag)}
+                  onClick={() => setPendingDelete(tag)}
                   className="text-xs text-gray-400 hover:text-red-600 transition-colors px-2 py-1"
                 >
                   Delete
@@ -324,6 +336,18 @@ function TagsCard({
           </form>
         )}
       </div>
+
+      {pendingDelete && (
+        <ConfirmModal
+          title="Delete tag"
+          body={`"${pendingDelete.name}" will be removed from all documents.`}
+          confirmLabel="Delete Tag"
+          danger
+          loading={deleting}
+          onConfirm={confirmDelete}
+          onClose={() => { if (!deleting) setPendingDelete(null); }}
+        />
+      )}
     </div>
   );
 }

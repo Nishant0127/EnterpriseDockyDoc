@@ -5,7 +5,17 @@ import Link from 'next/link';
 import { useUser } from '@/context/UserContext';
 import { fetchFolders, fetchDocuments, uploadDocument, searchDocuments, createFolder, renameFolder, deleteFolder, deleteDocument } from '@/lib/documents';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/Toast';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 import type { DocumentListItem, DocumentStatus, FolderListItem, SearchResult } from '@/types';
+
+interface PendingConfirm {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  danger?: boolean;
+  onConfirm: () => Promise<void>;
+}
 
 // ------------------------------------------------------------------ //
 // Status helpers
@@ -61,6 +71,7 @@ function buildTree(folders: FolderListItem[]) {
 
 export default function DocumentsPage() {
   const { activeWorkspace, isLoading: userLoading } = useUser();
+  const toast = useToast();
 
   const [folders, setFolders] = useState<FolderListItem[]>([]);
   const [documents, setDocuments] = useState<DocumentListItem[]>([]);
@@ -71,6 +82,8 @@ export default function DocumentsPage() {
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [renamingFolder, setRenamingFolder] = useState<FolderListItem | null>(null);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -161,27 +174,50 @@ export default function DocumentsPage() {
     fetchFolders(activeWorkspace.workspaceId).then(setFolders).catch(() => {});
   }
 
-  async function handleDeleteFolder(folder: FolderListItem) {
-    if (!confirm(`Delete folder "${folder.name}"? It must be empty.`)) return;
-    try {
-      await deleteFolder(folder.id);
-      if (selectedFolderId === folder.id) setSelectedFolderId(null);
-      refreshFolders();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete folder.');
-    }
+  function handleDeleteFolder(folder: FolderListItem) {
+    setPendingConfirm({
+      title: 'Delete folder',
+      body: `"${folder.name}" must be empty to delete. Documents inside must be moved or deleted first.`,
+      confirmLabel: 'Delete Folder',
+      danger: true,
+      onConfirm: async () => {
+        await deleteFolder(folder.id);
+        if (selectedFolderId === folder.id) setSelectedFolderId(null);
+        refreshFolders();
+        toast.success(`Folder "${folder.name}" deleted.`);
+      },
+    });
   }
 
-  async function handleDeleteDoc(doc: DocumentListItem) {
-    if (!confirm(`Delete "${doc.name}"? It will be soft-deleted.`)) return;
-    setDeletingDocId(doc.id);
+  function handleDeleteDoc(doc: DocumentListItem) {
+    setPendingConfirm({
+      title: 'Delete document',
+      body: `"${doc.name}" will be soft-deleted. You can restore it from the document detail page.`,
+      confirmLabel: 'Delete Document',
+      danger: true,
+      onConfirm: async () => {
+        setDeletingDocId(doc.id);
+        try {
+          await deleteDocument(doc.id);
+          refreshDocuments();
+          toast.success(`"${doc.name}" deleted.`);
+        } finally {
+          setDeletingDocId(null);
+        }
+      },
+    });
+  }
+
+  async function executeConfirm() {
+    if (!pendingConfirm) return;
+    setConfirmLoading(true);
     try {
-      await deleteDocument(doc.id);
-      refreshDocuments();
+      await pendingConfirm.onConfirm();
+      setPendingConfirm(null);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete document.');
+      toast.error(err instanceof Error ? err.message : 'Operation failed.');
     } finally {
-      setDeletingDocId(null);
+      setConfirmLoading(false);
     }
   }
 
@@ -417,6 +453,7 @@ export default function DocumentsPage() {
           onSuccess={() => {
             setShowUpload(false);
             refreshDocuments();
+            toast.success('Document uploaded successfully.');
           }}
         />
       )}
@@ -429,6 +466,7 @@ export default function DocumentsPage() {
           onSaved={() => {
             setShowNewFolder(false);
             refreshFolders();
+            toast.success('Folder created.');
           }}
         />
       )}
@@ -442,7 +480,21 @@ export default function DocumentsPage() {
           onSaved={() => {
             setRenamingFolder(null);
             refreshFolders();
+            toast.success('Folder renamed.');
           }}
+        />
+      )}
+
+      {/* Confirm modal for destructive actions */}
+      {pendingConfirm && (
+        <ConfirmModal
+          title={pendingConfirm.title}
+          body={pendingConfirm.body}
+          confirmLabel={pendingConfirm.confirmLabel}
+          danger={pendingConfirm.danger}
+          loading={confirmLoading}
+          onConfirm={executeConfirm}
+          onClose={() => { if (!confirmLoading) setPendingConfirm(null); }}
         />
       )}
     </div>

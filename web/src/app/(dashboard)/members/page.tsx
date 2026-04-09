@@ -9,6 +9,8 @@ import {
   updateWorkspaceMember,
 } from '@/lib/documents';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/Toast';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 import type { WorkspaceDetail, WorkspaceMember, WorkspaceUserRole } from '@/types';
 
 const ROLE_ORDER: WorkspaceUserRole[] = ['OWNER', 'ADMIN', 'EDITOR', 'VIEWER'];
@@ -26,13 +28,14 @@ function initials(firstName: string, lastName: string) {
 
 export default function MembersPage() {
   const { activeWorkspace, user, isLoading: userLoading } = useUser();
+  const toast = useToast();
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingMember, setEditingMember] = useState<WorkspaceMember | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<WorkspaceMember | null>(null);
 
   const canManage =
     activeWorkspace?.role === 'OWNER' || activeWorkspace?.role === 'ADMIN';
@@ -51,16 +54,16 @@ export default function MembersPage() {
     load(activeWorkspace.workspaceId);
   }, [activeWorkspace?.workspaceId]);
 
-  async function handleRemove(member: WorkspaceMember) {
-    if (!activeWorkspace) return;
-    if (!confirm(`Remove ${member.firstName} ${member.lastName} from this workspace?`)) return;
-    setRemovingId(member.id);
-    setActionError(null);
+  async function confirmRemove() {
+    if (!activeWorkspace || !pendingRemove) return;
+    setRemovingId(pendingRemove.id);
+    setPendingRemove(null);
     try {
-      await removeWorkspaceMember(activeWorkspace.workspaceId, member.id);
+      await removeWorkspaceMember(activeWorkspace.workspaceId, pendingRemove.id);
+      toast.success(`${pendingRemove.firstName} ${pendingRemove.lastName} removed.`);
       load(activeWorkspace.workspaceId);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to remove member.');
+      toast.error(err instanceof Error ? err.message : 'Failed to remove member.');
     } finally {
       setRemovingId(null);
     }
@@ -103,15 +106,6 @@ export default function MembersPage() {
           </button>
         )}
       </div>
-
-      {actionError && (
-        <div className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-          {actionError}
-          <button onClick={() => setActionError(null)} className="ml-2 text-red-500 hover:text-red-700">
-            &times;
-          </button>
-        </div>
-      )}
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="divide-y divide-gray-100">
@@ -165,7 +159,7 @@ export default function MembersPage() {
                     </button>
                     {!isOwner && (
                       <button
-                        onClick={() => handleRemove(member)}
+                        onClick={() => setPendingRemove(member)}
                         disabled={removingId === member.id}
                         title="Remove member"
                         className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
@@ -195,6 +189,7 @@ export default function MembersPage() {
           onAdded={() => {
             setShowAddModal(false);
             load(activeWorkspace.workspaceId);
+            toast.success('Member added to workspace.');
           }}
         />
       )}
@@ -207,7 +202,20 @@ export default function MembersPage() {
           onSaved={() => {
             setEditingMember(null);
             load(activeWorkspace.workspaceId);
+            toast.success('Role updated.');
           }}
+        />
+      )}
+
+      {pendingRemove && (
+        <ConfirmModal
+          title="Remove member"
+          body={`${pendingRemove.firstName} ${pendingRemove.lastName} will lose access to this workspace immediately.`}
+          confirmLabel="Remove Member"
+          danger
+          loading={removingId === pendingRemove.id}
+          onConfirm={confirmRemove}
+          onClose={() => setPendingRemove(null)}
         />
       )}
     </div>

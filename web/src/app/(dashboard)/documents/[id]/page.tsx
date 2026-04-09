@@ -6,6 +6,8 @@ import { useParams } from 'next/navigation';
 import { fetchDocument, downloadDocument, downloadDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, fetchFolders } from '@/lib/documents';
 import { fetchDocumentActivity, describeAuditLog, auditActionCategory, formatAuditAction } from '@/lib/audit';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/Toast';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 import type { AuditLog, DocumentDetail, DocumentStatus, FolderListItem } from '@/types';
 import ShareSection from './ShareSection';
 
@@ -55,6 +57,7 @@ function initials(firstName: string, lastName: string) {
 
 export default function DocumentDetailPage() {
   const params = useParams<{ id: string }>();
+  const toast = useToast();
   const [doc, setDoc] = useState<DocumentDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +66,7 @@ export default function DocumentDetailPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [deletingDoc, setDeletingDoc] = useState(false);
   const [restoringDoc, setRestoringDoc] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   function reload() {
     if (!params.id) return;
@@ -82,13 +86,14 @@ export default function DocumentDetailPage() {
 
   async function handleDelete() {
     if (!doc) return;
-    if (!confirm(`Delete "${doc.name}"? It will be soft-deleted and can be restored.`)) return;
+    setShowDeleteConfirm(false);
     setDeletingDoc(true);
     try {
       await deleteDocument(doc.id);
+      toast.success(`"${doc.name}" has been deleted.`);
       reload();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Delete failed');
+      toast.error(err instanceof Error ? err.message : 'Delete failed.');
     } finally {
       setDeletingDoc(false);
     }
@@ -99,9 +104,10 @@ export default function DocumentDetailPage() {
     setRestoringDoc(true);
     try {
       await updateDocument(doc.id, { status: 'ACTIVE' });
+      toast.success(`"${doc.name}" has been restored.`);
       reload();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Restore failed');
+      toast.error(err instanceof Error ? err.message : 'Restore failed.');
     } finally {
       setRestoringDoc(false);
     }
@@ -113,7 +119,7 @@ export default function DocumentDetailPage() {
     try {
       await downloadDocument(doc.id, doc.fileName);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Download failed');
+      toast.error(err instanceof Error ? err.message : 'Download failed.');
     } finally {
       setDownloading(null);
     }
@@ -125,7 +131,7 @@ export default function DocumentDetailPage() {
     try {
       await downloadDocumentVersion(doc.id, versionNumber, doc.fileName);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Download failed');
+      toast.error(err instanceof Error ? err.message : 'Download failed.');
     } finally {
       setDownloading(null);
     }
@@ -229,12 +235,20 @@ export default function DocumentDetailPage() {
               disabled={restoringDoc}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-green-200 text-xs font-medium text-green-700 hover:bg-green-50 transition-colors disabled:opacity-50"
             >
-              {restoringDoc ? 'Restoring…' : 'Restore'}
+              {restoringDoc ? (
+                <>
+                  <svg className="animate-spin" width="11" height="11" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Restoring…
+                </>
+              ) : 'Restore'}
             </button>
           ) : (
             <button
               type="button"
-              onClick={handleDelete}
+              onClick={() => setShowDeleteConfirm(true)}
               disabled={deletingDoc}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
             >
@@ -427,6 +441,7 @@ export default function DocumentDetailPage() {
           onSuccess={() => {
             setShowVersionUpload(false);
             reload();
+            toast.success('New version uploaded.');
           }}
         />
       )}
@@ -439,7 +454,21 @@ export default function DocumentDetailPage() {
           onSaved={() => {
             setShowEditModal(false);
             reload();
+            toast.success('Document updated.');
           }}
+        />
+      )}
+
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && (
+        <ConfirmModal
+          title="Delete document"
+          body={`"${doc.name}" will be soft-deleted and can be restored later.`}
+          confirmLabel="Delete Document"
+          danger
+          loading={deletingDoc}
+          onConfirm={handleDelete}
+          onClose={() => setShowDeleteConfirm(false)}
         />
       )}
     </div>
@@ -469,12 +498,12 @@ function ExpiryReminderSection({
   doc: DocumentDetail;
   onSaved: () => void;
 }) {
+  const toast = useToast();
   const [expiryDate, setExpiryDate] = useState(toDateInput(doc.expiryDate));
   const [renewalDueDate, setRenewalDueDate] = useState(toDateInput(doc.renewalDueDate));
   const [isReminderEnabled, setIsReminderEnabled] = useState(doc.isReminderEnabled);
   const [offsetDays, setOffsetDays] = useState<number[]>([30, 15, 7]);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function toggleOffset(days: number) {
@@ -486,7 +515,6 @@ function ExpiryReminderSection({
   async function handleSave() {
     setSaving(true);
     setError(null);
-    setSaved(false);
     try {
       await setDocumentReminders(doc.id, {
         expiryDate: expiryDate || null,
@@ -494,9 +522,8 @@ function ExpiryReminderSection({
         isReminderEnabled,
         offsetDays: isReminderEnabled ? offsetDays : [],
       });
-      setSaved(true);
+      toast.success('Expiry & reminders saved.');
       onSaved();
-      setTimeout(() => setSaved(false), 2500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save.');
     } finally {
@@ -575,13 +602,16 @@ function ExpiryReminderSection({
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
         >
+          {saving && (
+            <svg className="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          )}
           {saving ? 'Saving…' : 'Save'}
         </button>
-        {saved && (
-          <span className="text-xs text-green-600 font-medium">Saved!</span>
-        )}
       </div>
     </Section>
   );

@@ -1,6 +1,6 @@
 /**
  * Shared TypeScript types used across the web app.
- * Keep in sync with NestJS DTOs in api/src/modules/*/dto/
+ * Keep in sync with NestJS DTOs in api/src/modules/<module>/dto/
  */
 
 // ================================================================== //
