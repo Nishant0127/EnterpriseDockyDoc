@@ -340,7 +340,7 @@ export default function ReportsPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {REPORTS.map((report) => (
-              <ReportCard key={report.id} report={report} onRun={() => void runReport(report.id)} />
+              <ReportCard key={report.id} report={report} onRun={() => { void runReport(report.id); }} />
             ))}
           </div>
         </>

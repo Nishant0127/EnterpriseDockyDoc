@@ -25,12 +25,16 @@ export class AuthService {
   async validateUser(email: string, password: string): Promise<{ id: string; email: string } | null> {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user || !user.isActive) return null;
+    // passwordHash is on the User model (added in schema migration).
+    // Cast until `prisma generate` is run locally.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hash: string | null | undefined = (user as any).passwordHash;
     // If no password set — allow in dev mode using any non-empty password
-    if (!user.passwordHash) {
+    if (!hash) {
       if (process.env.NODE_ENV !== 'production') return { id: user.id, email: user.email };
       return null;
     }
-    const valid = await bcrypt.compare(password, user.passwordHash);
+    const valid = await bcrypt.compare(password, hash);
     return valid ? { id: user.id, email: user.email } : null;
   }
 
@@ -43,7 +47,8 @@ export class AuthService {
 
   async setPassword(userId: string, password: string): Promise<void> {
     const hash = await bcrypt.hash(password, 12);
-    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } as any });
   }
 
   // ------------------------------------------------------------------ //
