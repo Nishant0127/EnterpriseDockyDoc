@@ -91,21 +91,18 @@ export class SharesService {
       });
     }
 
-    // Create InternalDocumentShare rows (skip duplicates)
+    // Upsert InternalDocumentShare rows — update permission if already shared
     const results: InternalShareDto[] = [];
     for (const userId of dto.userIds) {
-      const existing = await this.prisma.internalDocumentShare.findUnique({
+      const internal = await this.prisma.internalDocumentShare.upsert({
         where: {
           documentShareId_sharedWithUserId: {
             documentShareId: share.id,
             sharedWithUserId: userId,
           },
         },
-      });
-      if (existing) continue;
-
-      const internal = await this.prisma.internalDocumentShare.create({
-        data: {
+        update: { permission: dto.permission },
+        create: {
           documentShareId: share.id,
           sharedWithUserId: userId,
           permission: dto.permission,
