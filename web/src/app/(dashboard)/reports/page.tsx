@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import { apiFetch } from '@/lib/api';
 import { cn } from '@/lib/utils';
