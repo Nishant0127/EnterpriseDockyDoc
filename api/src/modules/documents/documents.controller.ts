@@ -35,6 +35,7 @@ import {
   DocumentQueryDto,
   DocumentReminderDto,
   SetDocumentRemindersDto,
+  SetDocumentTagsDto,
   UpdateDocumentDto,
 } from './dto/document.dto';
 import { UploadDocumentDto, UploadVersionDto } from './dto/upload-document.dto';
@@ -284,6 +285,24 @@ export class DocumentsController {
     @CurrentUser() user: DevUserPayload,
   ): Promise<DocumentListItemDto> {
     return this.documentsService.update(id, dto, user);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Tags — assign/unassign
+  // ------------------------------------------------------------------ //
+
+  @Put(':id/tags')
+  @ApiOperation({ summary: 'Set tags for a document (replaces all existing tags)' })
+  @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 200, description: 'Updated tag list' })
+  @ApiResponse({ status: 403, description: 'Editor role or above required' })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  setTags(
+    @Param('id') id: string,
+    @Body() dto: SetDocumentTagsDto,
+    @CurrentUser() user: DevUserPayload,
+  ) {
+    return this.documentsService.setTags(id, dto, user);
   }
 
   // ------------------------------------------------------------------ //

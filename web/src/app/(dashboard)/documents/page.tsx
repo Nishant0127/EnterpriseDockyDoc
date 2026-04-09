@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useUser } from '@/context/UserContext';
-import { fetchFolders, fetchDocuments, uploadDocument, searchDocuments, createFolder, renameFolder, deleteFolder, deleteDocument } from '@/lib/documents';
+import { fetchFolders, fetchDocuments, uploadDocument, searchDocuments, createFolder, renameFolder, deleteFolder, deleteDocument, updateDocument } from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
 import ConfirmModal from '@/components/ui/ConfirmModal';
@@ -72,10 +72,13 @@ function buildTree(folders: FolderListItem[]) {
 export default function DocumentsPage() {
   const { activeWorkspace, isLoading: userLoading } = useUser();
   const toast = useToast();
+  const role = activeWorkspace?.role ?? 'VIEWER';
+  const canEdit = role !== 'VIEWER';
 
   const [folders, setFolders] = useState<FolderListItem[]>([]);
   const [documents, setDocuments] = useState<DocumentListItem[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [showTrash, setShowTrash] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
@@ -102,7 +105,7 @@ export default function DocumentsPage() {
 
     Promise.all([
       fetchFolders(activeWorkspace.workspaceId),
-      fetchDocuments({ workspaceId: activeWorkspace.workspaceId }),
+      fetchDocuments({ workspaceId: activeWorkspace.workspaceId, status: showTrash ? 'DELETED' : undefined }),
     ])
       .then(([f, d]) => {
         if (cancelled) return;
@@ -119,18 +122,19 @@ export default function DocumentsPage() {
     return () => { cancelled = true; };
   }, [activeWorkspace?.workspaceId, userLoading]);
 
-  // Refetch documents when folder selection changes
+  // Refetch documents when folder selection or trash view changes
   useEffect(() => {
     if (!activeWorkspace || loading) return;
 
     fetchDocuments({
       workspaceId: activeWorkspace.workspaceId,
-      folderId: selectedFolderId ?? undefined,
+      folderId: showTrash ? undefined : (selectedFolderId ?? undefined),
+      status: showTrash ? 'DELETED' : undefined,
     })
       .then(setDocuments)
       .catch(() => {}); // silent on filter change errors
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFolderId]);
+  }, [selectedFolderId, showTrash]);
 
   // Debounced search — fires 350 ms after the user stops typing
   useEffect(() => {
@@ -163,7 +167,8 @@ export default function DocumentsPage() {
     if (!activeWorkspace) return;
     fetchDocuments({
       workspaceId: activeWorkspace.workspaceId,
-      folderId: selectedFolderId ?? undefined,
+      folderId: showTrash ? undefined : (selectedFolderId ?? undefined),
+      status: showTrash ? 'DELETED' : undefined,
     })
       .then(setDocuments)
       .catch(() => {});
@@ -172,6 +177,26 @@ export default function DocumentsPage() {
   function refreshFolders() {
     if (!activeWorkspace) return;
     fetchFolders(activeWorkspace.workspaceId).then(setFolders).catch(() => {});
+  }
+
+  function handleSelectFolder(id: string | null) {
+    setShowTrash(false);
+    setSelectedFolderId(id);
+  }
+
+  function handleSelectTrash() {
+    setShowTrash(true);
+    setSelectedFolderId(null);
+  }
+
+  async function handleRestoreDoc(doc: DocumentListItem) {
+    try {
+      await updateDocument(doc.id, { status: 'ACTIVE' });
+      refreshDocuments();
+      toast.success(`"${doc.name}" restored.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Restore failed.');
+    }
   }
 
   function handleDeleteFolder(folder: FolderListItem) {
@@ -242,7 +267,9 @@ export default function DocumentsPage() {
       {/* Page header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Documents</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">
+            {showTrash ? 'Trash' : 'Documents'}
+          </h1>
           <p className="mt-0.5 text-sm text-gray-500">
             {activeWorkspace.workspaceName} &middot;{' '}
             {isSearching
@@ -250,16 +277,18 @@ export default function DocumentsPage() {
               : `${documents.length} document${documents.length !== 1 ? 's' : ''}`}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowUpload(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
-        >
-          <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-            <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-          </svg>
-          Upload Document
-        </button>
+        {!showTrash && canEdit && (
+          <button
+            type="button"
+            onClick={() => setShowUpload(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+            </svg>
+            Upload Document
+          </button>
+        )}
       </div>
 
       {/* Search bar */}
@@ -313,44 +342,54 @@ export default function DocumentsPage() {
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
                 Folders
               </p>
-              <button
-                onClick={() => setShowNewFolder(true)}
-                title="New folder"
-                className="text-gray-400 hover:text-brand-600 transition-colors"
-              >
-                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                  <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-                </svg>
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => setShowNewFolder(true)}
+                  title="New folder"
+                  className="text-gray-400 hover:text-brand-600 transition-colors"
+                >
+                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                  </svg>
+                </button>
+              )}
             </div>
             <nav className="p-1.5 space-y-0.5">
               {/* All documents */}
               <FolderRow
                 label="All documents"
-                count={documents.length}
-                active={selectedFolderId === null}
-                onClick={() => setSelectedFolderId(null)}
+                count={!showTrash ? documents.length : undefined}
+                active={selectedFolderId === null && !showTrash}
+                onClick={() => handleSelectFolder(null)}
                 icon="🗂"
               />
               {/* Folder tree */}
               {loading ? (
                 <div className="px-3 py-2 text-xs text-gray-400">Loading…</div>
-              ) : roots.length === 0 ? (
-                <div className="px-3 py-2 text-xs text-gray-400">No folders yet</div>
-              ) : (
+              ) : roots.length === 0 ? null : (
                 roots.map((folder) => (
                   <FolderTreeNode
                     key={folder.id}
                     folder={folder}
                     childMap={childMap}
-                    selectedId={selectedFolderId}
-                    onSelect={setSelectedFolderId}
+                    selectedId={showTrash ? null : selectedFolderId}
+                    onSelect={handleSelectFolder}
                     onRename={setRenamingFolder}
                     onDelete={handleDeleteFolder}
                     depth={0}
                   />
                 ))
               )}
+              {/* Divider + Trash */}
+              <div className="border-t border-gray-100 mt-1 pt-1">
+                <FolderRow
+                  label="Trash"
+                  count={showTrash ? documents.length : undefined}
+                  active={showTrash}
+                  onClick={handleSelectTrash}
+                  icon="🗑"
+                />
+              </div>
             </nav>
           </div>
         </aside>
@@ -433,7 +472,9 @@ export default function DocumentsPage() {
                       doc={doc}
                       snippet={(doc as SearchResult).snippet}
                       deleting={deletingDocId === doc.id}
+                      canEdit={canEdit}
                       onDelete={() => handleDeleteDoc(doc as DocumentListItem)}
+                      onRestore={showTrash ? () => { void handleRestoreDoc(doc as DocumentListItem); } : undefined}
                     />
                   ))}
                 </tbody>
@@ -928,12 +969,16 @@ function DocumentRow({
   doc,
   snippet,
   deleting,
+  canEdit,
   onDelete,
+  onRestore,
 }: {
   doc: DocumentListItem;
   snippet?: string;
   deleting?: boolean;
+  canEdit?: boolean;
   onDelete: () => void;
+  onRestore?: () => void;
 }) {
   const badge = STATUS_BADGE[doc.status];
   const expiry = expiryBadge(doc.expiryDate);
@@ -1047,28 +1092,42 @@ function DocumentRow({
       </td>
 
       {/* Row actions */}
-      <td className="px-2 py-3 w-10">
-        {doc.status !== 'DELETED' && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            disabled={deleting}
-            title="Delete document"
-            className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
-          >
-            {deleting ? (
-              <svg className="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            ) : (
+      <td className="px-2 py-3 w-16">
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
+          {onRestore && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRestore(); }}
+              title="Restore document"
+              className="p-1.5 rounded text-gray-300 hover:text-green-600 hover:bg-green-50 transition-colors"
+            >
               <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                <path d="M10 11v6M14 11v6" />
+                <path d="M1 4v6h6" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M3.51 15a9 9 0 1 0 .49-5.1L1 10" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-            )}
-          </button>
-        )}
+            </button>
+          )}
+          {canEdit && doc.status !== 'DELETED' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              disabled={deleting}
+              title="Delete document"
+              className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              {deleting ? (
+                <svg className="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6M14 11v6" />
+                </svg>
+              )}
+            </button>
+          )}
+        </div>
       </td>
     </tr>
   );

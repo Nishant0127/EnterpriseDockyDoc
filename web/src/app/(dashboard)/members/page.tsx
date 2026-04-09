@@ -202,7 +202,7 @@ export default function MembersPage() {
           onSaved={() => {
             setEditingMember(null);
             load(activeWorkspace.workspaceId);
-            toast.success('Role updated.');
+            toast.success('Member updated.');
           }}
         />
       )}
@@ -237,20 +237,35 @@ function EditRoleModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [firstName, setFirstName] = useState(member.firstName);
+  const [lastName, setLastName] = useState(member.lastName);
   const [role, setRole] = useState<WorkspaceUserRole>(member.role);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (role === member.role) { onClose(); return; }
+    if (!firstName.trim() || !lastName.trim()) {
+      setError('First and last name are required.');
+      return;
+    }
+    const unchanged =
+      role === member.role &&
+      firstName.trim() === member.firstName &&
+      lastName.trim() === member.lastName;
+    if (unchanged) { onClose(); return; }
+
     setSubmitting(true);
     setError(null);
     try {
-      await updateWorkspaceMember(workspaceId, member.id, { role });
+      await updateWorkspaceMember(workspaceId, member.id, {
+        role,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+      });
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update role.');
+      setError(err instanceof Error ? err.message : 'Failed to update member.');
     } finally {
       setSubmitting(false);
     }
@@ -260,15 +275,36 @@ function EditRoleModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-gray-900">Edit Role</h2>
+          <h2 className="text-base font-semibold text-gray-900">Edit Member</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
 
-        <p className="text-sm text-gray-500 mb-4">
-          {member.firstName} {member.lastName} &middot; {member.email}
-        </p>
+        <p className="text-xs text-gray-400 mb-4">{member.email}</p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">First name</label>
+              <input
+                type="text"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                required
+                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Last name</label>
+              <input
+                type="text"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                required
+                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Role</label>
             <select
@@ -287,7 +323,7 @@ function EditRoleModal({
             <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
           )}
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-1">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
               Cancel
             </button>

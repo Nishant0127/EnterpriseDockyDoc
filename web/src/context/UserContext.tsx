@@ -26,6 +26,11 @@ interface UserContextValue {
    * Validates membership server-side, then updates local state + localStorage.
    */
   switchWorkspace: (workspaceId: string) => Promise<void>;
+  /**
+   * Re-fetch the current user (refreshes workspace names, roles, etc.).
+   * Call after renaming a workspace or after a role change that affects the current user.
+   */
+  refreshUser: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextValue | null>(null);
@@ -81,6 +86,21 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const data = await fetchCurrentUser();
+      setUser(data);
+      // Refresh activeWorkspace if it's still in the updated membership list
+      setActiveWorkspace((prev) => {
+        if (!prev) return data.defaultWorkspace;
+        const refreshed = data.workspaces.find((w) => w.workspaceId === prev.workspaceId);
+        return refreshed ?? prev;
+      });
+    } catch {
+      // Ignore errors on background refresh
+    }
+  }, []);
+
   const switchWorkspace = useCallback(
     async (workspaceId: string) => {
       if (!user) return;
@@ -107,7 +127,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <UserContext.Provider
-      value={{ user, activeWorkspace, isLoading, error, switchWorkspace }}
+      value={{ user, activeWorkspace, isLoading, error, switchWorkspace, refreshUser }}
     >
       {children}
     </UserContext.Provider>

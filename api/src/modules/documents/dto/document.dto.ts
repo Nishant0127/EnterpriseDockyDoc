@@ -1,11 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  Max,
+  Min,
   ValidateIf,
 } from 'class-validator';
 import { DocumentStatus, ReminderChannel, ReminderStatus } from '@prisma/client';
@@ -118,10 +122,14 @@ export class SetDocumentRemindersDto {
   isReminderEnabled?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Days before expiry to remind (e.g. [30, 15, 7, 1])',
+    description: 'Days before expiry to remind (e.g. [30, 15, 7, 1]). Each value must be 1–365.',
     type: [Number],
   })
   @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(365, { each: true })
   offsetDays?: number[];
 
   @ApiPropertyOptional({ enum: ReminderChannel })
@@ -193,6 +201,13 @@ export class DocumentDetailDto extends DocumentListItemDto {
   @ApiProperty() workspace!: { id: string; name: string };
   @ApiProperty({ type: [DocumentVersionDto] }) versions!: DocumentVersionDto[];
   @ApiProperty({ type: [DocumentMetadataDto] }) metadata!: DocumentMetadataDto[];
+}
+
+export class SetDocumentTagsDto {
+  @ApiProperty({ description: 'Tag IDs to assign (replaces all existing tags)', type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  tagIds!: string[];
 }
 
 export { ReminderChannel, ReminderStatus };

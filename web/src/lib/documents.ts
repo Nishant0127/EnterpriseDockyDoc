@@ -221,6 +221,13 @@ export function deleteTag(id: string): Promise<void> {
   return apiFetch<void>(`/api/v1/tags/${id}`, { method: 'DELETE' });
 }
 
+export function setDocumentTags(documentId: string, tagIds: string[]): Promise<Tag[]> {
+  return apiFetch<Tag[]>(`/api/v1/documents/${documentId}/tags`, {
+    method: 'PUT',
+    body: JSON.stringify({ tagIds }),
+  });
+}
+
 // ------------------------------------------------------------------ //
 // Workspaces — detail + member management
 // ------------------------------------------------------------------ //
@@ -259,7 +266,7 @@ export function addWorkspaceMember(
 export function updateWorkspaceMember(
   workspaceId: string,
   memberId: string,
-  params: { role?: string; status?: string },
+  params: { role?: string; status?: string; firstName?: string; lastName?: string },
 ): Promise<WorkspaceMember> {
   return apiFetch<WorkspaceMember>(
     `/api/v1/workspaces/${workspaceId}/members/${memberId}`,

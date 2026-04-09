@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { DocumentStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   assertWorkspaceMembership,
@@ -27,7 +28,7 @@ export class FoldersService {
       where: { workspaceId },
       include: {
         createdBy: { select: { id: true, firstName: true, lastName: true } },
-        _count: { select: { documents: true, children: true } },
+        _count: { select: { documents: { where: { status: { not: DocumentStatus.DELETED } } }, children: true } },
       },
       orderBy: [{ parentFolderId: 'asc' }, { name: 'asc' }],
     });
@@ -53,7 +54,7 @@ export class FoldersService {
       where: { id },
       include: {
         createdBy: { select: { id: true, firstName: true, lastName: true } },
-        _count: { select: { documents: true, children: true } },
+        _count: { select: { documents: { where: { status: { not: DocumentStatus.DELETED } } }, children: true } },
         children: { select: { id: true, name: true }, orderBy: { name: 'asc' } },
       },
     });
@@ -100,7 +101,7 @@ export class FoldersService {
       },
       include: {
         createdBy: { select: { id: true, firstName: true, lastName: true } },
-        _count: { select: { documents: true, children: true } },
+        _count: { select: { documents: { where: { status: { not: DocumentStatus.DELETED } } }, children: true } },
       },
     });
 
@@ -133,7 +134,7 @@ export class FoldersService {
       data: { name: dto.name },
       include: {
         createdBy: { select: { id: true, firstName: true, lastName: true } },
-        _count: { select: { documents: true, children: true } },
+        _count: { select: { documents: { where: { status: { not: DocumentStatus.DELETED } } }, children: true } },
       },
     });
 
@@ -156,14 +157,21 @@ export class FoldersService {
   async delete(id: string, user: DevUserPayload): Promise<void> {
     const folder = await this.prisma.folder.findUnique({
       where: { id },
-      include: { _count: { select: { documents: true, children: true } } },
+      include: {
+        _count: {
+          select: {
+            documents: { where: { status: { not: DocumentStatus.DELETED } } },
+            children: true,
+          },
+        },
+      },
     });
     if (!folder) throw new NotFoundException(`Folder "${id}" not found`);
     assertEditorOrAbove(user, folder.workspaceId);
 
     if (folder._count.documents > 0) {
       throw new BadRequestException(
-        `Cannot delete folder "${folder.name}" — it contains ${folder._count.documents} document(s). Move or delete them first.`,
+        `Cannot delete folder "${folder.name}" — it contains ${folder._count.documents} active document(s). Move or delete them first.`,
       );
     }
     if (folder._count.children > 0) {

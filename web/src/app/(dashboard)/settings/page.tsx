@@ -9,7 +9,7 @@ import ConfirmModal from '@/components/ui/ConfirmModal';
 import type { Tag, WorkspaceDetail } from '@/types';
 
 export default function SettingsPage() {
-  const { user, activeWorkspace, isLoading } = useUser();
+  const { user, activeWorkspace, isLoading, refreshUser } = useUser();
   const toast = useToast();
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -49,6 +49,8 @@ export default function SettingsPage() {
       setDisplayName(updated.name);
       setRenamingWorkspace(false);
       toast.success('Workspace renamed successfully.');
+      // Refresh user context so sidebar + header reflect new name
+      void refreshUser();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to rename workspace.');
     } finally {

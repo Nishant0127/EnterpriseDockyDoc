@@ -17,6 +17,7 @@ import {
   DocumentListItemDto,
   DocumentReminderDto,
   SetDocumentRemindersDto,
+  SetDocumentTagsDto,
   UpdateDocumentDto,
   DocumentQueryDto,
 } from './dto/document.dto';
@@ -504,6 +505,39 @@ export class DocumentsService {
       entityId: id,
       metadata: { documentName: doc.name },
     });
+  }
+
+  // ------------------------------------------------------------------ //
+  // Tags — set/replace
+  // ------------------------------------------------------------------ //
+
+  async setTags(
+    id: string,
+    dto: SetDocumentTagsDto,
+    user: DevUserPayload,
+  ): Promise<{ id: string; name: string; color: string | null }[]> {
+    const doc = await this.prisma.document.findUnique({ where: { id } });
+    if (!doc) throw new NotFoundException(`Document "${id}" not found`);
+    assertEditorOrAbove(user, doc.workspaceId);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.documentTagMapping.deleteMany({ where: { documentId: id } });
+      if (dto.tagIds.length > 0) {
+        await tx.documentTagMapping.createMany({
+          data: dto.tagIds.map((tagId) => ({ documentId: id, tagId })),
+          skipDuplicates: true,
+        });
+      }
+    });
+
+    const updated = await this.prisma.document.findUnique({
+      where: { id },
+      include: {
+        tags: { include: { tag: { select: { id: true, name: true, color: true } } } },
+      },
+    });
+
+    return (updated?.tags ?? []).map((t) => t.tag);
   }
 
   // ------------------------------------------------------------------ //

@@ -48,4 +48,16 @@ export class UpdateWorkspaceMemberDto {
   @IsOptional()
   @IsEnum(WorkspaceUserStatus)
   status?: WorkspaceUserStatus;
+
+  @ApiPropertyOptional({ description: 'Update the member\'s first name (global profile)' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  firstName?: string;
+
+  @ApiPropertyOptional({ description: 'Update the member\'s last name (global profile)' })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  lastName?: string;
 }
