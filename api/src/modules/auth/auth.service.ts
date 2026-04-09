@@ -1,5 +1,8 @@
 import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
+import { PrismaService } from '../../prisma/prisma.service';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import {
   MeResponseDto,
@@ -9,21 +12,48 @@ import {
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly jwt: JwtService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   // ------------------------------------------------------------------ //
-  // Current-user context (dev-safe, replaces with JWT later)
+  // Login
   // ------------------------------------------------------------------ //
 
-  /**
-   * Build the /me response from the already-resolved dev user payload.
-   * Default workspace = first OWNER membership, or first membership otherwise.
-   */
+  async validateUser(email: string, password: string): Promise<{ id: string; email: string } | null> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || !user.isActive) return null;
+    // If no password set — allow in dev mode using any non-empty password
+    if (!user.passwordHash) {
+      if (process.env.NODE_ENV !== 'production') return { id: user.id, email: user.email };
+      return null;
+    }
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    return valid ? { id: user.id, email: user.email } : null;
+  }
+
+  async login(userId: string): Promise<{ accessToken: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+    const payload = { sub: user.id, email: user.email };
+    return { accessToken: this.jwt.sign(payload) };
+  }
+
+  async setPassword(userId: string, password: string): Promise<void> {
+    const hash = await bcrypt.hash(password, 12);
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: hash } });
+  }
+
+  // ------------------------------------------------------------------ //
+  // Current-user context
+  // ------------------------------------------------------------------ //
+
   getMe(devUser: DevUserPayload): MeResponseDto {
     const workspaces = this.buildMemberships(devUser);
     const defaultWorkspace =
       workspaces.find((w) => w.role === 'OWNER') ?? workspaces[0] ?? null;
-
     return {
       id: devUser.id,
       email: devUser.email,
@@ -35,34 +65,15 @@ export class AuthService {
     };
   }
 
-  /**
-   * Return only the workspace membership list for the current user.
-   */
   getUserWorkspaces(devUser: DevUserPayload): WorkspaceMembershipDto[] {
     return this.buildMemberships(devUser);
   }
 
-  /**
-   * Validate that the current user belongs to the requested workspace,
-   * then return the workspace + role context.
-   *
-   * No session is persisted here — the client stores the active workspace
-   * in localStorage until real token-based context is implemented.
-   */
-  switchWorkspace(
-    devUser: DevUserPayload,
-    workspaceId: string,
-  ): SwitchWorkspaceResponseDto {
-    const membership = devUser.workspaces.find(
-      (m) => m.workspaceId === workspaceId,
-    );
-
+  switchWorkspace(devUser: DevUserPayload, workspaceId: string): SwitchWorkspaceResponseDto {
+    const membership = devUser.workspaces.find((m) => m.workspaceId === workspaceId);
     if (!membership) {
-      throw new ForbiddenException(
-        `User does not belong to workspace "${workspaceId}"`,
-      );
+      throw new ForbiddenException(`User does not belong to workspace "${workspaceId}"`);
     }
-
     return {
       workspaceId: membership.workspaceId,
       workspaceName: membership.workspace.name,
@@ -71,27 +82,6 @@ export class AuthService {
       role: membership.role,
     };
   }
-
-  // ------------------------------------------------------------------ //
-  // Stubbed login (to be implemented with real JWT)
-  // ------------------------------------------------------------------ //
-
-  async validateUser(
-    email: string,
-    password: string,
-  ): Promise<{ id: string; email: string } | null> {
-    void email;
-    void password;
-    throw new UnauthorizedException('Password login not implemented yet');
-  }
-
-  async login(_userId: string): Promise<{ accessToken: string }> {
-    throw new UnauthorizedException('JWT login not implemented yet');
-  }
-
-  // ------------------------------------------------------------------ //
-  // Private helpers
-  // ------------------------------------------------------------------ //
 
   private buildMemberships(devUser: DevUserPayload): WorkspaceMembershipDto[] {
     return devUser.workspaces.map((m) => ({

@@ -90,6 +90,18 @@ export class FoldersService {
       if (!parent || parent.workspaceId !== dto.workspaceId) {
         throw new NotFoundException(`Parent folder "${dto.parentFolderId}" not found in workspace`);
       }
+      // Enforce max nesting depth of 5 levels
+      let depth = 1;
+      let current = parent;
+      while (current.parentFolderId) {
+        depth++;
+        if (depth >= 5) {
+          throw new BadRequestException('Maximum folder nesting depth of 5 levels reached');
+        }
+        const next = await this.prisma.folder.findUnique({ where: { id: current.parentFolderId } });
+        if (!next) break;
+        current = next;
+      }
     }
 
     const folder = await this.prisma.folder.create({

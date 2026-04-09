@@ -4,15 +4,34 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081';
 
 /**
  * DEV ONLY — the email used to impersonate a user via x-dev-user-email header.
- *
- * Replacement path (when real auth is ready):
- *   1. Remove DEV_USER_EMAIL and the header set below.
- *   2. Read the access token from the session/cookie.
- *   3. Set: headers.set('Authorization', `Bearer ${token}`)
- *   All other code (apiFetch calls, context, components) stays unchanged.
+ * This fallback is only used when no JWT token is present in localStorage.
  */
 const DEV_USER_EMAIL =
   process.env.NEXT_PUBLIC_DEV_USER_EMAIL ?? 'alice@acmecorp.com';
+
+const JWT_STORAGE_KEY = 'dockydoc:jwt';
+
+/**
+ * Read the JWT access token from localStorage.
+ * Returns null when called outside the browser (SSR/edge) or when not set.
+ */
+export function getStoredToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(JWT_STORAGE_KEY);
+}
+
+/**
+ * Persist or clear the JWT access token in localStorage.
+ * Pass null to remove it (i.e. on logout).
+ */
+export function setStoredToken(token: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (token === null) {
+    localStorage.removeItem(JWT_STORAGE_KEY);
+  } else {
+    localStorage.setItem(JWT_STORAGE_KEY, token);
+  }
+}
 
 interface RequestOptions extends RequestInit {
   token?: string;
@@ -27,11 +46,13 @@ export async function apiFetch<T>(
   const headers = new Headers(fetchOptions.headers);
   headers.set('Content-Type', 'application/json');
 
-  // DEV ONLY — replace with Bearer token when auth is implemented
-  headers.set('x-dev-user-email', DEV_USER_EMAIL);
-
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
+  const storedToken = token ?? getStoredToken();
+  if (storedToken) {
+    // Real JWT auth — send Bearer token, skip dev header
+    headers.set('Authorization', `Bearer ${storedToken}`);
+  } else {
+    // DEV ONLY fallback — no JWT present, impersonate via email header
+    headers.set('x-dev-user-email', DEV_USER_EMAIL);
   }
 
   const res = await fetch(`${API_URL}${path}`, {
@@ -61,8 +82,13 @@ export async function apiUpload<T>(
   formData: FormData,
 ): Promise<T> {
   const headers = new Headers();
-  // DEV ONLY — replace with Bearer token when auth is implemented
-  headers.set('x-dev-user-email', DEV_USER_EMAIL);
+  const storedToken = getStoredToken();
+  if (storedToken) {
+    headers.set('Authorization', `Bearer ${storedToken}`);
+  } else {
+    // DEV ONLY fallback
+    headers.set('x-dev-user-email', DEV_USER_EMAIL);
+  }
 
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
@@ -84,7 +110,13 @@ export async function apiUpload<T>(
  */
 export async function apiDownload(path: string, fallbackFileName: string): Promise<void> {
   const headers = new Headers();
-  headers.set('x-dev-user-email', DEV_USER_EMAIL);
+  const storedToken = getStoredToken();
+  if (storedToken) {
+    headers.set('Authorization', `Bearer ${storedToken}`);
+  } else {
+    // DEV ONLY fallback
+    headers.set('x-dev-user-email', DEV_USER_EMAIL);
+  }
 
   const res = await fetch(`${API_URL}${path}`, { headers });
 

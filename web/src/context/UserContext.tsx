@@ -7,7 +7,7 @@ import {
   useEffect,
   useState,
 } from 'react';
-import { fetchCurrentUser, switchWorkspaceApi } from '@/lib/api';
+import { fetchCurrentUser, switchWorkspaceApi, setStoredToken, ApiError } from '@/lib/api';
 import type { CurrentUser, WorkspaceMembership } from '@/types';
 
 // ------------------------------------------------------------------ //
@@ -31,6 +31,10 @@ interface UserContextValue {
    * Call after renaming a workspace or after a role change that affects the current user.
    */
   refreshUser: () => Promise<void>;
+  /**
+   * Clear the stored JWT, reset user state, and redirect to /login.
+   */
+  logout: () => void;
 }
 
 const UserContext = createContext<UserContextValue | null>(null);
@@ -72,6 +76,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setActiveWorkspace(restored ?? data.defaultWorkspace);
       } catch (err) {
         if (!cancelled) {
+          if (err instanceof ApiError && err.status === 401) {
+            // Token is missing or expired — redirect to login
+            window.location.href = '/login';
+            return;
+          }
           console.error('[UserContext] Failed to load user:', err);
           setError('Could not load user data. Is the API running?');
         }
@@ -101,6 +110,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const logout = useCallback(() => {
+    setStoredToken(null);
+    setUser(null);
+    setActiveWorkspace(null);
+    window.location.href = '/login';
+  }, []);
+
   const switchWorkspace = useCallback(
     async (workspaceId: string) => {
       if (!user) return;
@@ -127,7 +143,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <UserContext.Provider
-      value={{ user, activeWorkspace, isLoading, error, switchWorkspace, refreshUser }}
+      value={{ user, activeWorkspace, isLoading, error, switchWorkspace, refreshUser, logout }}
     >
       {children}
     </UserContext.Provider>

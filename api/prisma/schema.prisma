@@ -104,13 +104,14 @@ enum AuditEntityType {
 // ================================================================== //
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  firstName String
-  lastName  String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  email        String   @unique
+  firstName    String
+  lastName     String
+  passwordHash String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   workspaces             WorkspaceUser[]
   createdFolders         Folder[]                @relation("FolderCreator")
@@ -125,13 +126,14 @@ model User {
 }
 
 model Workspace {
-  id        String          @id @default(cuid())
-  name      String
-  slug      String          @unique
-  type      WorkspaceType   @default(PERSONAL)
-  status    WorkspaceStatus @default(ACTIVE)
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  id                  String          @id @default(cuid())
+  name                String
+  slug                String          @unique
+  type                WorkspaceType   @default(PERSONAL)
+  status              WorkspaceStatus @default(ACTIVE)
+  trashRetentionDays  Int             @default(30)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 
   members      WorkspaceUser[]
   folders      Folder[]

@@ -16,7 +16,7 @@ const TYPE_BADGE: Record<WorkspaceType, string> = {
  * Right: notification bell + user avatar with initials.
  */
 export default function Header() {
-  const { user, activeWorkspace, isLoading } = useUser();
+  const { user, activeWorkspace, isLoading, logout } = useUser();
 
   const initials = user
     ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
@@ -70,6 +70,24 @@ export default function Header() {
           aria-label="User menu"
         >
           {isLoading ? '…' : initials}
+        </button>
+
+        {/* Logout button */}
+        <button
+          type="button"
+          onClick={logout}
+          title="Sign out"
+          className={cn(
+            'w-9 h-9 rounded-lg flex items-center justify-center text-gray-400',
+            'hover:bg-gray-100 hover:text-gray-600 transition-colors',
+          )}
+          aria-label="Sign out"
+        >
+          <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
         </button>
       </div>
     </header>

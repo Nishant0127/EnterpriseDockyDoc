@@ -14,6 +14,8 @@ import { TagsModule } from './modules/tags/tags.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { SharesModule } from './modules/shares/shares.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { AiModule } from './modules/ai/ai.module';
+import { ReportsModule } from './modules/reports/reports.module';
 
 /**
  * Root application module.
@@ -39,6 +41,8 @@ import { AuditModule } from './modules/audit/audit.module';
     RemindersModule,
     SharesModule,
     AuditModule,
+    AiModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}

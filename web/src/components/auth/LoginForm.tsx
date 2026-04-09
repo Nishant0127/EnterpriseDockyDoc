@@ -1,18 +1,16 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { apiFetch, setStoredToken } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-/**
- * LoginForm — client component.
- *
- * Currently uses local state only (no API call).
- * To wire up:
- *   - Replace handleSubmit body with `signIn()` from next-auth, or a fetch to POST /api/auth/login
- *   - Add redirect on success
- *   - Handle error messages from the API
- */
+interface LoginResponse {
+  accessToken: string;
+}
+
 export default function LoginForm() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -24,15 +22,14 @@ export default function LoginForm() {
     setIsLoading(true);
 
     try {
-      // TODO: Replace with real auth call
-      // Example:
-      //   const result = await signIn('credentials', { email, password, redirect: false });
-      //   if (result?.error) setError('Invalid email or password');
-      //   else router.push('/dashboard');
-      await new Promise((r) => setTimeout(r, 800)); // Simulate network
-      console.log('Login attempt:', { email });
+      const data = await apiFetch<LoginResponse>('/api/v1/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
+      setStoredToken(data.accessToken);
+      router.push('/dashboard');
     } catch {
-      setError('Something went wrong. Please try again.');
+      setError('Invalid email or password');
     } finally {
       setIsLoading(false);
     }

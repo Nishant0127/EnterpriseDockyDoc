@@ -65,6 +65,50 @@ function buildTree(folders: FolderListItem[]) {
   return { roots, childMap };
 }
 
+function buildBreadcrumb(folderId: string | null, folders: FolderListItem[]): FolderListItem[] {
+  if (!folderId) return [];
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  const crumbs: FolderListItem[] = [];
+  let current = byId.get(folderId);
+  while (current) {
+    crumbs.unshift(current);
+    current = current.parentFolderId ? byId.get(current.parentFolderId) : undefined;
+  }
+  return crumbs;
+}
+
+function Breadcrumb({
+  crumbs,
+  onNavigate,
+}: {
+  crumbs: FolderListItem[];
+  onNavigate: (id: string | null) => void;
+}) {
+  return (
+    <nav className="flex items-center gap-1 text-xs text-gray-500 mb-3 flex-wrap">
+      <button
+        type="button"
+        onClick={() => onNavigate(null)}
+        className="hover:text-brand-600 transition-colors"
+      >
+        All Documents
+      </button>
+      {crumbs.map((crumb) => (
+        <span key={crumb.id} className="flex items-center gap-1">
+          <span className="text-gray-300">/</span>
+          <button
+            type="button"
+            onClick={() => onNavigate(crumb.id)}
+            className="hover:text-brand-600 transition-colors"
+          >
+            {crumb.name}
+          </button>
+        </span>
+      ))}
+    </nav>
+  );
+}
+
 // ------------------------------------------------------------------ //
 // Page
 // ------------------------------------------------------------------ //
@@ -83,6 +127,7 @@ export default function DocumentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
+  const [newFolderParentId, setNewFolderParentId] = useState<string | undefined>(undefined);
   const [renamingFolder, setRenamingFolder] = useState<FolderListItem | null>(null);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
@@ -344,7 +389,7 @@ export default function DocumentsPage() {
               </p>
               {canEdit && (
                 <button
-                  onClick={() => setShowNewFolder(true)}
+                  onClick={() => { setNewFolderParentId(undefined); setShowNewFolder(true); }}
                   title="New folder"
                   className="text-gray-400 hover:text-brand-600 transition-colors"
                 >
@@ -376,6 +421,7 @@ export default function DocumentsPage() {
                     onSelect={handleSelectFolder}
                     onRename={setRenamingFolder}
                     onDelete={handleDeleteFolder}
+                    onCreateSubfolder={(parentId) => { setNewFolderParentId(parentId); setShowNewFolder(true); }}
                     depth={0}
                   />
                 ))
@@ -398,6 +444,12 @@ export default function DocumentsPage() {
         {/* Document table                                             */}
         {/* --------------------------------------------------------- */}
         <div className="flex-1 min-w-0">
+          {selectedFolderId !== null && !showTrash && !isSearching && (
+            <Breadcrumb
+              crumbs={buildBreadcrumb(selectedFolderId, folders)}
+              onNavigate={handleSelectFolder}
+            />
+          )}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             {loading || searching ? (
               <TableSkeleton />
@@ -504,7 +556,7 @@ export default function DocumentsPage() {
         <FolderModal
           workspaceId={activeWorkspace.workspaceId}
           folders={folders}
-          defaultParentId={selectedFolderId ?? undefined}
+          defaultParentId={newFolderParentId}
           onClose={() => setShowNewFolder(false)}
           onSaved={() => {
             setShowNewFolder(false);
@@ -920,6 +972,7 @@ function FolderTreeNode({
   onSelect,
   onRename,
   onDelete,
+  onCreateSubfolder,
   depth,
 }: {
   folder: FolderListItem;
@@ -928,6 +981,7 @@ function FolderTreeNode({
   onSelect: (id: string) => void;
   onRename: (f: FolderListItem) => void;
   onDelete: (f: FolderListItem) => void;
+  onCreateSubfolder: (parentId: string) => void;
   depth: number;
 }) {
   const children = childMap.get(folder.id) ?? [];
@@ -960,6 +1014,16 @@ function FolderTreeNode({
               </svg>
             </button>
             <button
+              onClick={(e) => { e.stopPropagation(); onCreateSubfolder(folder.id); }}
+              title="New subfolder"
+              className="p-0.5 text-gray-400 hover:text-brand-600 transition-colors"
+            >
+              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                <path d="M12 11v6M9 14h6" strokeLinecap="round" />
+              </svg>
+            </button>
+            <button
               onClick={(e) => { e.stopPropagation(); onDelete(folder); }}
               title="Delete"
               className="p-0.5 text-gray-400 hover:text-red-600 transition-colors"
@@ -982,6 +1046,7 @@ function FolderTreeNode({
           onSelect={onSelect}
           onRename={onRename}
           onDelete={onDelete}
+          onCreateSubfolder={onCreateSubfolder}
           depth={depth + 1}
         />
       ))}

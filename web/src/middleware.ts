@@ -4,11 +4,14 @@ import type { NextRequest } from 'next/server';
 /**
  * Route protection middleware.
  *
- * Currently only defines the matcher — actual token validation will be added
- * once the auth layer is implemented.
+ * NOTE: JWT is stored in localStorage (not a cookie), so it is NOT accessible
+ * here — Next.js middleware runs on the server/edge runtime and cannot read
+ * localStorage. Therefore, route protection is handled client-side inside
+ * UserContext: if fetchCurrentUser() returns a 401, UserContext redirects to
+ * /login. This middleware is intentionally a pass-through.
  *
- * With NextAuth: import { getToken } from 'next-auth/jwt' and check the token.
- * With custom JWT: read the cookie, verify the signature, redirect if invalid.
+ * If you need server-side protection in the future, switch JWT storage to an
+ * HttpOnly cookie and verify it here with `request.cookies.get('dockydoc-jwt')`.
  */
 
 // Routes that do NOT require authentication
@@ -17,16 +20,12 @@ const PUBLIC_PATHS = ['/login', '/register', '/forgot-password'];
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public paths through
+  // Allow public paths through without any check
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
-  // TODO: Validate session token here.
-  // Example:
-  //   const token = await getToken({ req: request });
-  //   if (!token) return NextResponse.redirect(new URL('/login', request.url));
-
+  // All other routes: pass through — auth is enforced client-side via UserContext.
   return NextResponse.next();
 }
 

@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -109,30 +110,25 @@ export class AuthController {
   }
 
   // ------------------------------------------------------------------ //
-  // Stubbed login (placeholder)
+  // Login / Logout
   // ------------------------------------------------------------------ //
 
-  /**
-   * POST /api/v1/auth/login
-   * Placeholder — throws 401 until JWT login is implemented.
-   */
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Log in with email and password (not yet implemented)' })
+  @ApiOperation({ summary: 'Log in with email and password' })
+  @ApiResponse({ status: 200, description: 'Returns JWT access token' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(@Body() dto: LoginDto) {
     const user = await this.authService.validateUser(dto.email, dto.password);
-    if (!user) return { message: 'Invalid credentials' };
+    if (!user) throw new UnauthorizedException('Invalid email or password');
     return this.authService.login(user.id);
   }
 
-  /**
-   * POST /api/v1/auth/logout
-   * Placeholder — no-op until sessions are implemented.
-   */
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Log out' })
+  @ApiOperation({ summary: 'Log out (client clears token)' })
   logout() {
-    return { message: 'Logged out' };
+    // JWT is stateless — client simply discards the token
+    return { message: 'Logged out successfully' };
   }
 }

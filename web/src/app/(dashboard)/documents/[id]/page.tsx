@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { fetchDocument, downloadDocument, downloadDocumentVersion, deleteDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders, fetchTags, setDocumentTags } from '@/lib/documents';
+import { apiFetch } from '@/lib/api';
 import { fetchDocumentActivity, describeAuditLog, auditActionCategory, formatAuditAction } from '@/lib/audit';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
@@ -76,6 +77,33 @@ export default function DocumentDetailPage() {
   const [showShredConfirm, setShowShredConfirm] = useState(false);
   const [deletingVersion, setDeletingVersion] = useState<number | null>(null);
   const [pendingDeleteVersion, setPendingDeleteVersion] = useState<number | null>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<{
+    summary: string;
+    keyPoints: string[];
+    suggestedTags: string[];
+    documentType: string;
+    confidence: number;
+  } | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  async function handleAiAnalyze() {
+    if (!params.id) return;
+    setAiLoading(true);
+    try {
+      const result = await apiFetch<{
+        summary: string;
+        keyPoints: string[];
+        suggestedTags: string[];
+        documentType: string;
+        confidence: number;
+      }>(`/api/v1/ai/documents/${params.id}/analyze`);
+      setAiAnalysis(result);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'AI analysis failed.');
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   function reload() {
     if (!params.id) return;
@@ -484,6 +512,91 @@ export default function DocumentDetailPage() {
             </dl>
           )}
         </Section>
+
+        {/* ---- AI Analysis (full width) --------------------------- */}
+        <div className="lg:col-span-2">
+          <Section title="AI Analysis">
+            {aiAnalysis ? (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">Summary</p>
+                  <p className="text-sm text-gray-700 leading-relaxed">{aiAnalysis.summary}</p>
+                </div>
+                {aiAnalysis.keyPoints.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">Key Points</p>
+                    <ul className="space-y-1">
+                      {aiAnalysis.keyPoints.map((pt, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                          <span className="text-brand-400 mt-0.5">•</span>
+                          {pt}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {aiAnalysis.suggestedTags.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">Suggested Tags</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {aiAnalysis.suggestedTags.map((tag) => (
+                        <span key={tag} className="px-2 py-0.5 rounded-full text-xs bg-brand-50 text-brand-700 border border-brand-200">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center gap-3 pt-1">
+                  <span className="text-xs text-gray-400">
+                    Document type: <span className="text-gray-600 font-medium capitalize">{aiAnalysis.documentType}</span>
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    Confidence: <span className="text-gray-600 font-medium">{Math.round(aiAnalysis.confidence * 100)}%</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleAiAnalyze()}
+                    disabled={aiLoading}
+                    className="ml-auto text-xs text-brand-600 hover:underline disabled:opacity-50"
+                  >
+                    Re-analyze
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <p className="text-sm text-gray-400 flex-1">
+                  Use AI to automatically summarize this document and suggest tags.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void handleAiAnalyze()}
+                  disabled={aiLoading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 transition-colors disabled:opacity-50 flex-shrink-0"
+                >
+                  {aiLoading ? (
+                    <>
+                      <svg className="animate-spin" width="12" height="12" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Analyzing…
+                    </>
+                  ) : (
+                    <>
+                      <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path d="M12 2a2 2 0 0 1 2 2v1a7 7 0 0 1 0 14v1a2 2 0 0 1-4 0v-1a7 7 0 0 1 0-14V4a2 2 0 0 1 2-2z" strokeLinecap="round" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                      Analyze with AI
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </Section>
+        </div>
 
         {/* ---- Expiry & Reminders (full width) -------------------- */}
         <div className="lg:col-span-2">
