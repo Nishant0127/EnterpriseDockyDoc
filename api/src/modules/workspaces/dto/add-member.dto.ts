@@ -5,8 +5,18 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  MaxLength,
 } from 'class-validator';
 import { WorkspaceUserRole, WorkspaceUserStatus } from '@prisma/client';
+
+export class UpdateWorkspaceDto {
+  @ApiPropertyOptional({ description: 'New workspace name', maxLength: 100 })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name?: string;
+}
 
 export class AddWorkspaceMemberDto {
   @ApiProperty({ description: 'Email address — creates user if not found' })

@@ -346,4 +346,25 @@ export class DocumentsController {
   ) {
     return this.documentsService.softDelete(id, user);
   }
+
+  // ------------------------------------------------------------------ //
+  // Shred (permanent delete) — ADMIN/OWNER only
+  // ------------------------------------------------------------------ //
+
+  @Post(':id/shred')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Permanently delete a soft-deleted document and its files (ADMIN/OWNER only)',
+  })
+  @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 204, description: 'Document permanently deleted' })
+  @ApiResponse({ status: 400, description: 'Document must be soft-deleted first' })
+  @ApiResponse({ status: 403, description: 'Insufficient role' })
+  @ApiResponse({ status: 404, description: 'Document not found' })
+  async shred(
+    @Param('id') id: string,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<void> {
+    await this.documentsService.shred(id, user);
+  }
 }

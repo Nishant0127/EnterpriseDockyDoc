@@ -15,6 +15,7 @@ import type {
   Tag,
   UpcomingReminder,
   WorkspaceDetail,
+  WorkspaceListItem,
   WorkspaceMember,
   WorkspaceSummary,
 } from '@/types';
@@ -94,6 +95,10 @@ export function updateDocument(id: string, params: UpdateDocumentParams): Promis
 
 export function deleteDocument(id: string): Promise<void> {
   return apiFetch<void>(`/api/v1/documents/${id}`, { method: 'DELETE' });
+}
+
+export function shredDocument(id: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/documents/${id}/shred`, { method: 'POST' });
 }
 
 // ------------------------------------------------------------------ //
@@ -263,6 +268,13 @@ export function updateWorkspaceMember(
       body: JSON.stringify(params),
     },
   );
+}
+
+export function renameWorkspace(workspaceId: string, name: string): Promise<WorkspaceListItem> {
+  return apiFetch<WorkspaceListItem>(`/api/v1/workspaces/${workspaceId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  });
 }
 
 // ------------------------------------------------------------------ //

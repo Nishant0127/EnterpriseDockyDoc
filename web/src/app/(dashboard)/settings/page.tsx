@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useUser } from '@/context/UserContext';
-import { fetchWorkspaceDetail, fetchTags, createTag, updateTag, deleteTag } from '@/lib/documents';
+import { fetchWorkspaceDetail, fetchTags, createTag, updateTag, deleteTag, renameWorkspace } from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
 import ConfirmModal from '@/components/ui/ConfirmModal';
@@ -10,13 +10,19 @@ import type { Tag, WorkspaceDetail } from '@/types';
 
 export default function SettingsPage() {
   const { user, activeWorkspace, isLoading } = useUser();
+  const toast = useToast();
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
+  const [renamingWorkspace, setRenamingWorkspace] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [displayName, setDisplayName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!activeWorkspace) return;
+    setDisplayName(activeWorkspace.workspaceName);
     setDetailLoading(true);
     setTagsLoading(true);
     fetchWorkspaceDetail(activeWorkspace.workspaceId)
@@ -34,21 +40,78 @@ export default function SettingsPage() {
     fetchTags(activeWorkspace.workspaceId).then(setTags).catch(() => {});
   }
 
+  async function handleRename(e: React.FormEvent) {
+    e.preventDefault();
+    if (!activeWorkspace || !renameValue.trim()) return;
+    setRenameSaving(true);
+    try {
+      const updated = await renameWorkspace(activeWorkspace.workspaceId, renameValue.trim());
+      setDisplayName(updated.name);
+      setRenamingWorkspace(false);
+      toast.success('Workspace renamed successfully.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to rename workspace.');
+    } finally {
+      setRenameSaving(false);
+    }
+  }
+
   if (isLoading || detailLoading || tagsLoading) return <PageSkeleton />;
+
+  const canRename = activeWorkspace?.role === 'ADMIN' || activeWorkspace?.role === 'OWNER';
 
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
         <p className="mt-0.5 text-sm text-gray-500">
-          {activeWorkspace?.workspaceName ?? 'No workspace selected'}
+          {displayName ?? activeWorkspace?.workspaceName ?? 'No workspace selected'}
         </p>
       </div>
 
       <div className="space-y-4">
         {/* Workspace info */}
         <SettingsCard title="Workspace">
-          <SettingsRow label="Name" value={activeWorkspace?.workspaceName ?? '—'} />
+          <div className={`flex items-center justify-between py-2.5 border-b border-gray-50`}>
+            <span className="text-xs text-gray-500 font-medium w-28 flex-shrink-0">Name</span>
+            {renamingWorkspace ? (
+              <form onSubmit={handleRename} className="flex-1 flex items-center gap-2">
+                <input
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  autoFocus
+                  className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                <button
+                  type="submit"
+                  disabled={renameSaving || !renameValue.trim()}
+                  className="px-3 py-1 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50"
+                >
+                  {renameSaving ? '…' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRenamingWorkspace(false)}
+                  className="px-3 py-1 text-xs text-gray-500 hover:text-gray-700"
+                >
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <div className="flex-1 flex items-center justify-between">
+                <span className="text-sm text-gray-800">{displayName ?? activeWorkspace?.workspaceName ?? '—'}</span>
+                {canRename && (
+                  <button
+                    onClick={() => { setRenameValue(displayName ?? activeWorkspace?.workspaceName ?? ''); setRenamingWorkspace(true); }}
+                    className="text-xs text-brand-600 hover:underline ml-2"
+                  >
+                    Rename
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           <SettingsRow label="Slug" value={activeWorkspace?.workspaceSlug ?? '—'} />
           <SettingsRow
             label="Type"

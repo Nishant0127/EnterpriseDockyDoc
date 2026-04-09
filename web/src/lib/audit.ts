@@ -9,6 +9,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   DOCUMENT_CREATED:        'Document created',
   DOCUMENT_UPDATED:        'Document updated',
   DOCUMENT_DELETED:        'Document deleted',
+  DOCUMENT_SHREDDED:       'Document permanently deleted',
   DOCUMENT_VERSION_ADDED:  'New version uploaded',
   DOCUMENT_DOWNLOADED:     'Document downloaded',
   DOCUMENT_SHARED_INTERNAL:'Shared internally',
@@ -36,6 +37,8 @@ export function describeAuditLog(log: AuditLog): string {
       return name ? `Updated "${name}"` : 'Document updated';
     case 'DOCUMENT_DELETED':
       return name ? `Deleted "${name}"` : 'Document deleted';
+    case 'DOCUMENT_SHREDDED':
+      return name ? `Permanently deleted "${name}"` : 'Document permanently deleted';
     case 'DOCUMENT_VERSION_ADDED':
       return `Uploaded version ${meta.version ?? ''}${name ? ` of "${name}"` : ''}`.trim();
     case 'DOCUMENT_DOWNLOADED':
@@ -67,7 +70,7 @@ export function describeAuditLog(log: AuditLog): string {
 export function auditActionCategory(action: AuditAction): 'create' | 'update' | 'delete' | 'share' | 'download' | 'member' {
   if (['DOCUMENT_CREATED'].includes(action)) return 'create';
   if (['DOCUMENT_UPDATED', 'DOCUMENT_VERSION_ADDED', 'REMINDER_CREATED', 'REMINDER_UPDATED'].includes(action)) return 'update';
-  if (['DOCUMENT_DELETED'].includes(action)) return 'delete';
+  if (['DOCUMENT_DELETED', 'DOCUMENT_SHREDDED'].includes(action)) return 'delete';
   if (['DOCUMENT_SHARED_INTERNAL', 'DOCUMENT_SHARED_EXTERNAL', 'SHARE_REVOKED'].includes(action)) return 'share';
   if (['DOCUMENT_DOWNLOADED'].includes(action)) return 'download';
   if (['MEMBER_ADDED', 'MEMBER_ROLE_UPDATED'].includes(action)) return 'member';

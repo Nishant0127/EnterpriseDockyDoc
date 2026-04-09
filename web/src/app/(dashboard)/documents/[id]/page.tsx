@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { fetchDocument, downloadDocument, downloadDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, fetchFolders } from '@/lib/documents';
+import { fetchDocument, downloadDocument, downloadDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders } from '@/lib/documents';
 import { fetchDocumentActivity, describeAuditLog, auditActionCategory, formatAuditAction } from '@/lib/audit';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
@@ -67,6 +67,8 @@ export default function DocumentDetailPage() {
   const [deletingDoc, setDeletingDoc] = useState(false);
   const [restoringDoc, setRestoringDoc] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [shredding, setShredding] = useState(false);
+  const [showShredConfirm, setShowShredConfirm] = useState(false);
 
   function reload() {
     if (!params.id) return;
@@ -96,6 +98,20 @@ export default function DocumentDetailPage() {
       toast.error(err instanceof Error ? err.message : 'Delete failed.');
     } finally {
       setDeletingDoc(false);
+    }
+  }
+
+  async function handleShred() {
+    if (!doc) return;
+    setShowShredConfirm(false);
+    setShredding(true);
+    try {
+      await shredDocument(doc.id);
+      toast.success(`"${doc.name}" has been permanently deleted.`);
+      window.location.href = '/documents';
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Shred failed.');
+      setShredding(false);
     }
   }
 
@@ -227,24 +243,40 @@ export default function DocumentDetailPage() {
             </svg>
             Edit
           </button>
-          {/* Delete / Restore */}
+          {/* Delete / Restore / Shred */}
           {doc.status === 'DELETED' ? (
-            <button
-              type="button"
-              onClick={handleRestore}
-              disabled={restoringDoc}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-green-200 text-xs font-medium text-green-700 hover:bg-green-50 transition-colors disabled:opacity-50"
-            >
-              {restoringDoc ? (
-                <>
-                  <svg className="animate-spin" width="11" height="11" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Restoring…
-                </>
-              ) : 'Restore'}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleRestore}
+                disabled={restoringDoc || shredding}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-green-200 text-xs font-medium text-green-700 hover:bg-green-50 transition-colors disabled:opacity-50"
+              >
+                {restoringDoc ? (
+                  <>
+                    <svg className="animate-spin" width="11" height="11" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Restoring…
+                  </>
+                ) : 'Restore'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowShredConfirm(true)}
+                disabled={shredding || restoringDoc}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-300 bg-red-50 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
+                title="Permanently delete all files and records (Admin/Owner only)"
+              >
+                <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" strokeLinecap="round" strokeLinejoin="round" />
+                  <line x1="10" y1="11" x2="10" y2="17" strokeLinecap="round" />
+                  <line x1="14" y1="11" x2="14" y2="17" strokeLinecap="round" />
+                </svg>
+                {shredding ? 'Shredding…' : 'Shred'}
+              </button>
+            </>
           ) : (
             <button
               type="button"
@@ -469,6 +501,19 @@ export default function DocumentDetailPage() {
           loading={deletingDoc}
           onConfirm={handleDelete}
           onClose={() => setShowDeleteConfirm(false)}
+        />
+      )}
+
+      {/* Shred confirmation modal */}
+      {showShredConfirm && (
+        <ConfirmModal
+          title="Permanently delete document"
+          body={`This will permanently destroy "${doc.name}" and all its file versions. This action cannot be undone. Only Admins and Owners can shred documents.`}
+          confirmLabel="Shred Permanently"
+          danger
+          loading={shredding}
+          onConfirm={handleShred}
+          onClose={() => { if (!shredding) setShowShredConfirm(false); }}
         />
       )}
     </div>

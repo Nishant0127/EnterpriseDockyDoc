@@ -1,11 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DocumentStatus } from '@prisma/client';
 import * as path from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
 import { SearchIndexerService } from '../search/search-indexer.service';
 import { AuditService, AuditAction, AuditEntityType } from '../audit/audit.service';
-import { assertWorkspaceMembership } from '../../common/helpers/workspace-access.helper';
+import {
+  assertWorkspaceMembership,
+  assertEditorOrAbove,
+  assertAdminOrAbove,
+} from '../../common/helpers/workspace-access.helper';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import {
   CreateDocumentDto,
@@ -115,7 +119,7 @@ export class DocumentsService {
   // ------------------------------------------------------------------ //
 
   async create(dto: CreateDocumentDto, user: DevUserPayload): Promise<DocumentDetailDto> {
-    assertWorkspaceMembership(user, dto.workspaceId);
+    assertEditorOrAbove(user, dto.workspaceId);
 
     const created = await this.prisma.$transaction(async (tx) => {
       const doc = await tx.document.create({
@@ -167,7 +171,7 @@ export class DocumentsService {
     file: Express.Multer.File,
     user: DevUserPayload,
   ): Promise<DocumentDetailDto> {
-    assertWorkspaceMembership(user, dto.workspaceId);
+    assertEditorOrAbove(user, dto.workspaceId);
 
     const ext = fileExtension(file.originalname);
 
@@ -262,7 +266,7 @@ export class DocumentsService {
   ): Promise<DocumentDetailDto> {
     const existing = await this.prisma.document.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Document "${id}" not found`);
-    assertWorkspaceMembership(user, existing.workspaceId);
+    assertEditorOrAbove(user, existing.workspaceId);
 
     const nextVersion = existing.currentVersionNumber + 1;
 
@@ -397,7 +401,7 @@ export class DocumentsService {
   ): Promise<DocumentListItemDto> {
     const existing = await this.prisma.document.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Document "${id}" not found`);
-    assertWorkspaceMembership(user, existing.workspaceId);
+    assertEditorOrAbove(user, existing.workspaceId);
 
     const updated = await this.prisma.document.update({
       where: { id },
@@ -439,7 +443,7 @@ export class DocumentsService {
   ): Promise<{ id: string; status: DocumentStatus }> {
     const existing = await this.prisma.document.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Document "${id}" not found`);
-    assertWorkspaceMembership(user, existing.workspaceId);
+    assertEditorOrAbove(user, existing.workspaceId);
 
     const deleted = await this.prisma.document.update({
       where: { id },
@@ -459,6 +463,47 @@ export class DocumentsService {
     });
 
     return { id: deleted.id, status: deleted.status };
+  }
+
+  // ------------------------------------------------------------------ //
+  // Shred (permanent delete)
+  // ------------------------------------------------------------------ //
+
+  async shred(id: string, user: DevUserPayload): Promise<void> {
+    const doc = await this.prisma.document.findUnique({
+      where: { id },
+      include: { versions: { select: { storageKey: true } } },
+    });
+
+    if (!doc) throw new NotFoundException(`Document "${id}" not found`);
+    assertAdminOrAbove(user, doc.workspaceId);
+
+    if (doc.status !== DocumentStatus.DELETED) {
+      throw new BadRequestException(
+        'Only soft-deleted documents can be shredded. Delete the document first.',
+      );
+    }
+
+    // Delete all physical files before removing DB records
+    for (const version of doc.versions) {
+      try {
+        await this.storage.delete(version.storageKey);
+      } catch {
+        // Non-fatal: file may already be gone
+      }
+    }
+
+    // Cascade delete: Prisma schema cascades versions, shares, reminders, metadata, tags
+    await this.prisma.document.delete({ where: { id } });
+
+    this.audit.log({
+      workspaceId: doc.workspaceId,
+      userId: user.id,
+      action: AuditAction.DOCUMENT_SHREDDED,
+      entityType: AuditEntityType.DOCUMENT,
+      entityId: id,
+      metadata: { documentName: doc.name },
+    });
   }
 
   // ------------------------------------------------------------------ //
@@ -493,7 +538,7 @@ export class DocumentsService {
   ): Promise<DocumentReminderDto[]> {
     const doc = await this.prisma.document.findUnique({ where: { id } });
     if (!doc) throw new NotFoundException(`Document "${id}" not found`);
-    assertWorkspaceMembership(user, doc.workspaceId);
+    assertEditorOrAbove(user, doc.workspaceId);
 
     const expiryDate = dto.expiryDate !== undefined
       ? (dto.expiryDate ? new Date(dto.expiryDate) : null)

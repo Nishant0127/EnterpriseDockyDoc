@@ -10,7 +10,7 @@ import { DocumentStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
 import { AuditService, AuditAction, AuditEntityType } from '../audit/audit.service';
-import { assertWorkspaceMembership } from '../../common/helpers/workspace-access.helper';
+import { assertEditorOrAbove } from '../../common/helpers/workspace-access.helper';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import {
   createAccessGrant,
@@ -236,8 +236,8 @@ export class SharesService {
 
     if (!share) throw new NotFoundException(`Share "${shareId}" not found`);
 
-    // Must be a workspace member to revoke
-    assertWorkspaceMembership(user, share.document.workspaceId);
+    // Must be editor or above to revoke a share
+    assertEditorOrAbove(user, share.document.workspaceId);
 
     if (!share.isActive) {
       throw new ConflictException('Share is already revoked');
@@ -400,7 +400,7 @@ export class SharesService {
       throw new BadRequestException('Cannot share a deleted document');
     }
 
-    assertWorkspaceMembership(user, doc.workspaceId);
+    assertEditorOrAbove(user, doc.workspaceId);
     return doc;
   }
 

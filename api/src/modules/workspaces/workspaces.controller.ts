@@ -25,7 +25,7 @@ import {
   WorkspaceDetailResponseDto,
   WorkspaceSummaryDto,
 } from './dto/workspace-response.dto';
-import { AddWorkspaceMemberDto, UpdateWorkspaceMemberDto } from './dto/add-member.dto';
+import { AddWorkspaceMemberDto, UpdateWorkspaceMemberDto, UpdateWorkspaceDto } from './dto/add-member.dto';
 
 /**
  * Workspaces endpoints.
@@ -56,6 +56,25 @@ export class WorkspacesController {
   @ApiResponse({ status: 404, description: 'Workspace not found' })
   findOne(@Param('id') id: string): Promise<WorkspaceDetailResponseDto> {
     return this.workspacesService.findById(id);
+  }
+
+  /**
+   * PATCH /api/v1/workspaces/:id
+   * Update workspace properties (name). ADMIN/OWNER only.
+   */
+  @Patch(':id')
+  @UseGuards(DevAuthGuard)
+  @ApiOperation({ summary: 'Update workspace (rename). ADMIN/OWNER only.' })
+  @ApiParam({ name: 'id', description: 'Workspace cuid' })
+  @ApiResponse({ status: 200, type: WorkspaceResponseDto })
+  @ApiResponse({ status: 403, description: 'Insufficient role' })
+  @ApiResponse({ status: 404, description: 'Workspace not found' })
+  updateWorkspace(
+    @Param('id') id: string,
+    @Body() dto: UpdateWorkspaceDto,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<WorkspaceResponseDto> {
+    return this.workspacesService.update(id, dto, user);
   }
 
   /**

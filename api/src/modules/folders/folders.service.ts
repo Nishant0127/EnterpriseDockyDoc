@@ -1,6 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertWorkspaceMembership } from '../../common/helpers/workspace-access.helper';
+import {
+  assertWorkspaceMembership,
+  assertEditorOrAbove,
+} from '../../common/helpers/workspace-access.helper';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import {
   CreateFolderDto,
@@ -77,7 +80,7 @@ export class FoldersService {
    * If parentFolderId is given, validates it belongs to the same workspace.
    */
   async create(dto: CreateFolderDto, user: DevUserPayload): Promise<FolderResponseDto> {
-    assertWorkspaceMembership(user, dto.workspaceId);
+    assertEditorOrAbove(user, dto.workspaceId);
 
     if (dto.parentFolderId) {
       const parent = await this.prisma.folder.findUnique({
@@ -123,7 +126,7 @@ export class FoldersService {
       select: { workspaceId: true },
     });
     if (!existing) throw new NotFoundException(`Folder "${id}" not found`);
-    assertWorkspaceMembership(user, existing.workspaceId);
+    assertEditorOrAbove(user, existing.workspaceId);
 
     const folder = await this.prisma.folder.update({
       where: { id },
@@ -156,7 +159,7 @@ export class FoldersService {
       include: { _count: { select: { documents: true, children: true } } },
     });
     if (!folder) throw new NotFoundException(`Folder "${id}" not found`);
-    assertWorkspaceMembership(user, folder.workspaceId);
+    assertEditorOrAbove(user, folder.workspaceId);
 
     if (folder._count.documents > 0) {
       throw new BadRequestException(

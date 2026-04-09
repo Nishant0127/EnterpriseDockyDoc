@@ -8,7 +8,10 @@ import {
 import { WorkspaceUserRole, WorkspaceUserStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService, AuditAction, AuditEntityType } from '../audit/audit.service';
-import { assertWorkspaceMembership } from '../../common/helpers/workspace-access.helper';
+import {
+  assertWorkspaceMembership,
+  assertAdminOrAbove,
+} from '../../common/helpers/workspace-access.helper';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import {
   WorkspaceMemberDto,
@@ -19,6 +22,7 @@ import {
 import type {
   AddWorkspaceMemberDto,
   UpdateWorkspaceMemberDto,
+  UpdateWorkspaceDto,
 } from './dto/add-member.dto';
 
 // Roles that can manage members
@@ -157,6 +161,43 @@ export class WorkspacesService {
       activeShares,
       memberCount,
       recentUploads,
+    };
+  }
+
+  // ------------------------------------------------------------------ //
+  // Update workspace (rename, etc.) — ADMIN/OWNER only
+  // ------------------------------------------------------------------ //
+
+  async update(
+    workspaceId: string,
+    dto: UpdateWorkspaceDto,
+    currentUser: DevUserPayload,
+  ): Promise<WorkspaceResponseDto> {
+    assertAdminOrAbove(currentUser, workspaceId);
+
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      include: { _count: { select: { members: true } } },
+    });
+    if (!workspace) throw new NotFoundException(`Workspace "${workspaceId}" not found`);
+
+    const updated = await this.prisma.workspace.update({
+      where: { id: workspaceId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+      },
+      include: { _count: { select: { members: true } } },
+    });
+
+    return {
+      id: updated.id,
+      name: updated.name,
+      slug: updated.slug,
+      type: updated.type,
+      status: updated.status,
+      memberCount: updated._count.members,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
     };
   }
 
