@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import {
   fetchWorkspaceActivity,
@@ -12,22 +12,31 @@ import { cn } from '@/lib/utils';
 import type { AuditAction, AuditEntityType, AuditLog } from '@/types';
 
 // ------------------------------------------------------------------ //
-// Category dot colours
+// Category styles
 // ------------------------------------------------------------------ //
 
 const CATEGORY_STYLES = {
-  create:   { dot: 'bg-green-500',  ring: 'ring-green-100',  icon: 'text-green-600'  },
-  update:   { dot: 'bg-blue-500',   ring: 'ring-blue-100',   icon: 'text-blue-600'   },
-  delete:   { dot: 'bg-red-500',    ring: 'ring-red-100',    icon: 'text-red-600'    },
-  share:    { dot: 'bg-purple-500', ring: 'ring-purple-100', icon: 'text-purple-600' },
-  download: { dot: 'bg-amber-500',  ring: 'ring-amber-100',  icon: 'text-amber-600'  },
-  member:   { dot: 'bg-teal-500',   ring: 'ring-teal-100',   icon: 'text-teal-600'   },
+  create:   { dot: 'bg-green-500',  ring: 'ring-green-100'  },
+  update:   { dot: 'bg-blue-500',   ring: 'ring-blue-100'   },
+  delete:   { dot: 'bg-red-500',    ring: 'ring-red-100'    },
+  share:    { dot: 'bg-purple-500', ring: 'ring-purple-100' },
+  download: { dot: 'bg-amber-500',  ring: 'ring-amber-100'  },
+  member:   { dot: 'bg-teal-500',   ring: 'ring-teal-100'   },
 } as const;
 
+const PILL_STYLES = {
+  create:   'bg-green-50 text-green-700',
+  update:   'bg-blue-50 text-blue-700',
+  delete:   'bg-red-50 text-red-700',
+  share:    'bg-purple-50 text-purple-700',
+  download: 'bg-amber-50 text-amber-700',
+  member:   'bg-teal-50 text-teal-700',
+} as const;
+
+// Only entity types we actually log — DOCUMENT_VERSION and WORKSPACE are unused
 const ENTITY_FILTER_OPTIONS: { label: string; value: AuditEntityType | '' }[] = [
   { label: 'All types', value: '' },
   { label: 'Documents', value: 'DOCUMENT' },
-  { label: 'Versions', value: 'DOCUMENT_VERSION' },
   { label: 'Shares', value: 'SHARE' },
   { label: 'Reminders', value: 'REMINDER' },
   { label: 'Members', value: 'USER' },
@@ -43,7 +52,7 @@ const ACTION_FILTER_OPTIONS: { label: string; value: AuditAction | '' }[] = [
   { label: 'Shared internally', value: 'DOCUMENT_SHARED_INTERNAL' },
   { label: 'External link', value: 'DOCUMENT_SHARED_EXTERNAL' },
   { label: 'Share revoked', value: 'SHARE_REVOKED' },
-  { label: 'Reminder set', value: 'REMINDER_UPDATED' },
+  { label: 'Reminder updated', value: 'REMINDER_UPDATED' },
   { label: 'Member added', value: 'MEMBER_ADDED' },
   { label: 'Role updated', value: 'MEMBER_ROLE_UPDATED' },
 ];
@@ -55,23 +64,50 @@ const ACTION_FILTER_OPTIONS: { label: string; value: AuditAction | '' }[] = [
 export default function ActivityPage() {
   const { activeWorkspace } = useUser();
   const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [filtering, setFiltering] = useState(false);
   const [entityType, setEntityType] = useState<AuditEntityType | ''>('');
   const [action, setAction] = useState<AuditAction | ''>('');
 
+  // Track whether this is the first load or a filter change
+  const firstLoad = useRef(true);
+
   useEffect(() => {
     if (!activeWorkspace) return;
-    setLoading(true);
+
+    if (firstLoad.current) {
+      setInitialLoading(true);
+    } else {
+      // On filter change: keep existing logs visible, just show a subtle spinner
+      setFiltering(true);
+    }
+
     fetchWorkspaceActivity({
       workspaceId: activeWorkspace.workspaceId,
       entityType: entityType || undefined,
       action: action || undefined,
       limit: 100,
     })
-      .then(setLogs)
-      .catch(() => setLogs([]))
-      .finally(() => setLoading(false));
+      .then((data) => {
+        setLogs(data);
+        firstLoad.current = false;
+      })
+      .catch(() => {
+        // Keep existing logs on error rather than clearing
+        firstLoad.current = false;
+      })
+      .finally(() => {
+        setInitialLoading(false);
+        setFiltering(false);
+      });
   }, [activeWorkspace?.workspaceId, entityType, action]);
+
+  const hasFilters = entityType !== '' || action !== '';
+
+  function clearFilters() {
+    setEntityType('');
+    setAction('');
+  }
 
   return (
     <div className="max-w-3xl">
@@ -84,7 +120,7 @@ export default function ActivityPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="flex flex-wrap items-center gap-2 mb-6">
         <select
           value={entityType}
           onChange={(e) => setEntityType(e.target.value as AuditEntityType | '')}
@@ -105,31 +141,46 @@ export default function ActivityPage() {
           ))}
         </select>
 
-        {(entityType || action) && (
+        {hasFilters && (
           <button
-            onClick={() => { setEntityType(''); setAction(''); }}
-            className="text-xs text-gray-500 hover:text-gray-800 px-2 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors"
+            onClick={clearFilters}
+            className="text-xs text-gray-500 hover:text-gray-800 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors"
           >
             Clear filters
           </button>
         )}
+
+        {filtering && (
+          <svg className="animate-spin text-brand-500 ml-1" width="14" height="14" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        )}
       </div>
 
       {/* Feed */}
-      {loading ? (
+      {initialLoading ? (
         <ActivitySkeleton />
       ) : logs.length === 0 ? (
         <div className="text-center py-16">
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
             <ClockIcon className="text-gray-400" />
           </div>
-          <p className="text-sm text-gray-500">No activity yet.</p>
-          <p className="text-xs text-gray-400 mt-1">
-            Actions like uploads, shares, and member changes will appear here.
+          <p className="text-sm text-gray-500">
+            {hasFilters ? 'No activity matches these filters.' : 'No activity yet.'}
           </p>
+          {hasFilters ? (
+            <button onClick={clearFilters} className="mt-2 text-xs text-brand-600 hover:underline">
+              Clear filters
+            </button>
+          ) : (
+            <p className="text-xs text-gray-400 mt-1">
+              Actions like uploads, shares, and member changes will appear here.
+            </p>
+          )}
         </div>
       ) : (
-        <div className="relative">
+        <div className={cn('relative transition-opacity', filtering && 'opacity-60')}>
           {/* Vertical timeline line */}
           <div className="absolute left-[18px] top-0 bottom-0 w-px bg-gray-100" />
 
@@ -150,25 +201,17 @@ export default function ActivityPage() {
 
 function ActivityItem({ log, isLast }: { log: AuditLog; isLast: boolean }) {
   const category = auditActionCategory(log.action);
-  const styles = CATEGORY_STYLES[category];
+  const dotStyle = CATEGORY_STYLES[category];
   const actor = log.user
     ? `${log.user.firstName} ${log.user.lastName}`
     : 'External user';
-  const timeAgo = formatRelativeTime(log.createdAt);
-  const description = describeAuditLog(log);
 
   return (
     <div className={cn('relative flex gap-4 pb-5', isLast && 'pb-0')}>
       {/* Dot */}
       <div className="relative z-10 flex-shrink-0 mt-0.5">
-        <div
-          className={cn(
-            'w-9 h-9 rounded-full flex items-center justify-center ring-4',
-            styles.ring,
-            'bg-white',
-          )}
-        >
-          <span className={cn('w-2.5 h-2.5 rounded-full', styles.dot)} />
+        <div className={cn('w-9 h-9 rounded-full flex items-center justify-center ring-4 bg-white', dotStyle.ring)}>
+          <span className={cn('w-2.5 h-2.5 rounded-full', dotStyle.dot)} />
         </div>
       </div>
 
@@ -176,46 +219,27 @@ function ActivityItem({ log, isLast }: { log: AuditLog; isLast: boolean }) {
       <div className="flex-1 min-w-0 pt-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-sm text-gray-900 leading-snug">{description}</p>
+            <p className="text-sm text-gray-900 leading-snug">{describeAuditLog(log)}</p>
             <p className="text-xs text-gray-400 mt-0.5">{actor}</p>
           </div>
           <time
             className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0 mt-0.5"
             title={new Date(log.createdAt).toLocaleString()}
           >
-            {timeAgo}
+            {formatRelativeTime(log.createdAt)}
           </time>
         </div>
 
-        {/* Optional metadata pill */}
-        <ActionPill action={log.action} />
+        <span className={cn('inline-block mt-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full', PILL_STYLES[category])}>
+          {formatAuditAction(log.action)}
+        </span>
       </div>
     </div>
   );
 }
 
-function ActionPill({ action }: { action: AuditAction }) {
-  const category = auditActionCategory(action);
-  const styles = CATEGORY_STYLES[category];
-  return (
-    <span
-      className={cn(
-        'inline-block mt-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full',
-        category === 'create'   && 'bg-green-50 text-green-700',
-        category === 'update'   && 'bg-blue-50 text-blue-700',
-        category === 'delete'   && 'bg-red-50 text-red-700',
-        category === 'share'    && 'bg-purple-50 text-purple-700',
-        category === 'download' && 'bg-amber-50 text-amber-700',
-        category === 'member'   && 'bg-teal-50 text-teal-700',
-      )}
-    >
-      {formatAuditAction(action)}
-    </span>
-  );
-}
-
 // ------------------------------------------------------------------ //
-// Skeleton
+// Skeleton — only shown on initial page load
 // ------------------------------------------------------------------ //
 
 function ActivitySkeleton() {
