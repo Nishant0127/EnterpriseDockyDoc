@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -21,6 +23,7 @@ import {
   WorkspaceMemberDto,
   WorkspaceResponseDto,
   WorkspaceDetailResponseDto,
+  WorkspaceSummaryDto,
 } from './dto/workspace-response.dto';
 import { AddWorkspaceMemberDto, UpdateWorkspaceMemberDto } from './dto/add-member.dto';
 
@@ -53,6 +56,22 @@ export class WorkspacesController {
   @ApiResponse({ status: 404, description: 'Workspace not found' })
   findOne(@Param('id') id: string): Promise<WorkspaceDetailResponseDto> {
     return this.workspacesService.findById(id);
+  }
+
+  /**
+   * GET /api/v1/workspaces/:id/summary
+   * Returns aggregate stats for the dashboard.
+   */
+  @Get(':id/summary')
+  @UseGuards(DevAuthGuard)
+  @ApiOperation({ summary: 'Get workspace dashboard summary stats' })
+  @ApiParam({ name: 'id', description: 'Workspace cuid' })
+  @ApiResponse({ status: 200, type: WorkspaceSummaryDto })
+  getSummary(
+    @Param('id') id: string,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<WorkspaceSummaryDto> {
+    return this.workspacesService.getSummary(id, user);
   }
 
   /**
@@ -98,5 +117,32 @@ export class WorkspacesController {
     @CurrentUser() user: DevUserPayload,
   ): Promise<WorkspaceMemberDto> {
     return this.workspacesService.updateMember(id, memberId, dto, user);
+  }
+
+  /**
+   * DELETE /api/v1/workspaces/:id/members/:memberId
+   * Remove a member (sets status to REMOVED). OWNER/ADMIN only.
+   */
+  @Delete(':id/members/:memberId')
+  @UseGuards(DevAuthGuard)
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Remove a workspace member (OWNER/ADMIN only)' })
+  @ApiParam({ name: 'id', description: 'Workspace cuid' })
+  @ApiParam({ name: 'memberId', description: 'WorkspaceUser cuid' })
+  @ApiResponse({ status: 204, description: 'Member removed' })
+  @ApiResponse({ status: 400, description: 'Cannot remove last owner' })
+  @ApiResponse({ status: 403, description: 'Insufficient role' })
+  @ApiResponse({ status: 404, description: 'Member not found' })
+  async removeMember(
+    @Param('id') id: string,
+    @Param('memberId') memberId: string,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<void> {
+    await this.workspacesService.updateMember(
+      id,
+      memberId,
+      { status: 'REMOVED' as any },
+      user,
+    );
   }
 }

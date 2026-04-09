@@ -1,8 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertWorkspaceMembership } from '../../common/helpers/workspace-access.helper';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
-import { CreateTagDto, TagResponseDto } from './dto/tag.dto';
+import { CreateTagDto, TagResponseDto, UpdateTagDto } from './dto/tag.dto';
 
 @Injectable()
 export class TagsService {
@@ -27,5 +27,27 @@ export class TagsService {
         color: dto.color ?? null,
       },
     });
+  }
+
+  async update(id: string, dto: UpdateTagDto, user: DevUserPayload): Promise<TagResponseDto> {
+    const tag = await this.prisma.documentTag.findUnique({ where: { id } });
+    if (!tag) throw new NotFoundException(`Tag "${id}" not found`);
+    assertWorkspaceMembership(user, tag.workspaceId);
+
+    return this.prisma.documentTag.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.color !== undefined && { color: dto.color }),
+      },
+    });
+  }
+
+  async delete(id: string, user: DevUserPayload): Promise<void> {
+    const tag = await this.prisma.documentTag.findUnique({ where: { id } });
+    if (!tag) throw new NotFoundException(`Tag "${id}" not found`);
+    assertWorkspaceMembership(user, tag.workspaceId);
+
+    await this.prisma.documentTag.delete({ where: { id } });
   }
 }

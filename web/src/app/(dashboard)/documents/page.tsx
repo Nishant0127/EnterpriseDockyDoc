@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useUser } from '@/context/UserContext';
-import { fetchFolders, fetchDocuments, uploadDocument, searchDocuments } from '@/lib/documents';
+import { fetchFolders, fetchDocuments, uploadDocument, searchDocuments, createFolder, renameFolder, deleteFolder, deleteDocument } from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import type { DocumentListItem, DocumentStatus, FolderListItem, SearchResult } from '@/types';
 
@@ -68,6 +68,9 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [renamingFolder, setRenamingFolder] = useState<FolderListItem | null>(null);
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -151,6 +154,35 @@ export default function DocumentsPage() {
     })
       .then(setDocuments)
       .catch(() => {});
+  }
+
+  function refreshFolders() {
+    if (!activeWorkspace) return;
+    fetchFolders(activeWorkspace.workspaceId).then(setFolders).catch(() => {});
+  }
+
+  async function handleDeleteFolder(folder: FolderListItem) {
+    if (!confirm(`Delete folder "${folder.name}"? It must be empty.`)) return;
+    try {
+      await deleteFolder(folder.id);
+      if (selectedFolderId === folder.id) setSelectedFolderId(null);
+      refreshFolders();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete folder.');
+    }
+  }
+
+  async function handleDeleteDoc(doc: DocumentListItem) {
+    if (!confirm(`Delete "${doc.name}"? It will be soft-deleted.`)) return;
+    setDeletingDocId(doc.id);
+    try {
+      await deleteDocument(doc.id);
+      refreshDocuments();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete document.');
+    } finally {
+      setDeletingDocId(null);
+    }
   }
 
   if (userLoading || (!activeWorkspace && !error)) {
@@ -241,10 +273,19 @@ export default function DocumentsPage() {
         {/* --------------------------------------------------------- */}
         <aside className="w-52 flex-shrink-0">
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-3 py-2.5 border-b border-gray-100">
+            <div className="px-3 py-2.5 border-b border-gray-100 flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
                 Folders
               </p>
+              <button
+                onClick={() => setShowNewFolder(true)}
+                title="New folder"
+                className="text-gray-400 hover:text-brand-600 transition-colors"
+              >
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                </svg>
+              </button>
             </div>
             <nav className="p-1.5 space-y-0.5">
               {/* All documents */}
@@ -268,6 +309,8 @@ export default function DocumentsPage() {
                     childMap={childMap}
                     selectedId={selectedFolderId}
                     onSelect={setSelectedFolderId}
+                    onRename={setRenamingFolder}
+                    onDelete={handleDeleteFolder}
                     depth={0}
                   />
                 ))
@@ -344,11 +387,18 @@ export default function DocumentsPage() {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">
                       Created
                     </th>
+                    <th className="px-4 py-3 w-10" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {displayDocs.map((doc) => (
-                    <DocumentRow key={doc.id} doc={doc} snippet={(doc as SearchResult).snippet} />
+                    <DocumentRow
+                      key={doc.id}
+                      doc={doc}
+                      snippet={(doc as SearchResult).snippet}
+                      deleting={deletingDocId === doc.id}
+                      onDelete={() => handleDeleteDoc(doc as DocumentListItem)}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -370,6 +420,111 @@ export default function DocumentsPage() {
           }}
         />
       )}
+
+      {/* New folder modal */}
+      {showNewFolder && activeWorkspace && (
+        <FolderModal
+          workspaceId={activeWorkspace.workspaceId}
+          onClose={() => setShowNewFolder(false)}
+          onSaved={() => {
+            setShowNewFolder(false);
+            refreshFolders();
+          }}
+        />
+      )}
+
+      {/* Rename folder modal */}
+      {renamingFolder && (
+        <FolderModal
+          workspaceId={renamingFolder.workspaceId}
+          folder={renamingFolder}
+          onClose={() => setRenamingFolder(null)}
+          onSaved={() => {
+            setRenamingFolder(null);
+            refreshFolders();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Folder modal (create or rename)
+// ------------------------------------------------------------------ //
+
+function FolderModal({
+  workspaceId,
+  folder,
+  onClose,
+  onSaved,
+}: {
+  workspaceId: string;
+  folder?: FolderListItem;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(folder?.name ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) { setError('Name is required.'); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      if (folder) {
+        await renameFolder(folder.id, name.trim());
+      } else {
+        await createFolder({ workspaceId, name: name.trim() });
+      }
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-gray-900">
+            {folder ? 'Rename Folder' : 'New Folder'}
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Folder name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              required
+              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              placeholder="e.g. Contracts"
+            />
+          </div>
+
+          {error && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving} className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
+              {saving ? 'Saving…' : folder ? 'Rename' : 'Create'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -633,24 +788,61 @@ function FolderTreeNode({
   childMap,
   selectedId,
   onSelect,
+  onRename,
+  onDelete,
   depth,
 }: {
   folder: FolderListItem;
   childMap: Map<string, FolderListItem[]>;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onRename: (f: FolderListItem) => void;
+  onDelete: (f: FolderListItem) => void;
   depth: number;
 }) {
   const children = childMap.get(folder.id) ?? [];
+  const [hovered, setHovered] = useState(false);
+
   return (
     <>
-      <FolderRow
-        label={folder.name}
-        count={folder.documentCount || undefined}
-        active={selectedId === folder.id}
-        onClick={() => onSelect(folder.id)}
-        indent={depth}
-      />
+      <div
+        className="relative group"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        <FolderRow
+          label={folder.name}
+          count={folder.documentCount || undefined}
+          active={selectedId === folder.id}
+          onClick={() => onSelect(folder.id)}
+          indent={depth}
+        />
+        {hovered && (
+          <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 bg-white rounded shadow-sm border border-gray-100 px-1 py-0.5 z-10">
+            <button
+              onClick={(e) => { e.stopPropagation(); onRename(folder); }}
+              title="Rename"
+              className="p-0.5 text-gray-400 hover:text-brand-600 transition-colors"
+            >
+              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(folder); }}
+              title="Delete"
+              className="p-0.5 text-gray-400 hover:text-red-600 transition-colors"
+            >
+              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6M14 11v6" />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
       {children.map((child) => (
         <FolderTreeNode
           key={child.id}
@@ -658,6 +850,8 @@ function FolderTreeNode({
           childMap={childMap}
           selectedId={selectedId}
           onSelect={onSelect}
+          onRename={onRename}
+          onDelete={onDelete}
           depth={depth + 1}
         />
       ))}
@@ -678,7 +872,17 @@ function expiryBadge(expiryDate: string | null | undefined): {
   return null;
 }
 
-function DocumentRow({ doc, snippet }: { doc: DocumentListItem; snippet?: string }) {
+function DocumentRow({
+  doc,
+  snippet,
+  deleting,
+  onDelete,
+}: {
+  doc: DocumentListItem;
+  snippet?: string;
+  deleting?: boolean;
+  onDelete: () => void;
+}) {
   const badge = STATUS_BADGE[doc.status];
   const expiry = expiryBadge(doc.expiryDate);
   const date = new Date(doc.createdAt).toLocaleDateString('en-US', {
@@ -688,7 +892,7 @@ function DocumentRow({ doc, snippet }: { doc: DocumentListItem; snippet?: string
   });
 
   return (
-    <tr className="hover:bg-gray-50 transition-colors">
+    <tr className="hover:bg-gray-50 transition-colors group">
       {/* Name */}
       <td className="px-4 py-3">
         <Link
@@ -788,6 +992,31 @@ function DocumentRow({ doc, snippet }: { doc: DocumentListItem; snippet?: string
       {/* Created */}
       <td className="px-4 py-3 hidden lg:table-cell">
         <span className="text-xs text-gray-400 whitespace-nowrap">{date}</span>
+      </td>
+
+      {/* Row actions */}
+      <td className="px-2 py-3 w-10">
+        {doc.status !== 'DELETED' && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            disabled={deleting}
+            title="Delete document"
+            className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+          >
+            {deleting ? (
+              <svg className="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            ) : (
+              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6M14 11v6" />
+              </svg>
+            )}
+          </button>
+        )}
       </td>
     </tr>
   );

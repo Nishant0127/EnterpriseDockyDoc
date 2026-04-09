@@ -60,3 +60,14 @@ export class WorkspaceDetailResponseDto extends WorkspaceResponseDto {
   @ApiProperty({ type: [WorkspaceMemberDto] })
   members!: WorkspaceMemberDto[];
 }
+
+export class WorkspaceSummaryDto {
+  @ApiProperty() totalDocuments!: number;
+  @ApiProperty() activeDocuments!: number;
+  @ApiProperty() archivedDocuments!: number;
+  @ApiProperty() expiringCount!: number;
+  @ApiProperty() expiredCount!: number;
+  @ApiProperty() activeShares!: number;
+  @ApiProperty() memberCount!: number;
+  @ApiProperty() recentUploads!: number;
+}

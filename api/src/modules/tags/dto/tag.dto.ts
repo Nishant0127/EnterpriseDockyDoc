@@ -19,6 +19,16 @@ export class CreateTagDto {
   color?: string;
 }
 
+export class UpdateTagDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() @IsNotEmpty() name?: string;
+
+  @ApiPropertyOptional({ description: 'Hex color e.g. #6366f1 or null to clear' })
+  @IsOptional()
+  @IsString()
+  @IsHexColor()
+  color?: string | null;
+}
+
 export class TagResponseDto {
   @ApiProperty() id!: string;
   @ApiProperty() workspaceId!: string;

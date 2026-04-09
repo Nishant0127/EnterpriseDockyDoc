@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertWorkspaceMembership } from '../../common/helpers/workspace-access.helper';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
@@ -6,6 +6,7 @@ import {
   CreateFolderDto,
   FolderDetailResponseDto,
   FolderResponseDto,
+  UpdateFolderDto,
 } from './dto/folder.dto';
 
 @Injectable()
@@ -111,5 +112,63 @@ export class FoldersService {
       createdAt: folder.createdAt,
       updatedAt: folder.updatedAt,
     };
+  }
+
+  /**
+   * Rename a folder.
+   */
+  async rename(id: string, dto: UpdateFolderDto, user: DevUserPayload): Promise<FolderResponseDto> {
+    const existing = await this.prisma.folder.findUnique({
+      where: { id },
+      select: { workspaceId: true },
+    });
+    if (!existing) throw new NotFoundException(`Folder "${id}" not found`);
+    assertWorkspaceMembership(user, existing.workspaceId);
+
+    const folder = await this.prisma.folder.update({
+      where: { id },
+      data: { name: dto.name },
+      include: {
+        createdBy: { select: { id: true, firstName: true, lastName: true } },
+        _count: { select: { documents: true, children: true } },
+      },
+    });
+
+    return {
+      id: folder.id,
+      workspaceId: folder.workspaceId,
+      name: folder.name,
+      parentFolderId: folder.parentFolderId,
+      createdBy: folder.createdBy,
+      documentCount: folder._count.documents,
+      childCount: folder._count.children,
+      createdAt: folder.createdAt,
+      updatedAt: folder.updatedAt,
+    };
+  }
+
+  /**
+   * Delete a folder. Fails if the folder has documents or sub-folders.
+   */
+  async delete(id: string, user: DevUserPayload): Promise<void> {
+    const folder = await this.prisma.folder.findUnique({
+      where: { id },
+      include: { _count: { select: { documents: true, children: true } } },
+    });
+    if (!folder) throw new NotFoundException(`Folder "${id}" not found`);
+    assertWorkspaceMembership(user, folder.workspaceId);
+
+    if (folder._count.documents > 0) {
+      throw new BadRequestException(
+        `Cannot delete folder "${folder.name}" — it contains ${folder._count.documents} document(s). Move or delete them first.`,
+      );
+    }
+    if (folder._count.children > 0) {
+      throw new BadRequestException(
+        `Cannot delete folder "${folder.name}" — it has ${folder._count.children} sub-folder(s). Remove them first.`,
+      );
+    }
+
+    await this.prisma.folder.delete({ where: { id } });
   }
 }

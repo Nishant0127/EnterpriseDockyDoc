@@ -2,11 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { useUser } from '@/context/UserContext';
-import { addWorkspaceMember, fetchWorkspaceDetail } from '@/lib/documents';
+import {
+  addWorkspaceMember,
+  fetchWorkspaceDetail,
+  removeWorkspaceMember,
+  updateWorkspaceMember,
+} from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import type { WorkspaceDetail, WorkspaceMember, WorkspaceUserRole } from '@/types';
 
-// Role sort order: lower index = shown first
 const ROLE_ORDER: WorkspaceUserRole[] = ['OWNER', 'ADMIN', 'EDITOR', 'VIEWER'];
 
 const ROLE_BADGE: Record<WorkspaceUserRole, { label: string; class: string }> = {
@@ -26,12 +30,16 @@ export default function MembersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingMember, setEditingMember] = useState<WorkspaceMember | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const canManage =
     activeWorkspace?.role === 'OWNER' || activeWorkspace?.role === 'ADMIN';
 
   function load(workspaceId: string) {
     setLoading(true);
+    setError(null);
     fetchWorkspaceDetail(workspaceId)
       .then(setDetail)
       .catch(() => setError('Failed to load members.'))
@@ -42,6 +50,21 @@ export default function MembersPage() {
     if (!activeWorkspace) return;
     load(activeWorkspace.workspaceId);
   }, [activeWorkspace?.workspaceId]);
+
+  async function handleRemove(member: WorkspaceMember) {
+    if (!activeWorkspace) return;
+    if (!confirm(`Remove ${member.firstName} ${member.lastName} from this workspace?`)) return;
+    setRemovingId(member.id);
+    setActionError(null);
+    try {
+      await removeWorkspaceMember(activeWorkspace.workspaceId, member.id);
+      load(activeWorkspace.workspaceId);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to remove member.');
+    } finally {
+      setRemovingId(null);
+    }
+  }
 
   if (userLoading || loading) return <PageSkeleton />;
 
@@ -67,8 +90,7 @@ export default function MembersPage() {
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Members</h1>
           <p className="mt-0.5 text-sm text-gray-500">
-            {detail.name} &middot; {detail.memberCount} member
-            {detail.memberCount !== 1 ? 's' : ''}
+            {detail.name} &middot; {detail.memberCount} member{detail.memberCount !== 1 ? 's' : ''}
           </p>
         </div>
         {canManage && (
@@ -82,6 +104,15 @@ export default function MembersPage() {
         )}
       </div>
 
+      {actionError && (
+        <div className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {actionError}
+          <button onClick={() => setActionError(null)} className="ml-2 text-red-500 hover:text-red-700">
+            &times;
+          </button>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="divide-y divide-gray-100">
           {sortedMembers.map((member) => {
@@ -92,9 +123,10 @@ export default function MembersPage() {
               year: 'numeric',
             });
             const isYou = member.userId === user?.id;
+            const isOwner = member.role === 'OWNER';
 
             return (
-              <div key={member.id} className="flex items-center gap-4 px-5 py-3.5">
+              <div key={member.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors">
                 {/* Avatar */}
                 <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-xs font-semibold text-brand-700 flex-shrink-0">
                   {initials(member.firstName, member.lastName)}
@@ -111,20 +143,45 @@ export default function MembersPage() {
                   <p className="text-xs text-gray-400 truncate">{member.email}</p>
                 </div>
 
-                {/* Role */}
-                <span
-                  className={cn(
-                    'flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded',
-                    badge.class,
-                  )}
-                >
+                {/* Role badge */}
+                <span className={cn('flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded', badge.class)}>
                   {badge.label}
                 </span>
 
-                {/* Joined date */}
+                {/* Joined */}
                 <span className="flex-shrink-0 text-xs text-gray-400 hidden sm:block">
                   Joined {joined}
                 </span>
+
+                {/* Actions */}
+                {canManage && !isYou && (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => setEditingMember(member)}
+                      title="Edit role"
+                      className="p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
+                    >
+                      <PencilIcon />
+                    </button>
+                    {!isOwner && (
+                      <button
+                        onClick={() => handleRemove(member)}
+                        disabled={removingId === member.id}
+                        title="Remove member"
+                        className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                      >
+                        {removingId === member.id ? (
+                          <svg className="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                        ) : (
+                          <TrashIcon />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -141,6 +198,97 @@ export default function MembersPage() {
           }}
         />
       )}
+
+      {editingMember && (
+        <EditRoleModal
+          workspaceId={activeWorkspace.workspaceId}
+          member={editingMember}
+          onClose={() => setEditingMember(null)}
+          onSaved={() => {
+            setEditingMember(null);
+            load(activeWorkspace.workspaceId);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Edit Role Modal
+// ------------------------------------------------------------------ //
+
+function EditRoleModal({
+  workspaceId,
+  member,
+  onClose,
+  onSaved,
+}: {
+  workspaceId: string;
+  member: WorkspaceMember;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [role, setRole] = useState<WorkspaceUserRole>(member.role);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (role === member.role) { onClose(); return; }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await updateWorkspaceMember(workspaceId, member.id, { role });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update role.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-gray-900">Edit Role</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+
+        <p className="text-sm text-gray-500 mb-4">
+          {member.firstName} {member.lastName} &middot; {member.email}
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Role</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as WorkspaceUserRole)}
+              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="VIEWER">Viewer — can view and download shared documents</option>
+              <option value="EDITOR">Editor — can upload and edit documents</option>
+              <option value="ADMIN">Admin — can manage members and settings</option>
+              <option value="OWNER">Owner — full control</option>
+            </select>
+          </div>
+
+          {error && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
+              Cancel
+            </button>
+            <button type="submit" disabled={submitting} className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
+              {submitting ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -149,13 +297,15 @@ export default function MembersPage() {
 // Add Member Modal
 // ------------------------------------------------------------------ //
 
-interface AddMemberModalProps {
+function AddMemberModal({
+  workspaceId,
+  onClose,
+  onAdded,
+}: {
   workspaceId: string;
   onClose: () => void;
   onAdded: () => void;
-}
-
-function AddMemberModal({ workspaceId, onClose, onAdded }: AddMemberModalProps) {
+}) {
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -171,8 +321,7 @@ function AddMemberModal({ workspaceId, onClose, onAdded }: AddMemberModalProps) 
       await addWorkspaceMember(workspaceId, { email, firstName, lastName, role });
       onAdded();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to add member.';
-      setError(msg);
+      setError(err instanceof Error ? err.message : 'Failed to add member.');
     } finally {
       setSubmitting(false);
     }
@@ -183,12 +332,7 @@ function AddMemberModal({ workspaceId, onClose, onAdded }: AddMemberModalProps) 
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-semibold text-gray-900">Add Member</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
-          >
-            &times;
-          </button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -244,24 +388,14 @@ function AddMemberModal({ workspaceId, onClose, onAdded }: AddMemberModalProps) 
           </div>
 
           {error && (
-            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              {error}
-            </p>
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
           )}
 
           <div className="flex justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50"
-            >
+            <button type="submit" disabled={submitting} className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
               {submitting ? 'Adding…' : 'Add Member'}
             </button>
           </div>
@@ -270,6 +404,10 @@ function AddMemberModal({ workspaceId, onClose, onAdded }: AddMemberModalProps) 
     </div>
   );
 }
+
+// ------------------------------------------------------------------ //
+// Skeleton + icons
+// ------------------------------------------------------------------ //
 
 function PageSkeleton() {
   return (
@@ -289,5 +427,25 @@ function PageSkeleton() {
         ))}
       </div>
     </div>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6M14 11v6" />
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+    </svg>
   );
 }

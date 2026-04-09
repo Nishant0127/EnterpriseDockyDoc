@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { TagsService } from './tags.service';
-import { CreateTagDto, TagQueryDto, TagResponseDto } from './dto/tag.dto';
+import { CreateTagDto, TagQueryDto, TagResponseDto, UpdateTagDto } from './dto/tag.dto';
 import { DevAuthGuard, type DevUserPayload } from '../../common/guards/dev-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -35,5 +35,35 @@ export class TagsController {
     @CurrentUser() user: DevUserPayload,
   ): Promise<TagResponseDto> {
     return this.tagsService.create(dto, user);
+  }
+
+  /**
+   * PATCH /api/v1/tags/:id
+   */
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update a tag name or color' })
+  @ApiResponse({ status: 200, type: TagResponseDto })
+  @ApiResponse({ status: 404, description: 'Tag not found' })
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateTagDto,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<TagResponseDto> {
+    return this.tagsService.update(id, dto, user);
+  }
+
+  /**
+   * DELETE /api/v1/tags/:id
+   */
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete a tag' })
+  @ApiResponse({ status: 204, description: 'Tag deleted' })
+  @ApiResponse({ status: 404, description: 'Tag not found' })
+  async delete(
+    @Param('id') id: string,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<void> {
+    return this.tagsService.delete(id, user);
   }
 }

@@ -2,24 +2,37 @@
 
 import { useEffect, useState } from 'react';
 import { useUser } from '@/context/UserContext';
-import { fetchWorkspaceDetail } from '@/lib/documents';
-import type { WorkspaceDetail } from '@/types';
+import { fetchWorkspaceDetail, fetchTags, createTag, updateTag, deleteTag } from '@/lib/documents';
+import { cn } from '@/lib/utils';
+import type { Tag, WorkspaceDetail } from '@/types';
 
 export default function SettingsPage() {
   const { user, activeWorkspace, isLoading } = useUser();
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(false);
 
   useEffect(() => {
     if (!activeWorkspace) return;
     setDetailLoading(true);
+    setTagsLoading(true);
     fetchWorkspaceDetail(activeWorkspace.workspaceId)
       .then(setDetail)
       .catch(() => setDetail(null))
       .finally(() => setDetailLoading(false));
+    fetchTags(activeWorkspace.workspaceId)
+      .then(setTags)
+      .catch(() => setTags([]))
+      .finally(() => setTagsLoading(false));
   }, [activeWorkspace?.workspaceId]);
 
-  if (isLoading || detailLoading) return <PageSkeleton />;
+  function refreshTags() {
+    if (!activeWorkspace) return;
+    fetchTags(activeWorkspace.workspaceId).then(setTags).catch(() => {});
+  }
+
+  if (isLoading || detailLoading || tagsLoading) return <PageSkeleton />;
 
   return (
     <div className="max-w-2xl">
@@ -64,6 +77,15 @@ export default function SettingsPage() {
           />
           <SettingsRow label="Email" value={user?.email ?? '—'} last />
         </SettingsCard>
+
+        {/* Tags management */}
+        {activeWorkspace && (
+          <TagsCard
+            workspaceId={activeWorkspace.workspaceId}
+            tags={tags}
+            onChanged={refreshTags}
+          />
+        )}
 
         {/* Placeholder sections */}
         <SettingsCard title="Notifications">
@@ -134,6 +156,226 @@ function SettingsRow({
         {label}
       </span>
       <span className="text-sm text-gray-800 flex-1">{value}</span>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Tags card
+// ------------------------------------------------------------------ //
+
+const PRESET_COLORS = [
+  '#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
+  '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6b7280',
+];
+
+function TagsCard({
+  workspaceId,
+  tags,
+  onChanged,
+}: {
+  workspaceId: string;
+  tags: Tag[];
+  onChanged: () => void;
+}) {
+  const [editingTag, setEditingTag] = useState<Tag | null>(null);
+  const [showNew, setShowNew] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await createTag(workspaceId, newName.trim(), newColor);
+      setNewName('');
+      setNewColor(PRESET_COLORS[0]);
+      setShowNew(false);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create tag.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(tag: Tag) {
+    if (!confirm(`Delete tag "${tag.name}"?`)) return;
+    try {
+      await deleteTag(tag.id);
+      onChanged();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete tag.');
+    }
+  }
+
+  async function handleSaveEdit(name: string, color: string) {
+    if (!editingTag) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await updateTag(editingTag.id, { name, color });
+      setEditingTag(null);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update tag.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-900">Tags</h2>
+        <button
+          onClick={() => setShowNew(true)}
+          className="text-xs text-brand-600 hover:underline"
+        >
+          + New tag
+        </button>
+      </div>
+
+      <div className="px-5 py-3 space-y-2">
+        {error && (
+          <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
+        )}
+
+        {tags.length === 0 && !showNew && (
+          <p className="text-sm text-gray-400 py-1">No tags yet. Create one to organize your documents.</p>
+        )}
+
+        {tags.map((tag) =>
+          editingTag?.id === tag.id ? (
+            <TagEditRow
+              key={tag.id}
+              tag={tag}
+              saving={saving}
+              onSave={handleSaveEdit}
+              onCancel={() => setEditingTag(null)}
+            />
+          ) : (
+            <div key={tag.id} className="flex items-center gap-3 py-1.5">
+              <span
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+                style={
+                  tag.color
+                    ? { backgroundColor: `${tag.color}20`, color: tag.color }
+                    : { backgroundColor: '#f3f4f6', color: '#6b7280' }
+                }
+              >
+                {tag.color && (
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                )}
+                {tag.name}
+              </span>
+              <div className="ml-auto flex items-center gap-1">
+                <button
+                  onClick={() => setEditingTag(tag)}
+                  className="text-xs text-gray-400 hover:text-brand-600 transition-colors px-2 py-1"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleDelete(tag)}
+                  className="text-xs text-gray-400 hover:text-red-600 transition-colors px-2 py-1"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          )
+        )}
+
+        {showNew && (
+          <form onSubmit={handleCreate} className="flex items-center gap-2 pt-1">
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Tag name"
+              autoFocus
+              className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            <div className="flex gap-1">
+              {PRESET_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setNewColor(c)}
+                  className={cn(
+                    'w-5 h-5 rounded-full transition-transform',
+                    newColor === c ? 'scale-125 ring-2 ring-offset-1 ring-gray-400' : '',
+                  )}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+            <button type="submit" disabled={saving || !newName.trim()} className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
+              {saving ? '…' : 'Create'}
+            </button>
+            <button type="button" onClick={() => setShowNew(false)} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700">
+              Cancel
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TagEditRow({
+  tag,
+  saving,
+  onSave,
+  onCancel,
+}: {
+  tag: Tag;
+  saving: boolean;
+  onSave: (name: string, color: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(tag.name);
+  const [color, setColor] = useState(tag.color ?? PRESET_COLORS[0]);
+
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <input
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        autoFocus
+        className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500"
+      />
+      <div className="flex gap-1">
+        {PRESET_COLORS.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setColor(c)}
+            className={cn(
+              'w-5 h-5 rounded-full transition-transform',
+              color === c ? 'scale-125 ring-2 ring-offset-1 ring-gray-400' : '',
+            )}
+            style={{ backgroundColor: c }}
+          />
+        ))}
+      </div>
+      <button
+        type="button"
+        disabled={saving || !name.trim()}
+        onClick={() => onSave(name.trim(), color)}
+        className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50"
+      >
+        {saving ? '…' : 'Save'}
+      </button>
+      <button type="button" onClick={onCancel} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700">
+        Cancel
+      </button>
     </div>
   );
 }

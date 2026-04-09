@@ -172,6 +172,17 @@ export interface WorkspaceDetail extends WorkspaceListItem {
   members: WorkspaceMember[];
 }
 
+export interface WorkspaceSummary {
+  totalDocuments: number;
+  activeDocuments: number;
+  archivedDocuments: number;
+  expiringCount: number;
+  expiredCount: number;
+  activeShares: number;
+  memberCount: number;
+  recentUploads: number;
+}
+
 // ================================================================== //
 // Folders
 // ================================================================== //

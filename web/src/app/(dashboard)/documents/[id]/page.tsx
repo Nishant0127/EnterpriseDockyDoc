@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { fetchDocument, downloadDocument, downloadDocumentVersion, uploadDocumentVersion, setDocumentReminders } from '@/lib/documents';
+import { fetchDocument, downloadDocument, downloadDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, fetchFolders } from '@/lib/documents';
 import { fetchDocumentActivity, describeAuditLog, auditActionCategory, formatAuditAction } from '@/lib/audit';
 import { cn } from '@/lib/utils';
-import type { AuditLog, DocumentDetail, DocumentStatus } from '@/types';
+import type { AuditLog, DocumentDetail, DocumentStatus, FolderListItem } from '@/types';
 import ShareSection from './ShareSection';
 
 // ------------------------------------------------------------------ //
@@ -60,6 +60,9 @@ export default function DocumentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null); // 'latest' | versionNumber string
   const [showVersionUpload, setShowVersionUpload] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [deletingDoc, setDeletingDoc] = useState(false);
+  const [restoringDoc, setRestoringDoc] = useState(false);
 
   function reload() {
     if (!params.id) return;
@@ -76,6 +79,33 @@ export default function DocumentDetailPage() {
       .catch(() => setError('Document not found or API unavailable.'))
       .finally(() => setLoading(false));
   }, [params.id]);
+
+  async function handleDelete() {
+    if (!doc) return;
+    if (!confirm(`Delete "${doc.name}"? It will be soft-deleted and can be restored.`)) return;
+    setDeletingDoc(true);
+    try {
+      await deleteDocument(doc.id);
+      reload();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setDeletingDoc(false);
+    }
+  }
+
+  async function handleRestore() {
+    if (!doc) return;
+    setRestoringDoc(true);
+    try {
+      await updateDocument(doc.id, { status: 'ACTIVE' });
+      reload();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Restore failed');
+    } finally {
+      setRestoringDoc(false);
+    }
+  }
 
   async function handleDownloadLatest() {
     if (!doc) return;
@@ -179,6 +209,44 @@ export default function DocumentDetailPage() {
             </svg>
             Upload new version
           </button>
+          {/* Edit button */}
+          <button
+            type="button"
+            onClick={() => setShowEditModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeLinecap="round" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            Edit
+          </button>
+          {/* Delete / Restore */}
+          {doc.status === 'DELETED' ? (
+            <button
+              type="button"
+              onClick={handleRestore}
+              disabled={restoringDoc}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-green-200 text-xs font-medium text-green-700 hover:bg-green-50 transition-colors disabled:opacity-50"
+            >
+              {restoringDoc ? 'Restoring…' : 'Restore'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deletingDoc}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6M14 11v6" />
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+              </svg>
+              {deletingDoc ? 'Deleting…' : 'Delete'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -362,6 +430,18 @@ export default function DocumentDetailPage() {
           }}
         />
       )}
+
+      {/* Edit document modal */}
+      {showEditModal && (
+        <EditDocumentModal
+          doc={doc}
+          onClose={() => setShowEditModal(false)}
+          onSaved={() => {
+            setShowEditModal(false);
+            reload();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -504,6 +584,136 @@ function ExpiryReminderSection({
         )}
       </div>
     </Section>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Edit document modal
+// ------------------------------------------------------------------ //
+
+function EditDocumentModal({
+  doc,
+  onClose,
+  onSaved,
+}: {
+  doc: DocumentDetail;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(doc.name);
+  const [description, setDescription] = useState(doc.description ?? '');
+  const [folderId, setFolderId] = useState(doc.folder?.id ?? '');
+  const [status, setStatus] = useState<DocumentStatus>(doc.status);
+  const [folders, setFolders] = useState<FolderListItem[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchFolders(doc.workspace.id)
+      .then(setFolders)
+      .catch(() => {});
+  }, [doc.workspace.id]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) { setError('Name is required.'); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await updateDocument(doc.id, {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        folderId: folderId || null,
+        status,
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="text-base font-semibold text-gray-900">Edit Document</h2>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">
+              Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+              placeholder="Optional description…"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Folder</label>
+              <select
+                value={folderId}
+                onChange={(e) => setFolderId(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                <option value="">No folder</option>
+                {folders.map((f) => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Status</label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as DocumentStatus)}
+                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                <option value="ACTIVE">Active</option>
+                <option value="ARCHIVED">Archived</option>
+              </select>
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{error}</div>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} disabled={saving} className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving} className="flex-1 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

@@ -8,11 +8,13 @@ import {
 import { WorkspaceUserRole, WorkspaceUserStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService, AuditAction, AuditEntityType } from '../audit/audit.service';
+import { assertWorkspaceMembership } from '../../common/helpers/workspace-access.helper';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import {
   WorkspaceMemberDto,
   WorkspaceResponseDto,
   WorkspaceDetailResponseDto,
+  WorkspaceSummaryDto,
 } from './dto/workspace-response.dto';
 import type {
   AddWorkspaceMemberDto,
@@ -96,6 +98,65 @@ export class WorkspacesService {
       members,
       createdAt: workspace.createdAt,
       updatedAt: workspace.updatedAt,
+    };
+  }
+
+  // ------------------------------------------------------------------ //
+  // Dashboard summary
+  // ------------------------------------------------------------------ //
+
+  async getSummary(workspaceId: string, user: DevUserPayload): Promise<WorkspaceSummaryDto> {
+    assertWorkspaceMembership(user, workspaceId);
+
+    const now = new Date();
+    const ninetyDaysOut = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const [
+      totalDocuments,
+      activeDocuments,
+      archivedDocuments,
+      expiringCount,
+      expiredCount,
+      activeShares,
+      memberCount,
+      recentUploads,
+    ] = await Promise.all([
+      this.prisma.document.count({ where: { workspaceId, status: { not: 'DELETED' } } }),
+      this.prisma.document.count({ where: { workspaceId, status: 'ACTIVE' } }),
+      this.prisma.document.count({ where: { workspaceId, status: 'ARCHIVED' } }),
+      this.prisma.document.count({
+        where: {
+          workspaceId,
+          status: 'ACTIVE',
+          expiryDate: { gte: now, lte: ninetyDaysOut },
+        },
+      }),
+      this.prisma.document.count({
+        where: { workspaceId, status: 'ACTIVE', expiryDate: { lt: now } },
+      }),
+      this.prisma.documentShare.count({
+        where: {
+          document: { workspaceId },
+          isRevoked: false,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+      }),
+      this.prisma.workspaceUser.count({ where: { workspaceId, status: 'ACTIVE' } }),
+      this.prisma.document.count({
+        where: { workspaceId, status: 'ACTIVE', createdAt: { gte: sevenDaysAgo } },
+      }),
+    ]);
+
+    return {
+      totalDocuments,
+      activeDocuments,
+      archivedDocuments,
+      expiringCount,
+      expiredCount,
+      activeShares,
+      memberCount,
+      recentUploads,
     };
   }
 

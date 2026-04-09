@@ -1,6 +1,7 @@
 import { UserProvider } from '@/context/UserContext';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
+import WorkspaceAwareMain from '@/components/layout/WorkspaceAwareMain';
 
 /**
  * Dashboard shell layout.
@@ -27,7 +28,7 @@ export default function DashboardLayout({
         {/* Main content area */}
         <div className="flex flex-col flex-1 overflow-hidden">
           <Header />
-          <main className="flex-1 overflow-y-auto p-6">{children}</main>
+          <WorkspaceAwareMain>{children}</WorkspaceAwareMain>
         </div>
       </div>
     </UserProvider>

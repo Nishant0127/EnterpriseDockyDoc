@@ -7,6 +7,7 @@ import type {
   DocumentDetail,
   DocumentListItem,
   DocumentReminder,
+  DocumentStatus,
   ExpiringDocument,
   FolderListItem,
   SearchResult,
@@ -15,6 +16,7 @@ import type {
   UpcomingReminder,
   WorkspaceDetail,
   WorkspaceMember,
+  WorkspaceSummary,
 } from '@/types';
 
 // ------------------------------------------------------------------ //
@@ -42,6 +44,17 @@ export function createFolder(params: {
   });
 }
 
+export function renameFolder(id: string, name: string): Promise<FolderListItem> {
+  return apiFetch<FolderListItem>(`/api/v1/folders/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteFolder(id: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/folders/${id}`, { method: 'DELETE' });
+}
+
 // ------------------------------------------------------------------ //
 // Documents — list & detail
 // ------------------------------------------------------------------ //
@@ -63,6 +76,24 @@ export function fetchDocuments(params: FetchDocumentsParams): Promise<DocumentLi
 
 export function fetchDocument(id: string): Promise<DocumentDetail> {
   return apiFetch<DocumentDetail>(`/api/v1/documents/${id}`);
+}
+
+export interface UpdateDocumentParams {
+  name?: string;
+  description?: string;
+  folderId?: string | null;
+  status?: DocumentStatus;
+}
+
+export function updateDocument(id: string, params: UpdateDocumentParams): Promise<DocumentDetail> {
+  return apiFetch<DocumentDetail>(`/api/v1/documents/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(params),
+  });
+}
+
+export function deleteDocument(id: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/documents/${id}`, { method: 'DELETE' });
 }
 
 // ------------------------------------------------------------------ //
@@ -167,12 +198,40 @@ export function fetchTags(workspaceId: string): Promise<Tag[]> {
   );
 }
 
+export function createTag(workspaceId: string, name: string, color?: string): Promise<Tag> {
+  return apiFetch<Tag>('/api/v1/tags', {
+    method: 'POST',
+    body: JSON.stringify({ workspaceId, name, color }),
+  });
+}
+
+export function updateTag(id: string, params: { name?: string; color?: string | null }): Promise<Tag> {
+  return apiFetch<Tag>(`/api/v1/tags/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(params),
+  });
+}
+
+export function deleteTag(id: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/tags/${id}`, { method: 'DELETE' });
+}
+
 // ------------------------------------------------------------------ //
 // Workspaces — detail + member management
 // ------------------------------------------------------------------ //
 
 export function fetchWorkspaceDetail(workspaceId: string): Promise<WorkspaceDetail> {
   return apiFetch<WorkspaceDetail>(`/api/v1/workspaces/${workspaceId}`);
+}
+
+export function fetchWorkspaceSummary(workspaceId: string): Promise<WorkspaceSummary> {
+  return apiFetch<WorkspaceSummary>(`/api/v1/workspaces/${workspaceId}/summary`);
+}
+
+export function removeWorkspaceMember(workspaceId: string, memberId: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/workspaces/${workspaceId}/members/${memberId}`, {
+    method: 'DELETE',
+  });
 }
 
 export interface AddMemberParams {

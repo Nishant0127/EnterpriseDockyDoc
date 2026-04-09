@@ -29,6 +29,13 @@ export class CreateFolderDto {
   parentFolderId?: string;
 }
 
+export class UpdateFolderDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+}
+
 // ------------------------------------------------------------------ //
 // Response DTOs
 // ------------------------------------------------------------------ //
