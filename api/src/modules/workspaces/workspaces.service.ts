@@ -138,7 +138,7 @@ export class WorkspacesService {
       this.prisma.documentShare.count({
         where: {
           document: { workspaceId },
-          isRevoked: false,
+          isActive: true,
           OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
         },
       }),
