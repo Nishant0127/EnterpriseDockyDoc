@@ -38,24 +38,34 @@ export class WorkspacesController {
 
   /**
    * GET /api/v1/workspaces
+   * Returns only workspaces the authenticated user is an active member of.
    */
   @Get()
-  @ApiOperation({ summary: 'List all active workspaces' })
+  @UseGuards(DevAuthGuard)
+  @ApiOperation({ summary: 'List workspaces the current user belongs to' })
   @ApiResponse({ status: 200, type: [WorkspaceResponseDto] })
-  findAll(): Promise<WorkspaceResponseDto[]> {
-    return this.workspacesService.findAll();
+  findAll(
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<WorkspaceResponseDto[]> {
+    return this.workspacesService.findAll(user);
   }
 
   /**
    * GET /api/v1/workspaces/:id
+   * Returns workspace detail only if the authenticated user is a member.
    */
   @Get(':id')
-  @ApiOperation({ summary: 'Get workspace by ID with members' })
+  @UseGuards(DevAuthGuard)
+  @ApiOperation({ summary: 'Get workspace by ID (must be a member)' })
   @ApiParam({ name: 'id', description: 'Workspace cuid' })
   @ApiResponse({ status: 200, type: WorkspaceDetailResponseDto })
+  @ApiResponse({ status: 403, description: 'Not a member of this workspace' })
   @ApiResponse({ status: 404, description: 'Workspace not found' })
-  findOne(@Param('id') id: string): Promise<WorkspaceDetailResponseDto> {
-    return this.workspacesService.findById(id);
+  findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<WorkspaceDetailResponseDto> {
+    return this.workspacesService.findById(id, user);
   }
 
   /**

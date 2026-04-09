@@ -73,7 +73,10 @@ export class PublicSharesController {
     @Body() dto: VerifySharePasswordDto,
     @Req() req: Request,
   ): Promise<VerifyShareResponseDto> {
-    return this.sharesService.verifySharePassword(token, dto.password);
+    const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()
+      ?? req.ip
+      ?? 'unknown';
+    return this.sharesService.verifySharePassword(token, dto.password, ip);
   }
 
   /**
@@ -100,7 +103,6 @@ export class PublicSharesController {
       await this.sharesService.getPublicShareDownloadInfo(
         token,
         grant,
-        undefined, // password not passed directly on download — use /verify first
         req.ip,
         req.headers['user-agent'],
       );

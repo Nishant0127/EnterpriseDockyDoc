@@ -42,9 +42,19 @@ export class WorkspacesService {
   // Read
   // ------------------------------------------------------------------ //
 
-  async findAll(): Promise<WorkspaceResponseDto[]> {
+  async findAll(user: DevUserPayload): Promise<WorkspaceResponseDto[]> {
+    // Only return workspaces the caller is an active member of
+    const memberWorkspaceIds = user.workspaces
+      .filter((w) => w.status === 'ACTIVE')
+      .map((w) => w.workspaceId);
+
+    if (memberWorkspaceIds.length === 0) return [];
+
     const workspaces = await this.prisma.workspace.findMany({
-      where: { status: 'ACTIVE' },
+      where: {
+        id: { in: memberWorkspaceIds },
+        status: 'ACTIVE',
+      },
       include: {
         _count: { select: { members: true } },
       },
@@ -63,7 +73,10 @@ export class WorkspacesService {
     }));
   }
 
-  async findById(id: string): Promise<WorkspaceDetailResponseDto> {
+  async findById(id: string, user: DevUserPayload): Promise<WorkspaceDetailResponseDto> {
+    // Verify caller is an active member before revealing any workspace data
+    assertWorkspaceMembership(user, id);
+
     const workspace = await this.prisma.workspace.findUnique({
       where: { id },
       include: {
@@ -292,6 +305,25 @@ export class WorkspacesService {
       include: { user: true },
     });
     if (!membership) throw new NotFoundException('Member not found');
+
+    // Guard: cannot modify your own membership via this endpoint
+    if (membership.userId === currentUser.id) {
+      throw new ForbiddenException(
+        'You cannot modify your own workspace membership.',
+      );
+    }
+
+    // Guard: only OWNERs may grant the OWNER role
+    if (dto.role === WorkspaceUserRole.OWNER) {
+      const callerMembership = currentUser.workspaces.find(
+        (w) => w.workspaceId === workspaceId,
+      );
+      if (callerMembership?.role !== WorkspaceUserRole.OWNER) {
+        throw new ForbiddenException(
+          'Only an existing Owner can grant the Owner role.',
+        );
+      }
+    }
 
     // Guard: cannot demote or remove the last OWNER
     if (

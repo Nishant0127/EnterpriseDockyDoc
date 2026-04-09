@@ -60,7 +60,15 @@ export function verifyPassword(password: string, stored: string): boolean {
 const GRANT_TTL_SECONDS = 60 * 60; // 1 hour
 
 function getGrantSecret(): string {
-  return process.env.SHARE_GRANT_SECRET ?? 'dev-grant-secret-change-in-production';
+  const secret = process.env.SHARE_GRANT_SECRET;
+  if (!secret) {
+    throw new Error(
+      'SHARE_GRANT_SECRET environment variable is not set. ' +
+      'Generate a strong random secret (≥32 chars) and set it before starting the server. ' +
+      'Example: openssl rand -hex 32',
+    );
+  }
+  return secret;
 }
 
 /**

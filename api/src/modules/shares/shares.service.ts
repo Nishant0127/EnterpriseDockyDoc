@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -10,7 +12,10 @@ import { DocumentStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
 import { AuditService, AuditAction, AuditEntityType } from '../audit/audit.service';
-import { assertEditorOrAbove } from '../../common/helpers/workspace-access.helper';
+import {
+  assertWorkspaceMembership,
+  assertEditorOrAbove,
+} from '../../common/helpers/workspace-access.helper';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import {
   createAccessGrant,
@@ -40,13 +45,75 @@ const USER_SELECT = {
   email: true,
 } as const;
 
+// ------------------------------------------------------------------ //
+// In-memory rate limiter for share password verification
+// ------------------------------------------------------------------ //
+
+const MAX_VERIFY_ATTEMPTS = 10;
+const VERIFY_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+interface RateLimitEntry {
+  count: number;
+  firstAt: number;
+}
+
 @Injectable()
 export class SharesService {
+  /**
+   * Rate-limit state for share password verification.
+   * Key: `${token}:${ip}` — scoped to one token+IP pair.
+   * Entries are pruned lazily on each check.
+   */
+  private readonly verifyAttempts = new Map<string, RateLimitEntry>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: LocalStorageService,
     private readonly audit: AuditService,
-  ) {}
+  ) {
+    // Validate required secrets at startup — fail fast rather than silently using an insecure default
+    if (!process.env.SHARE_GRANT_SECRET) {
+      throw new Error(
+        'SHARE_GRANT_SECRET environment variable is not set. ' +
+        'Set a strong random secret (≥32 chars) before starting the server. ' +
+        'Example: openssl rand -hex 32',
+      );
+    }
+  }
+
+  /** Enforce rate limit; throws 429 when exceeded. Call BEFORE verifying password. */
+  private checkVerifyRateLimit(token: string, ip: string): void {
+    const key = `${token}:${ip}`;
+    const now = Date.now();
+    const entry = this.verifyAttempts.get(key);
+
+    if (!entry || now - entry.firstAt > VERIFY_WINDOW_MS) {
+      // Fresh window — reset counter
+      this.verifyAttempts.set(key, { count: 1, firstAt: now });
+      return;
+    }
+
+    if (entry.count >= MAX_VERIFY_ATTEMPTS) {
+      const retryAfterSec = Math.ceil(
+        (VERIFY_WINDOW_MS - (now - entry.firstAt)) / 1000,
+      );
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          message: `Too many verification attempts. Try again in ${Math.ceil(retryAfterSec / 60)} minute(s).`,
+          retryAfter: retryAfterSec,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    entry.count++;
+  }
+
+  /** Clear rate-limit state on successful verification. */
+  private clearVerifyRateLimit(token: string, ip: string): void {
+    this.verifyAttempts.delete(`${token}:${ip}`);
+  }
 
   // ------------------------------------------------------------------ //
   // POST /documents/:id/share/internal
@@ -188,7 +255,7 @@ export class SharesService {
     documentId: string,
     user: DevUserPayload,
   ): Promise<DocumentSharesResponseDto> {
-    const doc = await this.requireAccessibleDocument(documentId, user);
+    const doc = await this.requireReadableDocument(documentId, user);
 
     const shares = await this.prisma.documentShare.findMany({
       where: { documentId, isActive: true },
@@ -236,8 +303,20 @@ export class SharesService {
 
     if (!share) throw new NotFoundException(`Share "${shareId}" not found`);
 
-    // Must be editor or above to revoke a share
-    assertEditorOrAbove(user, share.document.workspaceId);
+    // Only the share creator or an ADMIN/OWNER may revoke a share
+    const membership = user.workspaces.find(
+      (w) => w.workspaceId === share.document.workspaceId && w.status === 'ACTIVE',
+    );
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this workspace.');
+    }
+    const isCreator = share.createdById === user.id;
+    const isAdminOrOwner = ['ADMIN', 'OWNER'].includes(membership.role);
+    if (!isCreator && !isAdminOrOwner) {
+      throw new ForbiddenException(
+        'Only the share creator or an Admin/Owner can revoke this share.',
+      );
+    }
 
     if (!share.isActive) {
       throw new ConflictException('Share is already revoked');
@@ -297,7 +376,11 @@ export class SharesService {
   async verifySharePassword(
     token: string,
     password: string,
+    ip: string,
   ): Promise<VerifyShareResponseDto> {
+    // Rate-limit before any DB access to prevent enumeration via timing
+    this.checkVerifyRateLimit(token, ip);
+
     const share = await this.findValidPublicShare(token);
 
     if (!share.passwordHash) {
@@ -307,6 +390,9 @@ export class SharesService {
     if (!verifyPassword(password, share.passwordHash)) {
       throw new UnauthorizedException('Incorrect password');
     }
+
+    // Clear rate-limit state on success
+    this.clearVerifyRateLimit(token, ip);
 
     const { grant, expiresIn } = createAccessGrant(share.id);
     return { accessGrant: grant, expiresIn };
@@ -319,7 +405,6 @@ export class SharesService {
   async getPublicShareDownloadInfo(
     token: string,
     grant?: string,
-    password?: string,
     ipAddress?: string,
     userAgent?: string,
   ): Promise<{ absolutePath: string; fileName: string; mimeType: string }> {
@@ -329,20 +414,13 @@ export class SharesService {
       throw new ForbiddenException('Download is not allowed for this share');
     }
 
-    // Verify access: grant token OR password
+    // Verify access: grant token only — password never accepted directly on download
     if (share.passwordHash) {
-      let authorized = false;
+      const grantShareId = grant ? verifyAccessGrant(grant) : null;
 
-      if (grant) {
-        const grantShareId = verifyAccessGrant(grant);
-        authorized = grantShareId === share.id;
-      } else if (password) {
-        authorized = verifyPassword(password, share.passwordHash);
-      }
-
-      if (!authorized) {
+      if (grantShareId !== share.id) {
         throw new UnauthorizedException(
-          'Password verification required. Use POST /verify first.',
+          'A valid access grant is required. Verify the password via POST /verify first.',
         );
       }
     }
@@ -389,6 +467,29 @@ export class SharesService {
   // Private helpers
   // ------------------------------------------------------------------ //
 
+  /**
+   * Used for read operations (e.g. listing shares).
+   * Any active workspace member may view shares on a non-deleted document.
+   */
+  private async requireReadableDocument(documentId: string, user: DevUserPayload) {
+    const doc = await this.prisma.document.findUnique({
+      where: { id: documentId },
+      select: { id: true, workspaceId: true, status: true, name: true, fileName: true },
+    });
+
+    if (!doc) throw new NotFoundException(`Document "${documentId}" not found`);
+    if (doc.status === DocumentStatus.DELETED) {
+      throw new BadRequestException('Document has been deleted');
+    }
+
+    assertWorkspaceMembership(user, doc.workspaceId);
+    return doc;
+  }
+
+  /**
+   * Used for write operations (create share, revoke).
+   * Requires EDITOR role or above — VIEWERs are blocked.
+   */
   private async requireAccessibleDocument(documentId: string, user: DevUserPayload) {
     const doc = await this.prisma.document.findUnique({
       where: { id: documentId },
