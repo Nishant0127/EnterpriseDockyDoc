@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import {
   fetchWorkspaceActivity,
@@ -76,6 +76,9 @@ export default function ActivityPage() {
   const [loading, setLoading] = useState(true);
   const [entityType, setEntityType] = useState<AuditEntityType | ''>('');
   const [action, setAction] = useState<AuditAction | ''>('');
+  // Track whether the very first fetch has completed — subsequent loads
+  // (filter changes) should never show the skeleton, even if logs=[].
+  const hasLoadedOnce = useRef(false);
 
   useEffect(() => {
     if (!activeWorkspace) return;
@@ -91,9 +94,13 @@ export default function ActivityPage() {
     })
       .then((data) => { if (!cancelled) setLogs(data); })
       .catch(() => { if (!cancelled) setLogs([]); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .finally(() => {
+        if (!cancelled) {
+          hasLoadedOnce.current = true;
+          setLoading(false);
+        }
+      });
 
-    // Cancel stale response if filter changes before fetch completes
     return () => { cancelled = true; };
   }, [activeWorkspace?.workspaceId, entityType, action]);
 
@@ -105,11 +112,11 @@ export default function ActivityPage() {
   }
 
   // Three render cases:
-  // 1. loading=true, logs=[]   → skeleton (first load)
-  // 2. loading=true, logs=[..] → old logs dimmed + spinner (filter change)
-  // 3. loading=false           → results or empty state
-  const showSkeleton = loading && logs.length === 0;
-  const showDimmed   = loading && logs.length > 0;
+  // 1. loading=true, first load (hasLoadedOnce=false) → skeleton
+  // 2. loading=true, subsequent load (hasLoadedOnce=true) → current content dimmed + spinner
+  // 3. loading=false → results or empty state
+  const showSkeleton = loading && !hasLoadedOnce.current;
+  const showDimmed   = loading && hasLoadedOnce.current;
 
   return (
     <div className="max-w-3xl">
@@ -163,8 +170,8 @@ export default function ActivityPage() {
       {/* Content */}
       {showSkeleton ? (
         <ActivitySkeleton />
-      ) : !loading && logs.length === 0 ? (
-        <div className="text-center py-16">
+      ) : logs.length === 0 ? (
+        <div className={cn('text-center py-16 transition-opacity duration-150', showDimmed && 'opacity-40 pointer-events-none')}>
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
             <ClockIcon className="text-gray-400" />
           </div>
