@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import {
   fetchWorkspaceActivity,
@@ -12,28 +12,37 @@ import { cn } from '@/lib/utils';
 import type { AuditAction, AuditEntityType, AuditLog } from '@/types';
 
 // ------------------------------------------------------------------ //
-// Category styles
+// Styles
 // ------------------------------------------------------------------ //
 
-const CATEGORY_STYLES = {
-  create:   { dot: 'bg-green-500',  ring: 'ring-green-100'  },
-  update:   { dot: 'bg-blue-500',   ring: 'ring-blue-100'   },
-  delete:   { dot: 'bg-red-500',    ring: 'ring-red-100'    },
-  share:    { dot: 'bg-purple-500', ring: 'ring-purple-100' },
-  download: { dot: 'bg-amber-500',  ring: 'ring-amber-100'  },
-  member:   { dot: 'bg-teal-500',   ring: 'ring-teal-100'   },
-} as const;
+const CATEGORY_DOT: Record<string, string> = {
+  create:   'bg-green-500',
+  update:   'bg-blue-500',
+  delete:   'bg-red-500',
+  share:    'bg-purple-500',
+  download: 'bg-amber-500',
+  member:   'bg-teal-500',
+};
 
-const PILL_STYLES = {
+const CATEGORY_RING: Record<string, string> = {
+  create:   'ring-green-100',
+  update:   'ring-blue-100',
+  delete:   'ring-red-100',
+  share:    'ring-purple-100',
+  download: 'ring-amber-100',
+  member:   'ring-teal-100',
+};
+
+const CATEGORY_PILL: Record<string, string> = {
   create:   'bg-green-50 text-green-700',
   update:   'bg-blue-50 text-blue-700',
   delete:   'bg-red-50 text-red-700',
   share:    'bg-purple-50 text-purple-700',
   download: 'bg-amber-50 text-amber-700',
   member:   'bg-teal-50 text-teal-700',
-} as const;
+};
 
-// Only entity types we actually log — DOCUMENT_VERSION and WORKSPACE are unused
+// Only entity types we actually write to — DOCUMENT_VERSION / WORKSPACE unused
 const ENTITY_FILTER_OPTIONS: { label: string; value: AuditEntityType | '' }[] = [
   { label: 'All types', value: '' },
   { label: 'Documents', value: 'DOCUMENT' },
@@ -64,23 +73,15 @@ const ACTION_FILTER_OPTIONS: { label: string; value: AuditAction | '' }[] = [
 export default function ActivityPage() {
   const { activeWorkspace } = useUser();
   const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [filtering, setFiltering] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [entityType, setEntityType] = useState<AuditEntityType | ''>('');
   const [action, setAction] = useState<AuditAction | ''>('');
-
-  // Track whether this is the first load or a filter change
-  const firstLoad = useRef(true);
 
   useEffect(() => {
     if (!activeWorkspace) return;
 
-    if (firstLoad.current) {
-      setInitialLoading(true);
-    } else {
-      // On filter change: keep existing logs visible, just show a subtle spinner
-      setFiltering(true);
-    }
+    let cancelled = false;
+    setLoading(true);
 
     fetchWorkspaceActivity({
       workspaceId: activeWorkspace.workspaceId,
@@ -88,18 +89,12 @@ export default function ActivityPage() {
       action: action || undefined,
       limit: 100,
     })
-      .then((data) => {
-        setLogs(data);
-        firstLoad.current = false;
-      })
-      .catch(() => {
-        // Keep existing logs on error rather than clearing
-        firstLoad.current = false;
-      })
-      .finally(() => {
-        setInitialLoading(false);
-        setFiltering(false);
-      });
+      .then((data) => { if (!cancelled) setLogs(data); })
+      .catch(() => { if (!cancelled) setLogs([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    // Cancel stale response if filter changes before fetch completes
+    return () => { cancelled = true; };
   }, [activeWorkspace?.workspaceId, entityType, action]);
 
   const hasFilters = entityType !== '' || action !== '';
@@ -108,6 +103,13 @@ export default function ActivityPage() {
     setEntityType('');
     setAction('');
   }
+
+  // Three render cases:
+  // 1. loading=true, logs=[]   → skeleton (first load)
+  // 2. loading=true, logs=[..] → old logs dimmed + spinner (filter change)
+  // 3. loading=false           → results or empty state
+  const showSkeleton = loading && logs.length === 0;
+  const showDimmed   = loading && logs.length > 0;
 
   return (
     <div className="max-w-3xl">
@@ -150,18 +152,18 @@ export default function ActivityPage() {
           </button>
         )}
 
-        {filtering && (
-          <svg className="animate-spin text-brand-500 ml-1" width="14" height="14" fill="none" viewBox="0 0 24 24">
+        {showDimmed && (
+          <svg className="animate-spin text-brand-500" width="14" height="14" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
         )}
       </div>
 
-      {/* Feed */}
-      {initialLoading ? (
+      {/* Content */}
+      {showSkeleton ? (
         <ActivitySkeleton />
-      ) : logs.length === 0 ? (
+      ) : !loading && logs.length === 0 ? (
         <div className="text-center py-16">
           <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
             <ClockIcon className="text-gray-400" />
@@ -175,15 +177,13 @@ export default function ActivityPage() {
             </button>
           ) : (
             <p className="text-xs text-gray-400 mt-1">
-              Actions like uploads, shares, and member changes will appear here.
+              Upload a document, share it, or make a change to see activity here.
             </p>
           )}
         </div>
       ) : (
-        <div className={cn('relative transition-opacity', filtering && 'opacity-60')}>
-          {/* Vertical timeline line */}
+        <div className={cn('relative transition-opacity duration-150', showDimmed && 'opacity-50 pointer-events-none')}>
           <div className="absolute left-[18px] top-0 bottom-0 w-px bg-gray-100" />
-
           <div className="space-y-0">
             {logs.map((log, i) => (
               <ActivityItem key={log.id} log={log} isLast={i === logs.length - 1} />
@@ -201,21 +201,18 @@ export default function ActivityPage() {
 
 function ActivityItem({ log, isLast }: { log: AuditLog; isLast: boolean }) {
   const category = auditActionCategory(log.action);
-  const dotStyle = CATEGORY_STYLES[category];
   const actor = log.user
     ? `${log.user.firstName} ${log.user.lastName}`
     : 'External user';
 
   return (
     <div className={cn('relative flex gap-4 pb-5', isLast && 'pb-0')}>
-      {/* Dot */}
       <div className="relative z-10 flex-shrink-0 mt-0.5">
-        <div className={cn('w-9 h-9 rounded-full flex items-center justify-center ring-4 bg-white', dotStyle.ring)}>
-          <span className={cn('w-2.5 h-2.5 rounded-full', dotStyle.dot)} />
+        <div className={cn('w-9 h-9 rounded-full flex items-center justify-center ring-4 bg-white', CATEGORY_RING[category])}>
+          <span className={cn('w-2.5 h-2.5 rounded-full', CATEGORY_DOT[category])} />
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 min-w-0 pt-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -229,8 +226,7 @@ function ActivityItem({ log, isLast }: { log: AuditLog; isLast: boolean }) {
             {formatRelativeTime(log.createdAt)}
           </time>
         </div>
-
-        <span className={cn('inline-block mt-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full', PILL_STYLES[category])}>
+        <span className={cn('inline-block mt-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full', CATEGORY_PILL[category])}>
           {formatAuditAction(log.action)}
         </span>
       </div>
@@ -239,7 +235,7 @@ function ActivityItem({ log, isLast }: { log: AuditLog; isLast: boolean }) {
 }
 
 // ------------------------------------------------------------------ //
-// Skeleton — only shown on initial page load
+// Skeleton — only on first load (logs array is empty)
 // ------------------------------------------------------------------ //
 
 function ActivitySkeleton() {
