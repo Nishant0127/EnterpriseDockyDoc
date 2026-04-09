@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { fetchDocument, downloadDocument, downloadDocumentVersion, uploadDocumentVersion, setDocumentReminders } from '@/lib/documents';
+import { fetchDocumentActivity, describeAuditLog, auditActionCategory, formatAuditAction } from '@/lib/audit';
 import { cn } from '@/lib/utils';
-import type { DocumentDetail, DocumentStatus } from '@/types';
+import type { AuditLog, DocumentDetail, DocumentStatus } from '@/types';
 import ShareSection from './ShareSection';
 
 // ------------------------------------------------------------------ //
@@ -341,6 +342,11 @@ export default function DocumentDetailPage() {
         <div className="lg:col-span-2">
           <ShareSection documentId={doc.id} />
         </div>
+
+        {/* ---- Activity (full width) ------------------------------- */}
+        <div className="lg:col-span-2">
+          <DocumentActivitySection documentId={doc.id} />
+        </div>
       </div>
 
       {/* Version upload modal */}
@@ -660,6 +666,108 @@ function VersionUploadModal({
         </form>
       </div>
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Document activity section
+// ------------------------------------------------------------------ //
+
+const ACTIVITY_CATEGORY_STYLES = {
+  create:   'bg-green-50 text-green-700',
+  update:   'bg-blue-50 text-blue-700',
+  delete:   'bg-red-50 text-red-700',
+  share:    'bg-purple-50 text-purple-700',
+  download: 'bg-amber-50 text-amber-700',
+  member:   'bg-teal-50 text-teal-700',
+} as const;
+
+const ACTIVITY_DOT_STYLES = {
+  create:   'bg-green-500',
+  update:   'bg-blue-500',
+  delete:   'bg-red-500',
+  share:    'bg-purple-500',
+  download: 'bg-amber-500',
+  member:   'bg-teal-500',
+} as const;
+
+function DocumentActivitySection({ documentId }: { documentId: string }) {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchDocumentActivity(documentId)
+      .then(setLogs)
+      .catch(() => setLogs([]))
+      .finally(() => setLoading(false));
+  }, [documentId]);
+
+  return (
+    <Section title="Activity">
+      {loading ? (
+        <div className="space-y-3 animate-pulse">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex gap-3">
+              <div className="w-2 h-2 rounded-full bg-gray-200 mt-2 flex-shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3.5 w-2/3 bg-gray-200 rounded" />
+                <div className="h-3 w-1/3 bg-gray-100 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : logs.length === 0 ? (
+        <p className="text-sm text-gray-400">No activity recorded yet.</p>
+      ) : (
+        <div className="space-y-3">
+          {logs.map((log) => {
+            const category = auditActionCategory(log.action);
+            const actor = log.user
+              ? `${log.user.firstName} ${log.user.lastName}`
+              : 'External user';
+            const diff = Date.now() - new Date(log.createdAt).getTime();
+            const m = Math.floor(diff / 60000);
+            const timeAgo =
+              m < 1 ? 'just now'
+              : m < 60 ? `${m}m ago`
+              : m < 1440 ? `${Math.floor(m / 60)}h ago`
+              : new Date(log.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+            return (
+              <div key={log.id} className="flex items-start gap-3">
+                <span
+                  className={cn(
+                    'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                    ACTIVITY_DOT_STYLES[category],
+                  )}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm text-gray-800 leading-snug">
+                      {describeAuditLog(log)}
+                    </p>
+                    <time className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
+                      {timeAgo}
+                    </time>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-xs text-gray-400">{actor}</span>
+                    <span
+                      className={cn(
+                        'text-[10px] font-semibold px-1.5 py-0.5 rounded-full',
+                        ACTIVITY_CATEGORY_STYLES[category],
+                      )}
+                    >
+                      {formatAuditAction(log.action)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Section>
   );
 }
 

@@ -40,6 +40,8 @@ import {
 import { UploadDocumentDto, UploadVersionDto } from './dto/upload-document.dto';
 import { DevAuthGuard, type DevUserPayload } from '../../common/guards/dev-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuditService } from '../audit/audit.service';
+import { AuditLogDto } from '../audit/dto/audit.dto';
 
 // ------------------------------------------------------------------ //
 // File upload configuration
@@ -94,7 +96,10 @@ function uploadFileInterceptor() {
 @Controller('documents')
 @UseGuards(DevAuthGuard)
 export class DocumentsController {
-  constructor(private readonly documentsService: DocumentsService) {}
+  constructor(
+    private readonly documentsService: DocumentsService,
+    private readonly auditService: AuditService,
+  ) {}
 
   // ------------------------------------------------------------------ //
   // List
@@ -308,6 +313,21 @@ export class DocumentsController {
     @CurrentUser() user: DevUserPayload,
   ): Promise<DocumentReminderDto[]> {
     return this.documentsService.setReminders(id, dto, user);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Activity
+  // ------------------------------------------------------------------ //
+
+  @Get(':id/activity')
+  @ApiOperation({ summary: 'Get audit activity for a document' })
+  @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 200, type: [AuditLogDto] })
+  getActivity(
+    @Param('id') id: string,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<AuditLogDto[]> {
+    return this.auditService.getDocumentActivity(id, user);
   }
 
   // ------------------------------------------------------------------ //

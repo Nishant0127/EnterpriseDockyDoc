@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { WorkspaceUserRole, WorkspaceUserStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService, AuditAction, AuditEntityType } from '../audit/audit.service';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import {
   WorkspaceMemberDto,
@@ -26,7 +27,10 @@ const MANAGER_ROLES = new Set<WorkspaceUserRole>([
 
 @Injectable()
 export class WorkspacesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ------------------------------------------------------------------ //
   // Read
@@ -157,6 +161,15 @@ export class WorkspacesService {
           include: { user: true },
         });
 
+    this.audit.log({
+      workspaceId,
+      userId: currentUser.id,
+      action: AuditAction.MEMBER_ADDED,
+      entityType: AuditEntityType.USER,
+      entityId: user.id,
+      metadata: { email: dto.email, role: dto.role },
+    });
+
     return this.toMemberDto(membership);
   }
 
@@ -205,6 +218,19 @@ export class WorkspacesService {
         ...(dto.status !== undefined && { status: dto.status }),
       },
       include: { user: true },
+    });
+
+    this.audit.log({
+      workspaceId,
+      userId: currentUser.id,
+      action: AuditAction.MEMBER_ROLE_UPDATED,
+      entityType: AuditEntityType.USER,
+      entityId: membership.userId,
+      metadata: {
+        email: membership.user.email,
+        ...(dto.role && { newRole: dto.role }),
+        ...(dto.status && { newStatus: dto.status }),
+      },
     });
 
     return this.toMemberDto(updated);

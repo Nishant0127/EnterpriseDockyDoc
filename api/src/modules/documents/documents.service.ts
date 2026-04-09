@@ -4,6 +4,7 @@ import * as path from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
 import { SearchIndexerService } from '../search/search-indexer.service';
+import { AuditService, AuditAction, AuditEntityType } from '../audit/audit.service';
 import { assertWorkspaceMembership } from '../../common/helpers/workspace-access.helper';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import {
@@ -69,6 +70,7 @@ export class DocumentsService {
     private readonly prisma: PrismaService,
     private readonly storage: LocalStorageService,
     private readonly indexer: SearchIndexerService,
+    private readonly audit: AuditService,
   ) {}
 
   // ------------------------------------------------------------------ //
@@ -142,6 +144,15 @@ export class DocumentsService {
       });
 
       return doc;
+    });
+
+    this.audit.log({
+      workspaceId: dto.workspaceId,
+      userId: user.id,
+      action: AuditAction.DOCUMENT_CREATED,
+      entityType: AuditEntityType.DOCUMENT,
+      entityId: created.id,
+      metadata: { documentName: dto.name, fileName: dto.fileName },
     });
 
     return this.findById(created.id, user);
@@ -227,6 +238,15 @@ export class DocumentsService {
     // 3. Index for search (non-blocking — never fails the upload)
     void this.indexer.indexDocument(docId, file);
 
+    this.audit.log({
+      workspaceId: dto.workspaceId,
+      userId: user.id,
+      action: AuditAction.DOCUMENT_CREATED,
+      entityType: AuditEntityType.DOCUMENT,
+      entityId: docId,
+      metadata: { documentName: dto.name, fileName: file.originalname },
+    });
+
     return this.findById(docId, user);
   }
 
@@ -278,6 +298,15 @@ export class DocumentsService {
     // Re-index with updated file content
     void this.indexer.indexDocument(id, file);
 
+    this.audit.log({
+      workspaceId: existing.workspaceId,
+      userId: user.id,
+      action: AuditAction.DOCUMENT_VERSION_ADDED,
+      entityType: AuditEntityType.DOCUMENT,
+      entityId: id,
+      metadata: { documentName: existing.name, version: nextVersion },
+    });
+
     return this.findById(id, user);
   }
 
@@ -310,6 +339,15 @@ export class DocumentsService {
         `File not found in storage. The document may have been created before file upload was supported.`,
       );
     }
+
+    this.audit.log({
+      workspaceId: doc.workspaceId,
+      userId: user.id,
+      action: AuditAction.DOCUMENT_DOWNLOADED,
+      entityType: AuditEntityType.DOCUMENT,
+      entityId: id,
+      metadata: { documentName: doc.fileName, version: version.versionNumber },
+    });
 
     return {
       absolutePath: this.storage.getAbsolutePath(version.storageKey),
@@ -379,6 +417,15 @@ export class DocumentsService {
       include: DOC_LIST_INCLUDE,
     });
 
+    this.audit.log({
+      workspaceId: existing.workspaceId,
+      userId: user.id,
+      action: AuditAction.DOCUMENT_UPDATED,
+      entityType: AuditEntityType.DOCUMENT,
+      entityId: id,
+      metadata: { documentName: updated.name },
+    });
+
     return this.toListItemDto(updated);
   }
 
@@ -401,6 +448,15 @@ export class DocumentsService {
 
     // File is intentionally NOT removed from storage on soft delete.
     // Physical deletion (shredding) is a separate operation.
+
+    this.audit.log({
+      workspaceId: existing.workspaceId,
+      userId: user.id,
+      action: AuditAction.DOCUMENT_DELETED,
+      entityType: AuditEntityType.DOCUMENT,
+      entityId: id,
+      metadata: { documentName: existing.name },
+    });
 
     return { id: deleted.id, status: deleted.status };
   }
@@ -482,6 +538,19 @@ export class DocumentsService {
           }
         }
       }
+    });
+
+    this.audit.log({
+      workspaceId: doc.workspaceId,
+      userId: user.id,
+      action: AuditAction.REMINDER_UPDATED,
+      entityType: AuditEntityType.REMINDER,
+      entityId: id,
+      metadata: {
+        documentName: doc.name,
+        isReminderEnabled: dto.isReminderEnabled,
+        offsetDays: dto.offsetDays,
+      },
     });
 
     return this.getReminders(id, user);

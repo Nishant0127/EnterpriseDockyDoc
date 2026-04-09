@@ -13,6 +13,7 @@ import { DocumentsModule } from './modules/documents/documents.module';
 import { TagsModule } from './modules/tags/tags.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { SharesModule } from './modules/shares/shares.module';
+import { AuditModule } from './modules/audit/audit.module';
 
 /**
  * Root application module.
@@ -37,6 +38,7 @@ import { SharesModule } from './modules/shares/shares.module';
     TagsModule,
     RemindersModule,
     SharesModule,
+    AuditModule,
   ],
 })
 export class AppModule {}

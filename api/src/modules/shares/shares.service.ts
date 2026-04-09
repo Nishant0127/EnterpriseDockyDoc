@@ -9,6 +9,7 @@ import {
 import { DocumentStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
+import { AuditService, AuditAction, AuditEntityType } from '../audit/audit.service';
 import { assertWorkspaceMembership } from '../../common/helpers/workspace-access.helper';
 import type { DevUserPayload } from '../../common/guards/dev-auth.guard';
 import {
@@ -44,6 +45,7 @@ export class SharesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: LocalStorageService,
+    private readonly audit: AuditService,
   ) {}
 
   // ------------------------------------------------------------------ //
@@ -119,6 +121,17 @@ export class SharesService {
       });
     }
 
+    if (results.length > 0) {
+      this.audit.log({
+        workspaceId: doc.workspaceId,
+        userId: user.id,
+        action: AuditAction.DOCUMENT_SHARED_INTERNAL,
+        entityType: AuditEntityType.SHARE,
+        entityId: share.id,
+        metadata: { documentName: doc.name, sharedWithCount: results.length },
+      });
+    }
+
     return results;
   }
 
@@ -149,6 +162,19 @@ export class SharesService {
         isActive: true,
       },
       include: { createdBy: { select: USER_SELECT } },
+    });
+
+    this.audit.log({
+      workspaceId: doc.workspaceId,
+      userId: user.id,
+      action: AuditAction.DOCUMENT_SHARED_EXTERNAL,
+      entityType: AuditEntityType.SHARE,
+      entityId: share.id,
+      metadata: {
+        documentName: doc.name,
+        hasPassword: !!dto.password,
+        allowDownload: dto.allowDownload,
+      },
     });
 
     return this.toExternalShareDto(share);
@@ -220,6 +246,15 @@ export class SharesService {
     await this.prisma.documentShare.update({
       where: { id: shareId },
       data: { isActive: false },
+    });
+
+    this.audit.log({
+      workspaceId: share.document.workspaceId,
+      userId: user.id,
+      action: AuditAction.SHARE_REVOKED,
+      entityType: AuditEntityType.SHARE,
+      entityId: shareId,
+      metadata: { shareType: share.shareType },
     });
   }
 
@@ -334,6 +369,15 @@ export class SharesService {
       },
     });
 
+    this.audit.log({
+      workspaceId: share.document.workspaceId,
+      userId: null, // external / unauthenticated
+      action: AuditAction.DOCUMENT_DOWNLOADED,
+      entityType: AuditEntityType.DOCUMENT,
+      entityId: share.documentId,
+      metadata: { documentName: share.document.name, external: true, shareId: share.id },
+    });
+
     return {
       absolutePath: this.storage.getAbsolutePath(version.storageKey),
       fileName: share.document.fileName,
@@ -365,7 +409,7 @@ export class SharesService {
       where: { token },
       include: {
         document: {
-          select: { id: true, name: true, fileName: true, status: true },
+          select: { id: true, name: true, fileName: true, status: true, workspaceId: true },
         },
       },
     });

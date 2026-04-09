@@ -16,6 +16,49 @@ export type ReminderChannel = 'IN_APP' | 'EMAIL';
 export type ReminderStatus = 'PENDING' | 'SENT' | 'CANCELLED';
 export type ShareType = 'INTERNAL' | 'EXTERNAL_LINK';
 export type SharePermission = 'VIEW' | 'DOWNLOAD';
+export type AuditAction =
+  | 'DOCUMENT_CREATED'
+  | 'DOCUMENT_UPDATED'
+  | 'DOCUMENT_DELETED'
+  | 'DOCUMENT_VERSION_ADDED'
+  | 'DOCUMENT_DOWNLOADED'
+  | 'DOCUMENT_SHARED_INTERNAL'
+  | 'DOCUMENT_SHARED_EXTERNAL'
+  | 'SHARE_REVOKED'
+  | 'REMINDER_CREATED'
+  | 'REMINDER_UPDATED'
+  | 'MEMBER_ADDED'
+  | 'MEMBER_ROLE_UPDATED';
+export type AuditEntityType =
+  | 'DOCUMENT'
+  | 'DOCUMENT_VERSION'
+  | 'SHARE'
+  | 'REMINDER'
+  | 'USER'
+  | 'WORKSPACE';
+
+// ================================================================== //
+// Audit Logs
+// ================================================================== //
+
+export interface AuditUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+export interface AuditLog {
+  id: string;
+  workspaceId: string;
+  userId: string | null;
+  action: AuditAction;
+  entityType: AuditEntityType;
+  entityId: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  user: AuditUser | null;
+}
 
 // ================================================================== //
 // Sharing
