@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { fetchDocument, downloadDocument, downloadDocumentVersion, deleteDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders, fetchTags, setDocumentTags } from '@/lib/documents';
+import { fetchDocument, downloadDocument, downloadDocumentVersion, deleteDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders, fetchTags, setDocumentTags, setDocumentMetadata } from '@/lib/documents';
 import { apiFetch } from '@/lib/api';
 import { fetchDocumentActivity, describeAuditLog, auditActionCategory, formatAuditAction } from '@/lib/audit';
 import { cn } from '@/lib/utils';
@@ -632,22 +632,11 @@ export default function DocumentDetailPage() {
         />
 
         {/* ---- Metadata ------------------------------------------- */}
-        <Section title="Metadata">
-          {doc.metadata.length === 0 ? (
-            <p className="text-sm text-gray-400">No metadata entries.</p>
-          ) : (
-            <dl className="space-y-2">
-              {doc.metadata.map((m) => (
-                <div key={m.id} className="flex gap-3">
-                  <dt className="w-32 flex-shrink-0 text-xs text-gray-400 font-medium pt-0.5 truncate">
-                    {m.key}
-                  </dt>
-                  <dd className="flex-1 text-sm text-gray-700 break-all">{m.value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </Section>
+        <MetadataSection
+          doc={doc}
+          canEdit={canEdit}
+          onSaved={reload}
+        />
 
         {/* ---- AI Extraction (full width) ------------------------- */}
         <div className="lg:col-span-2">
@@ -890,6 +879,210 @@ function TagsSection({
           </div>
         </div>
       )}
+    </Section>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Metadata section — editable key/value pairs
+// ------------------------------------------------------------------ //
+
+interface MetadataRow {
+  key: string;
+  value: string;
+  /** cuid from DB if the row already exists, undefined for newly added rows */
+  id?: string;
+}
+
+function MetadataSection({
+  doc,
+  canEdit,
+  onSaved,
+}: {
+  doc: DocumentDetail;
+  canEdit: boolean;
+  onSaved: () => void;
+}) {
+  const toast = useToast();
+  const [editing, setEditing] = useState(false);
+  const [rows, setRows] = useState<MetadataRow[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function startEdit() {
+    setRows(doc.metadata.map((m) => ({ id: m.id, key: m.key, value: m.value })));
+    setError(null);
+    setEditing(true);
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+    setError(null);
+  }
+
+  function addRow() {
+    setRows((prev: MetadataRow[]) => [...prev, { key: '', value: '' }]);
+  }
+
+  function removeRow(idx: number) {
+    setRows((prev: MetadataRow[]) => prev.filter((_: MetadataRow, i: number) => i !== idx));
+  }
+
+  function updateRow(idx: number, field: 'key' | 'value', val: string) {
+    setRows((prev: MetadataRow[]) =>
+      prev.map((r: MetadataRow, i: number) => (i === idx ? { ...r, [field]: val } : r)),
+    );
+  }
+
+  async function handleSave() {
+    // Validate: no duplicate keys, no blank keys
+    const trimmed = rows.map((r: MetadataRow) => ({ key: r.key.trim(), value: r.value.trim() }));
+    const keys = trimmed.map((r: { key: string; value: string }) => r.key).filter(Boolean);
+    if (trimmed.some((r: { key: string; value: string }) => !r.key)) {
+      setError('All metadata keys must be non-empty.');
+      return;
+    }
+    if (new Set(keys).size !== keys.length) {
+      setError('Duplicate metadata keys are not allowed.');
+      return;
+    }
+
+    setError(null);
+    setSaving(true);
+    try {
+      await setDocumentMetadata(doc.id, trimmed);
+      toast.success('Metadata saved.');
+      setEditing(false);
+      onSaved();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to save metadata.';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── read-only view ────────────────────────────────────────────────
+  if (!editing) {
+    return (
+      <Section
+        title="Metadata"
+        action={
+          canEdit ? (
+            <button
+              type="button"
+              onClick={startEdit}
+              className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline"
+            >
+              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeLinecap="round" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              Edit
+            </button>
+          ) : undefined
+        }
+      >
+        {doc.metadata.length === 0 ? (
+          <p className="text-sm text-gray-400">No metadata entries.</p>
+        ) : (
+          <dl className="space-y-2">
+            {doc.metadata.map((m) => (
+              <div key={m.id} className="flex gap-3">
+                <dt className="w-32 flex-shrink-0 text-xs text-gray-400 font-medium pt-0.5 truncate">
+                  {m.key}
+                </dt>
+                <dd className="flex-1 text-sm text-gray-700 break-all">{m.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </Section>
+    );
+  }
+
+  // ── edit view ─────────────────────────────────────────────────────
+  return (
+    <Section title="Metadata">
+      <div className="space-y-2">
+        {rows.length === 0 && (
+          <p className="text-sm text-gray-400">No entries yet. Add one below.</p>
+        )}
+        {rows.map((row: MetadataRow, idx: number) => (
+          <div key={idx} className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Key"
+              value={row.key}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRow(idx, 'key', e.target.value)}
+              className="w-36 flex-shrink-0 text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500 font-medium text-gray-700 placeholder-gray-400"
+            />
+            <input
+              type="text"
+              placeholder="Value"
+              value={row.value}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRow(idx, 'value', e.target.value)}
+              className="flex-1 text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500 text-gray-700 placeholder-gray-400"
+            />
+            <button
+              type="button"
+              onClick={() => removeRow(idx)}
+              title="Remove row"
+              className="p-1.5 rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+            >
+              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Add row */}
+      <button
+        type="button"
+        onClick={addRow}
+        className="mt-3 inline-flex items-center gap-1.5 text-xs text-brand-600 hover:underline"
+      >
+        <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+        </svg>
+        Add metadata
+      </button>
+
+      {/* Error */}
+      {error && (
+        <p className="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {error}
+        </p>
+      )}
+
+      {/* Actions */}
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
+        >
+          {saving && (
+            <svg className="animate-spin" width="12" height="12" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          )}
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={cancelEdit}
+          disabled={saving}
+          className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
     </Section>
   );
 }
