@@ -38,6 +38,8 @@ export default function LoginPage() {
           /* Clerk SSO — Google, Microsoft, email+password — all configured in Clerk dashboard */
           <div className="flex justify-center">
             <SignIn
+              forceRedirectUrl="/dashboard"
+              fallbackRedirectUrl="/dashboard"
               appearance={{
                 elements: {
                   rootBox: 'w-full',
