@@ -1,46 +1,86 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useUser } from '@/context/UserContext';
-import { fetchWorkspaceDetail, fetchTags, createTag, updateTag, deleteTag, renameWorkspace } from '@/lib/documents';
+import {
+  fetchWorkspaceDetail,
+  fetchTags,
+  createTag,
+  updateTag,
+  deleteTag,
+  renameWorkspace,
+  fetchAiSettings,
+  updateAiSettings,
+} from '@/lib/documents';
 import type { AiSettings } from '@/lib/documents';
-import { fetchAiSettings, updateAiSettings } from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
 import ConfirmModal from '@/components/ui/ConfirmModal';
 import type { Tag, WorkspaceDetail } from '@/types';
 
+// ------------------------------------------------------------------ //
+// Sidebar nav definition
+// ------------------------------------------------------------------ //
+
+type SectionId = 'general' | 'tags' | 'ai' | 'retention' | 'integrations' | 'security';
+
+const NAV_ITEMS: { id: SectionId; label: string }[] = [
+  { id: 'general',      label: 'General' },
+  { id: 'tags',         label: 'Tags' },
+  { id: 'ai',           label: 'AI Configuration' },
+  { id: 'retention',    label: 'Retention & Storage' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'security',     label: 'Security' },
+];
+
+// ------------------------------------------------------------------ //
+// Page
+// ------------------------------------------------------------------ //
+
 export default function SettingsPage() {
   const { user, activeWorkspace, isLoading, refreshUser } = useUser();
   const toast = useToast();
+  const [activeSection, setActiveSection] = useState<SectionId>('general');
+
+  // Data
   const [detail, setDetail] = useState<WorkspaceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
+  const [aiSettingsLoading, setAiSettingsLoading] = useState(false);
+
+  // General — rename workspace
+  const [displayName, setDisplayName] = useState<string | null>(null);
   const [renamingWorkspace, setRenamingWorkspace] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [renameSaving, setRenameSaving] = useState(false);
-  const [displayName, setDisplayName] = useState<string | null>(null);
-  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
-  const [aiSettingsLoading, setAiSettingsLoading] = useState(false);
+
+  // AI settings form state
   const [aiProviderMode, setAiProviderMode] = useState<'PLATFORM' | 'BYOK'>('PLATFORM');
   const [byokKey, setByokKey] = useState('');
   const [aiSaving, setAiSaving] = useState(false);
   const [showByokKey, setShowByokKey] = useState(false);
 
+  const canManage =
+    activeWorkspace?.role === 'ADMIN' || activeWorkspace?.role === 'OWNER';
+
   useEffect(() => {
     if (!activeWorkspace) return;
     setDisplayName(activeWorkspace.workspaceName);
+
     setDetailLoading(true);
-    setTagsLoading(true);
     fetchWorkspaceDetail(activeWorkspace.workspaceId)
       .then(setDetail)
       .catch(() => setDetail(null))
       .finally(() => setDetailLoading(false));
+
+    setTagsLoading(true);
     fetchTags(activeWorkspace.workspaceId)
       .then(setTags)
       .catch(() => setTags([]))
       .finally(() => setTagsLoading(false));
+
     setAiSettingsLoading(true);
     fetchAiSettings(activeWorkspace.workspaceId)
       .then((s) => {
@@ -65,7 +105,6 @@ export default function SettingsPage() {
       setDisplayName(updated.name);
       setRenamingWorkspace(false);
       toast.success('Workspace renamed successfully.');
-      // Refresh user context so sidebar + header reflect new name
       void refreshUser();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to rename workspace.');
@@ -79,12 +118,8 @@ export default function SettingsPage() {
     if (!activeWorkspace) return;
     setAiSaving(true);
     try {
-      const payload: { aiProvider: string; apiKey?: string } = {
-        aiProvider: aiProviderMode,
-      };
-      if (aiProviderMode === 'BYOK' && byokKey.trim()) {
-        payload.apiKey = byokKey.trim();
-      }
+      const payload: { aiProvider: string; apiKey?: string } = { aiProvider: aiProviderMode };
+      if (aiProviderMode === 'BYOK' && byokKey.trim()) payload.apiKey = byokKey.trim();
       const updated = await updateAiSettings(activeWorkspace.workspaceId, payload);
       setAiSettings(updated);
       setByokKey('');
@@ -96,329 +131,238 @@ export default function SettingsPage() {
     }
   }
 
-  if (isLoading || detailLoading || tagsLoading) return <PageSkeleton />;
+  if (isLoading || detailLoading) return <PageSkeleton />;
 
-  const canRename = activeWorkspace?.role === 'ADMIN' || activeWorkspace?.role === 'OWNER';
+  const wsName = displayName ?? activeWorkspace?.workspaceName ?? '—';
 
   return (
-    <div className="max-w-2xl">
+    <div>
+      {/* Page header */}
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
-        <p className="mt-0.5 text-sm text-gray-500">
-          {displayName ?? activeWorkspace?.workspaceName ?? 'No workspace selected'}
-        </p>
+        <p className="mt-0.5 text-sm text-gray-500">{wsName}</p>
       </div>
 
-      <div className="space-y-4">
-        {/* Workspace info */}
-        <SettingsCard title="Workspace">
-          <div className={`flex items-center justify-between py-2.5 border-b border-gray-50`}>
-            <span className="text-xs text-gray-500 font-medium w-28 flex-shrink-0">Name</span>
+      {/* Two-column layout */}
+      <div className="flex gap-6 items-start">
+        {/* ---- Left sidebar nav ---- */}
+        <aside className="w-44 flex-shrink-0">
+          <nav className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {NAV_ITEMS.map((item, i) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveSection(item.id)}
+                className={cn(
+                  'w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-left transition-colors',
+                  i < NAV_ITEMS.length - 1 && 'border-b border-gray-50',
+                  activeSection === item.id
+                    ? 'bg-brand-50 text-brand-700 font-semibold'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
+                )}
+              >
+                <NavIcon sectionId={item.id} active={activeSection === item.id} />
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+
+        {/* ---- Right content pane ---- */}
+        <div className="flex-1 min-w-0">
+          {activeSection === 'general' && (
+            <GeneralSection
+              user={user}
+              activeWorkspace={activeWorkspace}
+              detail={detail}
+              displayName={wsName}
+              canManage={canManage}
+              renamingWorkspace={renamingWorkspace}
+              renameValue={renameValue}
+              renameSaving={renameSaving}
+              onStartRename={() => { setRenameValue(wsName); setRenamingWorkspace(true); }}
+              onCancelRename={() => setRenamingWorkspace(false)}
+              onRenameChange={setRenameValue}
+              onRenameSubmit={handleRename}
+            />
+          )}
+
+          {activeSection === 'tags' && (
+            <TagsSection
+              loading={tagsLoading}
+              workspaceId={activeWorkspace?.workspaceId ?? ''}
+              tags={tags}
+              onChanged={refreshTags}
+            />
+          )}
+
+          {activeSection === 'ai' && (
+            <AiSection
+              loading={aiSettingsLoading}
+              settings={aiSettings}
+              canManage={canManage}
+              providerMode={aiProviderMode}
+              byokKey={byokKey}
+              showByokKey={showByokKey}
+              saving={aiSaving}
+              onProviderChange={setAiProviderMode}
+              onByokKeyChange={setByokKey}
+              onToggleShowKey={() => setShowByokKey((v) => !v)}
+              onSubmit={handleSaveAiSettings}
+            />
+          )}
+
+          {activeSection === 'retention' && <RetentionSection />}
+          {activeSection === 'integrations' && <IntegrationsSection />}
+          {activeSection === 'security' && <SecuritySection />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Nav icon (inline SVGs per section)
+// ------------------------------------------------------------------ //
+
+function NavIcon({ sectionId, active }: { sectionId: SectionId; active: boolean }) {
+  const cls = cn('flex-shrink-0', active ? 'text-brand-600' : 'text-gray-400');
+  const s = { width: 14, height: 14, fill: 'none', stroke: 'currentColor', strokeWidth: 2, viewBox: '0 0 24 24' };
+  switch (sectionId) {
+    case 'general':
+      return <svg {...s} className={cls}><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14" strokeLinecap="round"/></svg>;
+    case 'tags':
+      return <svg {...s} className={cls}><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>;
+    case 'ai':
+      return <svg {...s} className={cls}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
+    case 'retention':
+      return <svg {...s} className={cls}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>;
+    case 'integrations':
+      return <svg {...s} className={cls}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>;
+    case 'security':
+      return <svg {...s} className={cls}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>;
+    default:
+      return null;
+  }
+}
+
+// ------------------------------------------------------------------ //
+// Section: General
+// ------------------------------------------------------------------ //
+
+function GeneralSection({
+  user,
+  activeWorkspace,
+  detail,
+  displayName,
+  canManage,
+  renamingWorkspace,
+  renameValue,
+  renameSaving,
+  onStartRename,
+  onCancelRename,
+  onRenameChange,
+  onRenameSubmit,
+}: {
+  user: ReturnType<typeof useUser>['user'];
+  activeWorkspace: ReturnType<typeof useUser>['activeWorkspace'];
+  detail: WorkspaceDetail | null;
+  displayName: string;
+  canManage: boolean;
+  renamingWorkspace: boolean;
+  renameValue: string;
+  renameSaving: boolean;
+  onStartRename: () => void;
+  onCancelRename: () => void;
+  onRenameChange: (v: string) => void;
+  onRenameSubmit: (e: React.FormEvent) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      {/* Workspace */}
+      <SectionCard title="Workspace" subtitle="Details about this workspace">
+        <div className="divide-y divide-gray-50">
+          {/* Name row with optional rename */}
+          <div className="flex items-center justify-between py-3">
+            <span className="text-xs font-medium text-gray-500 w-36 flex-shrink-0">Name</span>
             {renamingWorkspace ? (
-              <form onSubmit={handleRename} className="flex-1 flex items-center gap-2">
+              <form onSubmit={onRenameSubmit} className="flex-1 flex items-center gap-2">
                 <input
                   type="text"
                   value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
+                  onChange={(e) => onRenameChange(e.target.value)}
                   autoFocus
-                  className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
                 <button
                   type="submit"
                   disabled={renameSaving || !renameValue.trim()}
-                  className="px-3 py-1 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50"
+                  className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50"
                 >
                   {renameSaving ? '…' : 'Save'}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setRenamingWorkspace(false)}
-                  className="px-3 py-1 text-xs text-gray-500 hover:text-gray-700"
+                  onClick={onCancelRename}
+                  className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700"
                 >
                   Cancel
                 </button>
               </form>
             ) : (
               <div className="flex-1 flex items-center justify-between">
-                <span className="text-sm text-gray-800">{displayName ?? activeWorkspace?.workspaceName ?? '—'}</span>
-                {canRename && (
-                  <button
-                    onClick={() => { setRenameValue(displayName ?? activeWorkspace?.workspaceName ?? ''); setRenamingWorkspace(true); }}
-                    className="text-xs text-brand-600 hover:underline ml-2"
-                  >
+                <span className="text-sm text-gray-800">{displayName}</span>
+                {canManage && (
+                  <button onClick={onStartRename} className="text-xs text-brand-600 hover:underline">
                     Rename
                   </button>
                 )}
               </div>
             )}
           </div>
-          <SettingsRow label="Slug" value={activeWorkspace?.workspaceSlug ?? '—'} />
-          <SettingsRow
-            label="Type"
-            value={
-              activeWorkspace
-                ? activeWorkspace.workspaceType.charAt(0) +
-                  activeWorkspace.workspaceType.slice(1).toLowerCase()
-                : '—'
-            }
-          />
-          <SettingsRow label="Your role" value={activeWorkspace?.role ?? '—'} />
-          <SettingsRow
-            label="Members"
-            value={detail ? String(detail.memberCount) : '—'}
-          />
-          <SettingsRow
-            label="Documents"
-            value={detail ? String(detail.documentCount) : '—'}
-            last
-          />
-        </SettingsCard>
+          <InfoRow label="Slug"       value={activeWorkspace?.workspaceSlug ?? '—'} />
+          <InfoRow label="Type"       value={activeWorkspace ? activeWorkspace.workspaceType.charAt(0) + activeWorkspace.workspaceType.slice(1).toLowerCase() : '—'} />
+          <InfoRow label="Your role"  value={activeWorkspace?.role ?? '—'} />
+          <InfoRow label="Members"    value={detail ? String(detail.memberCount) : '—'} />
+          <InfoRow label="Documents"  value={detail ? String(detail.documentCount) : '—'} last />
+        </div>
+      </SectionCard>
 
-        {/* Account info */}
-        <SettingsCard title="Account">
-          <SettingsRow
-            label="Name"
-            value={user ? `${user.firstName} ${user.lastName}` : '—'}
-          />
-          <SettingsRow label="Email" value={user?.email ?? '—'} last />
-        </SettingsCard>
-
-        {/* Tags management */}
-        {activeWorkspace && (
-          <TagsCard
-            workspaceId={activeWorkspace.workspaceId}
-            tags={tags}
-            onChanged={refreshTags}
-          />
-        )}
-
-        {/* Placeholder sections */}
-        <SettingsCard title="Notifications">
-          <p className="text-sm text-gray-400 py-1">
-            Notification preferences — coming soon.
-          </p>
-        </SettingsCard>
-
-        <SettingsCard title="Security">
-          <p className="text-sm text-gray-400 py-1">
-            Password and authentication settings — coming soon.
-          </p>
-        </SettingsCard>
-
-        <SettingsCard title="Retention &amp; Storage">
-          <div className="flex items-center justify-between py-2.5 border-b border-gray-50">
-            <div>
-              <p className="text-sm text-gray-800 font-medium">Auto-empty Trash</p>
-              <p className="text-xs text-gray-400 mt-0.5">Automatically shred deleted documents after a set period</p>
-            </div>
-            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">Coming soon</span>
-          </div>
-          <div className="flex items-center justify-between py-2.5">
-            <div>
-              <p className="text-sm text-gray-800 font-medium">Document retention policy</p>
-              <p className="text-xs text-gray-400 mt-0.5">Set default expiry rules for document types</p>
-            </div>
-            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">Coming soon</span>
-          </div>
-        </SettingsCard>
-
-        <SettingsCard title="Integrations">
-          <p className="text-sm text-gray-400 py-1">
-            Connect with third-party tools — coming soon.
-          </p>
-        </SettingsCard>
-
-        {/* AI Configuration */}
-        <SettingsCard title="AI Configuration">
-          {aiSettingsLoading ? (
-            <div className="py-4 text-center text-sm text-gray-400">Loading AI settings…</div>
-          ) : aiSettings === null ? (
-            <div className="py-4 text-center text-sm text-gray-400">AI settings unavailable.</div>
-          ) : (
-            <form onSubmit={handleSaveAiSettings} className="space-y-4 py-2">
-              {/* Plan badge */}
-              <div className="flex items-center justify-between py-2 border-b border-gray-50">
-                <span className="text-xs text-gray-500 font-medium w-28 flex-shrink-0">Plan</span>
-                <span className={cn(
-                  'text-xs font-semibold px-2 py-0.5 rounded-full',
-                  aiSettings.plan === 'FREE' && 'bg-gray-100 text-gray-600',
-                  aiSettings.plan === 'PRO' && 'bg-blue-100 text-blue-700',
-                  aiSettings.plan === 'ENTERPRISE' && 'bg-purple-100 text-purple-700',
-                )}>
-                  {aiSettings.plan}
-                </span>
-              </div>
-
-              {/* Provider toggle */}
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setAiProviderMode('PLATFORM')}
-                  className={cn(
-                    'flex-1 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors',
-                    aiProviderMode === 'PLATFORM'
-                      ? 'border-blue-500 bg-blue-50 text-blue-800'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300',
-                  )}
-                >
-                  <div className="font-medium">Use DockyDoc AI</div>
-                  <div className="text-xs mt-0.5 opacity-70">Managed by DockyDoc, usage tracked</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAiProviderMode('BYOK')}
-                  className={cn(
-                    'flex-1 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors',
-                    aiProviderMode === 'BYOK'
-                      ? 'border-blue-500 bg-blue-50 text-blue-800'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300',
-                  )}
-                >
-                  <div className="font-medium">Bring Your Own Key</div>
-                  <div className="text-xs mt-0.5 opacity-70">Use your Anthropic API key</div>
-                </button>
-              </div>
-
-              {/* Platform: usage meter */}
-              {aiProviderMode === 'PLATFORM' && (
-                <div className="rounded-lg bg-gray-50 p-3 space-y-2">
-                  <div className="flex items-center justify-between text-xs text-gray-600">
-                    <span>Tokens used this period</span>
-                    <span className="font-medium tabular-nums">
-                      {aiSettings.aiUsageTokens.toLocaleString()} / {aiSettings.aiUsageLimit.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className={cn(
-                        'h-full rounded-full transition-all',
-                        aiSettings.aiUsagePercent >= 90 ? 'bg-red-500' :
-                        aiSettings.aiUsagePercent >= 70 ? 'bg-yellow-500' : 'bg-blue-500',
-                      )}
-                      style={{ width: `${aiSettings.aiUsagePercent}%` }}
-                    />
-                  </div>
-                  {aiSettings.aiUsagePercent >= 90 && (
-                    <p className="text-xs text-red-600">
-                      Usage limit nearly reached. Upgrade your plan to continue using AI features.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* BYOK: API key input */}
-              {aiProviderMode === 'BYOK' && (
-                <div className="space-y-2">
-                  {aiSettings.hasApiKey && (
-                    <p className="text-xs text-green-600 flex items-center gap-1">
-                      <span>✓</span> API key saved. Enter a new key below to replace it.
-                    </p>
-                  )}
-                  <div className="relative">
-                    <input
-                      type={showByokKey ? 'text' : 'password'}
-                      value={byokKey}
-                      onChange={(e) => setByokKey(e.target.value)}
-                      placeholder={aiSettings.hasApiKey ? 'Enter new key to replace…' : 'sk-ant-…'}
-                      className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm pr-16 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowByokKey((v) => !v)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600"
-                    >
-                      {showByokKey ? 'Hide' : 'Show'}
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-400">
-                    Keys are encrypted at rest. Never shared or logged.
-                  </p>
-                </div>
-              )}
-
-              {/* Save button — only show if user can edit */}
-              {canRename && (
-                <div className="flex justify-end pt-1">
-                  <button
-                    type="submit"
-                    disabled={aiSaving || (aiProviderMode === 'BYOK' && !aiSettings.hasApiKey && !byokKey.trim())}
-                    className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {aiSaving ? 'Saving…' : 'Save AI Settings'}
-                  </button>
-                </div>
-              )}
-            </form>
-          )}
-        </SettingsCard>
-
-        <SettingsCard title="Danger zone">
-          <p className="text-sm text-gray-400 py-1">
-            Workspace deletion and data export — coming soon.
-          </p>
-        </SettingsCard>
-      </div>
-    </div>
-  );
-}
-
-function SettingsCard({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-5 py-3 border-b border-gray-100">
-        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-      </div>
-      <div className="px-5 py-2">{children}</div>
-    </div>
-  );
-}
-
-function SettingsRow({
-  label,
-  value,
-  last = false,
-}: {
-  label: string;
-  value: string;
-  last?: boolean;
-}) {
-  return (
-    <div
-      className={`flex items-center justify-between py-2.5 ${last ? '' : 'border-b border-gray-50'}`}
-    >
-      <span className="text-xs text-gray-500 font-medium w-28 flex-shrink-0">
-        {label}
-      </span>
-      <span className="text-sm text-gray-800 flex-1">{value}</span>
+      {/* Account */}
+      <SectionCard title="Account" subtitle="Your personal account information">
+        <div className="divide-y divide-gray-50">
+          <InfoRow label="Name"  value={user ? `${user.firstName} ${user.lastName}` : '—'} />
+          <InfoRow label="Email" value={user?.email ?? '—'} last />
+        </div>
+      </SectionCard>
     </div>
   );
 }
 
 // ------------------------------------------------------------------ //
-// Tags card
+// Section: Tags
 // ------------------------------------------------------------------ //
 
+const TAGS_PAGE_SIZE = 10;
 const PRESET_COLORS = [
   '#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
   '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6b7280',
 ];
 
-function TagsCard({
+function TagsSection({
+  loading,
   workspaceId,
   tags,
   onChanged,
 }: {
+  loading: boolean;
   workspaceId: string;
   tags: Tag[];
   onChanged: () => void;
 }) {
   const toast = useToast();
+  const [search, setSearch] = useState('');
+  const [visibleCount, setVisibleCount] = useState(TAGS_PAGE_SIZE);
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
@@ -427,6 +371,16 @@ function TagsCard({
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Tag | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Reset visible count when search changes
+  const filtered = useMemo(
+    () => (search.trim()
+      ? tags.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()))
+      : tags),
+    [tags, search],
+  );
+  const visible = filtered.slice(0, visibleCount);
+  const hasMoreTags = filtered.length > visibleCount;
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -479,101 +433,162 @@ function TagsCard({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-900">Tags</h2>
+    <SectionCard
+      title="Tags"
+      subtitle={`${tags.length} tag${tags.length !== 1 ? 's' : ''} in this workspace`}
+      action={
         <button
           onClick={() => setShowNew(true)}
-          className="text-xs text-brand-600 hover:underline"
+          className="text-xs font-medium text-brand-600 hover:text-brand-700 transition-colors"
         >
           + New tag
         </button>
-      </div>
-
-      <div className="px-5 py-3 space-y-2">
-        {error && (
-          <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
-        )}
-
-        {tags.length === 0 && !showNew && (
-          <p className="text-sm text-gray-400 py-1">No tags yet. Create one to organize your documents.</p>
-        )}
-
-        {tags.map((tag) =>
-          editingTag?.id === tag.id ? (
-            <TagEditRow
-              key={tag.id}
-              tag={tag}
-              saving={saving}
-              onSave={handleSaveEdit}
-              onCancel={() => setEditingTag(null)}
-            />
-          ) : (
-            <div key={tag.id} className="flex items-center gap-3 py-1.5">
-              <span
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-                style={
-                  tag.color
-                    ? { backgroundColor: `${tag.color}20`, color: tag.color }
-                    : { backgroundColor: '#f3f4f6', color: '#6b7280' }
-                }
-              >
-                {tag.color && (
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                )}
-                {tag.name}
-              </span>
-              <div className="ml-auto flex items-center gap-1">
-                <button
-                  onClick={() => setEditingTag(tag)}
-                  className="text-xs text-gray-400 hover:text-brand-600 transition-colors px-2 py-1"
+      }
+    >
+      {loading ? (
+        <div className="py-6 text-center text-sm text-gray-400">Loading tags…</div>
+      ) : (
+        <>
+          {/* Search */}
+          {tags.length > 5 && (
+            <div className="mb-4">
+              <div className="relative">
+                <svg
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                  width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
                 >
-                  Edit
-                </button>
-                <button
-                  onClick={() => setPendingDelete(tag)}
-                  className="text-xs text-gray-400 hover:text-red-600 transition-colors px-2 py-1"
-                >
-                  Delete
-                </button>
+                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" strokeLinecap="round" />
+                </svg>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => { setSearch(e.target.value); setVisibleCount(TAGS_PAGE_SIZE); }}
+                  placeholder="Search tags…"
+                  className="w-full pl-8 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
               </div>
             </div>
-          )
-        )}
+          )}
 
-        {showNew && (
-          <form onSubmit={handleCreate} className="flex items-center gap-2 pt-1">
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Tag name"
-              autoFocus
-              className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
-            <div className="flex gap-1">
-              {PRESET_COLORS.map((c) => (
+          {error && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2 mb-3">{error}</p>
+          )}
+
+          {/* New tag form */}
+          {showNew && (
+            <form onSubmit={handleCreate} className="flex items-center gap-2 pb-3 mb-3 border-b border-gray-100">
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Tag name"
+                autoFocus
+                className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <div className="flex gap-1">
+                {PRESET_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setNewColor(c)}
+                    className={cn(
+                      'w-5 h-5 rounded-full transition-transform',
+                      newColor === c ? 'scale-125 ring-2 ring-offset-1 ring-gray-400' : '',
+                    )}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+              <button
+                type="submit"
+                disabled={saving || !newName.trim()}
+                className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50"
+              >
+                {saving ? '…' : 'Create'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowNew(false)}
+                className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+              >
+                Cancel
+              </button>
+            </form>
+          )}
+
+          {/* Tag list */}
+          {filtered.length === 0 ? (
+            <p className="text-sm text-gray-400 py-4 text-center">
+              {search ? 'No tags match your search.' : 'No tags yet. Create one to organize your documents.'}
+            </p>
+          ) : (
+            <>
+              <div className="divide-y divide-gray-50">
+                {visible.map((tag) =>
+                  editingTag?.id === tag.id ? (
+                    <TagEditRow
+                      key={tag.id}
+                      tag={tag}
+                      saving={saving}
+                      onSave={handleSaveEdit}
+                      onCancel={() => setEditingTag(null)}
+                    />
+                  ) : (
+                    <div key={tag.id} className="flex items-center gap-3 py-2.5">
+                      <span
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+                        style={
+                          tag.color
+                            ? { backgroundColor: `${tag.color}20`, color: tag.color }
+                            : { backgroundColor: '#f3f4f6', color: '#6b7280' }
+                        }
+                      >
+                        {tag.color && (
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                        )}
+                        {tag.name}
+                      </span>
+                      <div className="ml-auto flex items-center gap-1">
+                        <button
+                          onClick={() => setEditingTag(tag)}
+                          className="text-xs text-gray-400 hover:text-brand-600 transition-colors px-2 py-1"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => setPendingDelete(tag)}
+                          className="text-xs text-gray-400 hover:text-red-600 transition-colors px-2 py-1"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+
+              {/* Show more / less */}
+              {hasMoreTags && (
                 <button
-                  key={c}
-                  type="button"
-                  onClick={() => setNewColor(c)}
-                  className={cn(
-                    'w-5 h-5 rounded-full transition-transform',
-                    newColor === c ? 'scale-125 ring-2 ring-offset-1 ring-gray-400' : '',
-                  )}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
-            <button type="submit" disabled={saving || !newName.trim()} className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
-              {saving ? '…' : 'Create'}
-            </button>
-            <button type="button" onClick={() => setShowNew(false)} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700">
-              Cancel
-            </button>
-          </form>
-        )}
-      </div>
+                  onClick={() => setVisibleCount((c) => c + TAGS_PAGE_SIZE)}
+                  className="mt-3 text-xs text-brand-600 hover:underline"
+                >
+                  Show {Math.min(TAGS_PAGE_SIZE, filtered.length - visibleCount)} more
+                  <span className="text-gray-400 ml-1">({filtered.length - visibleCount} remaining)</span>
+                </button>
+              )}
+              {!hasMoreTags && visibleCount > TAGS_PAGE_SIZE && (
+                <button
+                  onClick={() => setVisibleCount(TAGS_PAGE_SIZE)}
+                  className="mt-3 text-xs text-gray-400 hover:text-gray-600 hover:underline"
+                >
+                  Show less
+                </button>
+              )}
+            </>
+          )}
+        </>
+      )}
 
       {pendingDelete && (
         <ConfirmModal
@@ -586,9 +601,294 @@ function TagsCard({
           onClose={() => { if (!deleting) setPendingDelete(null); }}
         />
       )}
+    </SectionCard>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Section: AI Configuration
+// ------------------------------------------------------------------ //
+
+function AiSection({
+  loading,
+  settings,
+  canManage,
+  providerMode,
+  byokKey,
+  showByokKey,
+  saving,
+  onProviderChange,
+  onByokKeyChange,
+  onToggleShowKey,
+  onSubmit,
+}: {
+  loading: boolean;
+  settings: AiSettings | null;
+  canManage: boolean;
+  providerMode: 'PLATFORM' | 'BYOK';
+  byokKey: string;
+  showByokKey: boolean;
+  saving: boolean;
+  onProviderChange: (v: 'PLATFORM' | 'BYOK') => void;
+  onByokKeyChange: (v: string) => void;
+  onToggleShowKey: () => void;
+  onSubmit: (e: React.FormEvent) => void;
+}) {
+  return (
+    <SectionCard title="AI Configuration" subtitle="Manage how DockyDoc AI processes your documents">
+      {loading ? (
+        <div className="py-6 text-center text-sm text-gray-400">Loading AI settings…</div>
+      ) : settings === null ? (
+        <div className="py-6 text-center text-sm text-gray-400">AI settings unavailable.</div>
+      ) : (
+        <form onSubmit={onSubmit} className="space-y-5 py-1">
+          {/* Plan */}
+          <div className="flex items-center justify-between py-2 border-b border-gray-50">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Plan</p>
+              <p className="text-xs text-gray-400 mt-0.5">Your current AI usage tier</p>
+            </div>
+            <span className={cn(
+              'text-xs font-semibold px-2.5 py-1 rounded-full',
+              settings.plan === 'FREE'       && 'bg-gray-100 text-gray-600',
+              settings.plan === 'PRO'        && 'bg-blue-100 text-blue-700',
+              settings.plan === 'ENTERPRISE' && 'bg-purple-100 text-purple-700',
+            )}>
+              {settings.plan}
+            </span>
+          </div>
+
+          {/* Provider toggle */}
+          <div>
+            <p className="text-xs font-medium text-gray-500 mb-2">AI Provider</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => onProviderChange('PLATFORM')}
+                className={cn(
+                  'rounded-xl border px-4 py-3 text-left text-sm transition-colors',
+                  providerMode === 'PLATFORM'
+                    ? 'border-brand-400 bg-brand-50 text-brand-800'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300',
+                )}
+              >
+                <div className="font-medium">DockyDoc AI</div>
+                <div className="text-xs mt-0.5 opacity-70">Managed, usage tracked</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => onProviderChange('BYOK')}
+                className={cn(
+                  'rounded-xl border px-4 py-3 text-left text-sm transition-colors',
+                  providerMode === 'BYOK'
+                    ? 'border-brand-400 bg-brand-50 text-brand-800'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300',
+                )}
+              >
+                <div className="font-medium">Bring Your Own Key</div>
+                <div className="text-xs mt-0.5 opacity-70">Use your Anthropic API key</div>
+              </button>
+            </div>
+          </div>
+
+          {/* Platform usage meter */}
+          {providerMode === 'PLATFORM' && (
+            <div className="rounded-xl bg-gray-50 border border-gray-100 p-4 space-y-2">
+              <div className="flex items-center justify-between text-xs text-gray-600">
+                <span>Tokens used this period</span>
+                <span className="font-semibold tabular-nums">
+                  {settings.aiUsageTokens.toLocaleString()} / {settings.aiUsageLimit.toLocaleString()}
+                </span>
+              </div>
+              <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className={cn(
+                    'h-full rounded-full transition-all',
+                    settings.aiUsagePercent >= 90 ? 'bg-red-500' :
+                    settings.aiUsagePercent >= 70 ? 'bg-yellow-500' : 'bg-brand-500',
+                  )}
+                  style={{ width: `${settings.aiUsagePercent}%` }}
+                />
+              </div>
+              {settings.aiUsagePercent >= 90 && (
+                <p className="text-xs text-red-600">
+                  Usage limit nearly reached. Upgrade your plan to continue using AI features.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* BYOK key input */}
+          {providerMode === 'BYOK' && (
+            <div className="space-y-2">
+              {settings.hasApiKey && (
+                <p className="text-xs text-green-600 flex items-center gap-1">
+                  <span>✓</span> API key saved. Enter a new key below to replace it.
+                </p>
+              )}
+              <div className="relative">
+                <input
+                  type={showByokKey ? 'text' : 'password'}
+                  value={byokKey}
+                  onChange={(e) => onByokKeyChange(e.target.value)}
+                  placeholder={settings.hasApiKey ? 'Enter new key to replace…' : 'sk-ant-…'}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm pr-16 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
+                />
+                <button
+                  type="button"
+                  onClick={onToggleShowKey}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600"
+                >
+                  {showByokKey ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-400">Keys are encrypted at rest. Never shared or logged.</p>
+            </div>
+          )}
+
+          {canManage && (
+            <div className="flex justify-end pt-1 border-t border-gray-50">
+              <button
+                type="submit"
+                disabled={saving || (providerMode === 'BYOK' && !settings.hasApiKey && !byokKey.trim())}
+                className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-xl hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Saving…' : 'Save AI Settings'}
+              </button>
+            </div>
+          )}
+        </form>
+      )}
+    </SectionCard>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Placeholder sections
+// ------------------------------------------------------------------ //
+
+function RetentionSection() {
+  return (
+    <SectionCard title="Retention & Storage" subtitle="Configure document lifecycle and storage policies">
+      <div className="space-y-0 divide-y divide-gray-50">
+        <PlaceholderRow
+          label="Auto-empty Trash"
+          description="Automatically shred deleted documents after a set period"
+        />
+        <PlaceholderRow
+          label="Document retention policy"
+          description="Set default expiry rules for document types"
+          last
+        />
+      </div>
+    </SectionCard>
+  );
+}
+
+function IntegrationsSection() {
+  return (
+    <SectionCard title="Integrations" subtitle="Connect DockyDoc with third-party tools and services">
+      <div className="py-8 text-center">
+        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+          <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" className="text-gray-400">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+        </div>
+        <p className="text-sm text-gray-500 font-medium">Integrations coming soon</p>
+        <p className="text-xs text-gray-400 mt-1">Connect with Slack, Google Drive, and more.</p>
+      </div>
+    </SectionCard>
+  );
+}
+
+function SecuritySection() {
+  return (
+    <SectionCard title="Security" subtitle="Authentication and access control settings">
+      <div className="py-8 text-center">
+        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+          <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" className="text-gray-400">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <p className="text-sm text-gray-500 font-medium">Security settings coming soon</p>
+        <p className="text-xs text-gray-400 mt-1">SSO, 2FA, and audit access controls.</p>
+      </div>
+    </SectionCard>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Shared components
+// ------------------------------------------------------------------ //
+
+function SectionCard({
+  title,
+  subtitle,
+  children,
+  action,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+          {subtitle && <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>}
+        </div>
+        {action && <div className="flex-shrink-0">{action}</div>}
+      </div>
+      <div className="px-6 py-4">{children}</div>
     </div>
   );
 }
+
+function InfoRow({
+  label,
+  value,
+  last = false,
+}: {
+  label: string;
+  value: string;
+  last?: boolean;
+}) {
+  return (
+    <div className={cn('flex items-center py-2.5', !last && 'border-b border-gray-50')}>
+      <span className="text-xs font-medium text-gray-500 w-36 flex-shrink-0">{label}</span>
+      <span className="text-sm text-gray-800">{value}</span>
+    </div>
+  );
+}
+
+function PlaceholderRow({
+  label,
+  description,
+  last = false,
+}: {
+  label: string;
+  description: string;
+  last?: boolean;
+}) {
+  return (
+    <div className={cn('flex items-center justify-between py-3', !last && 'border-b border-gray-50')}>
+      <div>
+        <p className="text-sm font-medium text-gray-800">{label}</p>
+        <p className="text-xs text-gray-400 mt-0.5">{description}</p>
+      </div>
+      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full flex-shrink-0 ml-4">
+        Coming soon
+      </span>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Tag edit row (reused from original)
+// ------------------------------------------------------------------ //
 
 function TagEditRow({
   tag,
@@ -605,7 +905,7 @@ function TagEditRow({
   const [color, setColor] = useState(tag.color ?? PRESET_COLORS[0]);
 
   return (
-    <div className="flex items-center gap-2 py-1">
+    <div className="flex items-center gap-2 py-2">
       <input
         type="text"
         value={name}
@@ -635,22 +935,34 @@ function TagEditRow({
       >
         {saving ? '…' : 'Save'}
       </button>
-      <button type="button" onClick={onCancel} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700">
+      <button
+        type="button"
+        onClick={onCancel}
+        className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+      >
         Cancel
       </button>
     </div>
   );
 }
 
+// ------------------------------------------------------------------ //
+// Page skeleton
+// ------------------------------------------------------------------ //
+
 function PageSkeleton() {
   return (
-    <div className="max-w-2xl animate-pulse">
+    <div className="animate-pulse">
       <div className="h-7 w-28 bg-gray-200 rounded mb-2" />
       <div className="h-4 w-44 bg-gray-100 rounded mb-6" />
-      <div className="space-y-4">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="bg-gray-100 rounded-xl h-32" />
-        ))}
+      <div className="flex gap-6">
+        <div className="w-44 flex-shrink-0">
+          <div className="bg-gray-100 rounded-xl h-64" />
+        </div>
+        <div className="flex-1 space-y-4">
+          <div className="bg-gray-100 rounded-xl h-40" />
+          <div className="bg-gray-100 rounded-xl h-28" />
+        </div>
       </div>
     </div>
   );

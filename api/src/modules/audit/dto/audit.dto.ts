@@ -8,6 +8,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
+import { IsISO8601 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { AuditAction, AuditEntityType } from '@prisma/client';
 
@@ -36,6 +37,23 @@ export class AuditQueryDto {
   @Min(1)
   @Max(200)
   limit?: number = 50;
+
+  @ApiPropertyOptional({ default: 0, description: 'Number of records to skip (for Load More pagination)' })
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsInt()
+  @Min(0)
+  offset?: number = 0;
+
+  @ApiPropertyOptional({ description: 'Filter records created on or after this ISO-8601 timestamp' })
+  @IsOptional()
+  @IsISO8601()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({ description: 'Filter records created on or before this ISO-8601 timestamp' })
+  @IsOptional()
+  @IsISO8601()
+  dateTo?: string;
 }
 
 export class AuditUserDto {

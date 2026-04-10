@@ -12,8 +12,10 @@ import { cn } from '@/lib/utils';
 import type { AuditAction, AuditEntityType, AuditLog } from '@/types';
 
 // ------------------------------------------------------------------ //
-// Styles
+// Constants
 // ------------------------------------------------------------------ //
+
+const PAGE_SIZE = 25;
 
 const CATEGORY_DOT: Record<string, string> = {
   create:   'bg-green-500',
@@ -42,29 +44,63 @@ const CATEGORY_PILL: Record<string, string> = {
   member:   'bg-teal-50 text-teal-700',
 };
 
-// Only entity types we actually write to — DOCUMENT_VERSION / WORKSPACE unused
 const ENTITY_FILTER_OPTIONS: { label: string; value: AuditEntityType | '' }[] = [
-  { label: 'All types', value: '' },
-  { label: 'Documents', value: 'DOCUMENT' },
-  { label: 'Shares', value: 'SHARE' },
-  { label: 'Reminders', value: 'REMINDER' },
-  { label: 'Members', value: 'USER' },
+  { label: 'All types',   value: '' },
+  { label: 'Documents',  value: 'DOCUMENT' },
+  { label: 'Shares',     value: 'SHARE' },
+  { label: 'Reminders',  value: 'REMINDER' },
+  { label: 'Members',    value: 'USER' },
 ];
 
 const ACTION_FILTER_OPTIONS: { label: string; value: AuditAction | '' }[] = [
-  { label: 'All actions', value: '' },
-  { label: 'Created', value: 'DOCUMENT_CREATED' },
-  { label: 'Updated', value: 'DOCUMENT_UPDATED' },
-  { label: 'Deleted', value: 'DOCUMENT_DELETED' },
-  { label: 'New version', value: 'DOCUMENT_VERSION_ADDED' },
-  { label: 'Downloaded', value: 'DOCUMENT_DOWNLOADED' },
+  { label: 'All actions',       value: '' },
+  { label: 'Created',           value: 'DOCUMENT_CREATED' },
+  { label: 'Updated',           value: 'DOCUMENT_UPDATED' },
+  { label: 'Deleted',           value: 'DOCUMENT_DELETED' },
+  { label: 'New version',       value: 'DOCUMENT_VERSION_ADDED' },
+  { label: 'Downloaded',        value: 'DOCUMENT_DOWNLOADED' },
   { label: 'Shared internally', value: 'DOCUMENT_SHARED_INTERNAL' },
-  { label: 'External link', value: 'DOCUMENT_SHARED_EXTERNAL' },
-  { label: 'Share revoked', value: 'SHARE_REVOKED' },
-  { label: 'Reminder updated', value: 'REMINDER_UPDATED' },
-  { label: 'Member added', value: 'MEMBER_ADDED' },
-  { label: 'Role updated', value: 'MEMBER_ROLE_UPDATED' },
+  { label: 'External link',     value: 'DOCUMENT_SHARED_EXTERNAL' },
+  { label: 'Share revoked',     value: 'SHARE_REVOKED' },
+  { label: 'Reminder updated',  value: 'REMINDER_UPDATED' },
+  { label: 'Member added',      value: 'MEMBER_ADDED' },
+  { label: 'Role updated',      value: 'MEMBER_ROLE_UPDATED' },
 ];
+
+const DATE_RANGE_OPTIONS: { label: string; days: number }[] = [
+  { label: 'All time',    days: 0   },
+  { label: 'Last 24h',   days: 1   },
+  { label: 'Last 7d',    days: 7   },
+  { label: 'Last 30d',   days: 30  },
+  { label: 'Last 90d',   days: 90  },
+];
+
+// ------------------------------------------------------------------ //
+// Date grouping helper
+// ------------------------------------------------------------------ //
+
+function groupByDate(logs: AuditLog[]): { label: string; items: AuditLog[] }[] {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterdayStart = todayStart - 86400000;
+
+  const today: AuditLog[] = [];
+  const yesterday: AuditLog[] = [];
+  const older: AuditLog[] = [];
+
+  for (const log of logs) {
+    const t = new Date(log.createdAt).getTime();
+    if (t >= todayStart) today.push(log);
+    else if (t >= yesterdayStart) yesterday.push(log);
+    else older.push(log);
+  }
+
+  return [
+    ...(today.length     ? [{ label: 'Today',     items: today     }] : []),
+    ...(yesterday.length ? [{ label: 'Yesterday', items: yesterday }] : []),
+    ...(older.length     ? [{ label: 'Older',     items: older     }] : []),
+  ];
+}
 
 // ------------------------------------------------------------------ //
 // Page
@@ -73,26 +109,55 @@ const ACTION_FILTER_OPTIONS: { label: string; value: AuditAction | '' }[] = [
 export default function ActivityPage() {
   const { activeWorkspace } = useUser();
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [entityType, setEntityType] = useState<AuditEntityType | ''>('');
-  const [action, setAction] = useState<AuditAction | ''>('');
-  // Track whether the very first fetch has completed — subsequent loads
-  // (filter changes) should never show the skeleton, even if logs=[].
+  const [loadingMore, setLoadingMore] = useState(false);
   const hasLoadedOnce = useRef(false);
 
+  // Filters
+  const [entityType, setEntityType] = useState<AuditEntityType | ''>('');
+  const [action, setAction] = useState<AuditAction | ''>('');
+  const [dateRangeDays, setDateRangeDays] = useState(0);
+
+  const hasFilters = entityType !== '' || action !== '' || dateRangeDays !== 0;
+
+  function clearFilters() {
+    setEntityType('');
+    setAction('');
+    setDateRangeDays(0);
+  }
+
+  // Build dateFrom from selected range
+  function buildDateFrom(days: number): string | undefined {
+    if (!days) return undefined;
+    return new Date(Date.now() - days * 86400000).toISOString();
+  }
+
+  // Initial/filter-change load — resets and fetches first page
   useEffect(() => {
     if (!activeWorkspace) return;
-
     let cancelled = false;
     setLoading(true);
+    setLogs([]);
+    setLoadedCount(0);
+    setHasMore(false);
 
     fetchWorkspaceActivity({
       workspaceId: activeWorkspace.workspaceId,
       entityType: entityType || undefined,
       action: action || undefined,
-      limit: 100,
+      limit: PAGE_SIZE,
+      offset: 0,
+      dateFrom: buildDateFrom(dateRangeDays),
     })
-      .then((data) => { if (!cancelled) setLogs(data); })
+      .then((data) => {
+        if (!cancelled) {
+          setLogs(data);
+          setLoadedCount(data.length);
+          setHasMore(data.length === PAGE_SIZE);
+        }
+      })
       .catch(() => { if (!cancelled) setLogs([]); })
       .finally(() => {
         if (!cancelled) {
@@ -102,77 +167,112 @@ export default function ActivityPage() {
       });
 
     return () => { cancelled = true; };
-  }, [activeWorkspace?.workspaceId, entityType, action]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspace?.workspaceId, entityType, action, dateRangeDays]);
 
-  const hasFilters = entityType !== '' || action !== '';
-
-  function clearFilters() {
-    setEntityType('');
-    setAction('');
+  async function loadMore() {
+    if (!activeWorkspace || loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const data = await fetchWorkspaceActivity({
+        workspaceId: activeWorkspace.workspaceId,
+        entityType: entityType || undefined,
+        action: action || undefined,
+        limit: PAGE_SIZE,
+        offset: loadedCount,
+        dateFrom: buildDateFrom(dateRangeDays),
+      });
+      setLogs((prev) => [...prev, ...data]);
+      setLoadedCount((c) => c + data.length);
+      setHasMore(data.length === PAGE_SIZE);
+    } catch {
+      // silent
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
-  // Three render cases:
-  // 1. loading=true, first load (hasLoadedOnce=false) → skeleton
-  // 2. loading=true, subsequent load (hasLoadedOnce=true) → current content dimmed + spinner
-  // 3. loading=false → results or empty state
   const showSkeleton = loading && !hasLoadedOnce.current;
-  const showDimmed   = loading && hasLoadedOnce.current;
+  const groups = groupByDate(logs);
 
   return (
     <div className="max-w-3xl">
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-5">
         <h1 className="text-2xl font-semibold text-gray-900">Activity</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Workspace activity feed — all critical actions in one place.
+        <p className="mt-0.5 text-sm text-gray-500">
+          Workspace audit log — all critical actions in one place.
         </p>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2 mb-6">
-        <select
-          value={entityType}
-          onChange={(e) => setEntityType(e.target.value as AuditEntityType | '')}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
-        >
-          {ENTITY_FILTER_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-
-        <select
-          value={action}
-          onChange={(e) => setAction(e.target.value as AuditAction | '')}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
-        >
-          {ACTION_FILTER_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-
-        {hasFilters && (
-          <button
-            onClick={clearFilters}
-            className="text-xs text-gray-500 hover:text-gray-800 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors"
+      {/* Filter bar */}
+      <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 mb-5">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Entity type */}
+          <select
+            value={entityType}
+            onChange={(e) => setEntityType(e.target.value as AuditEntityType | '')}
+            className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
-            Clear filters
-          </button>
-        )}
+            {ENTITY_FILTER_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
 
-        {showDimmed && (
-          <svg className="animate-spin text-brand-500" width="14" height="14" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-        )}
+          {/* Action */}
+          <select
+            value={action}
+            onChange={(e) => setAction(e.target.value as AuditAction | '')}
+            className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            {ACTION_FILTER_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+
+          {/* Date range */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+            {DATE_RANGE_OPTIONS.map((opt) => (
+              <button
+                key={opt.days}
+                type="button"
+                onClick={() => setDateRangeDays(opt.days)}
+                className={cn(
+                  'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+                  dateRangeDays === opt.days
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700',
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {hasFilters && (
+            <button
+              onClick={clearFilters}
+              className="ml-auto text-xs text-gray-500 hover:text-gray-800 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors"
+            >
+              Clear
+            </button>
+          )}
+
+          {loading && hasLoadedOnce.current && (
+            <svg className="animate-spin text-brand-500 ml-1" width="13" height="13" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          )}
+        </div>
       </div>
 
       {/* Content */}
       {showSkeleton ? (
         <ActivitySkeleton />
       ) : logs.length === 0 ? (
-        <div className={cn('text-center py-16 transition-opacity duration-150', showDimmed && 'opacity-40 pointer-events-none')}>
-          <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+        <div className="text-center py-14">
+          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
             <ClockIcon className="text-gray-400" />
           </div>
           <p className="text-sm text-gray-500">
@@ -184,18 +284,61 @@ export default function ActivityPage() {
             </button>
           ) : (
             <p className="text-xs text-gray-400 mt-1">
-              Upload a document, share it, or make a change to see activity here.
+              Upload a document or make a change to see activity here.
             </p>
           )}
         </div>
       ) : (
-        <div className={cn('relative transition-opacity duration-150', showDimmed && 'opacity-50 pointer-events-none')}>
-          <div className="absolute left-[18px] top-0 bottom-0 w-px bg-gray-100" />
-          <div className="space-y-0">
-            {logs.map((log, i) => (
-              <ActivityItem key={log.id} log={log} isLast={i === logs.length - 1} />
-            ))}
-          </div>
+        <div>
+          {/* Grouped timeline */}
+          {groups.map((group) => (
+            <div key={group.label} className="mb-5">
+              {/* Group header */}
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                  {group.label}
+                </span>
+                <div className="flex-1 h-px bg-gray-100" />
+                <span className="text-[10px] text-gray-300 tabular-nums">{group.items.length}</span>
+              </div>
+
+              {/* Items */}
+              <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50 overflow-hidden">
+                {group.items.map((log) => (
+                  <ActivityRow key={log.id} log={log} />
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {/* Load more */}
+          {hasMore && (
+            <div className="flex justify-center mt-2 mb-4">
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                {loadingMore ? (
+                  <>
+                    <svg className="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Loading…
+                  </>
+                ) : (
+                  `Load more (showing ${loadedCount})`
+                )}
+              </button>
+            </div>
+          )}
+
+          {!hasMore && loadedCount > PAGE_SIZE && (
+            <p className="text-center text-xs text-gray-300 mt-2 mb-4">
+              All {loadedCount} records loaded
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -203,59 +346,62 @@ export default function ActivityPage() {
 }
 
 // ------------------------------------------------------------------ //
-// Timeline item
+// Compact row (table-style, no timeline connector)
 // ------------------------------------------------------------------ //
 
-function ActivityItem({ log, isLast }: { log: AuditLog; isLast: boolean }) {
+function ActivityRow({ log }: { log: AuditLog }) {
   const category = auditActionCategory(log.action);
   const actor = log.user
     ? `${log.user.firstName} ${log.user.lastName}`
-    : 'External user';
+    : 'External';
 
   return (
-    <div className={cn('relative flex gap-4 pb-5', isLast && 'pb-0')}>
-      <div className="relative z-10 flex-shrink-0 mt-0.5">
-        <div className={cn('w-9 h-9 rounded-full flex items-center justify-center ring-4 bg-white', CATEGORY_RING[category])}>
-          <span className={cn('w-2.5 h-2.5 rounded-full', CATEGORY_DOT[category])} />
+    <div className="flex items-center gap-3 px-4 py-2.5">
+      {/* Dot */}
+      <span className={cn('w-2 h-2 rounded-full flex-shrink-0', CATEGORY_DOT[category])} />
+
+      {/* Description */}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-gray-800 truncate">{describeAuditLog(log)}</p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span
+            className={cn(
+              'inline-block text-[9px] font-bold px-1.5 py-px rounded-full uppercase tracking-wide',
+              CATEGORY_PILL[category],
+            )}
+          >
+            {formatAuditAction(log.action)}
+          </span>
+          <span className="text-[10px] text-gray-400">{actor}</span>
         </div>
       </div>
 
-      <div className="flex-1 min-w-0 pt-1">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm text-gray-900 leading-snug">{describeAuditLog(log)}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{actor}</p>
-          </div>
-          <time
-            className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0 mt-0.5"
-            title={new Date(log.createdAt).toLocaleString()}
-          >
-            {formatRelativeTime(log.createdAt)}
-          </time>
-        </div>
-        <span className={cn('inline-block mt-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full', CATEGORY_PILL[category])}>
-          {formatAuditAction(log.action)}
-        </span>
-      </div>
+      {/* Time */}
+      <time
+        className="text-[11px] text-gray-400 whitespace-nowrap flex-shrink-0"
+        title={new Date(log.createdAt).toLocaleString()}
+      >
+        {formatRelativeTime(log.createdAt)}
+      </time>
     </div>
   );
 }
 
 // ------------------------------------------------------------------ //
-// Skeleton — only on first load (logs array is empty)
+// Skeleton
 // ------------------------------------------------------------------ //
 
 function ActivitySkeleton() {
   return (
-    <div className="relative space-y-5 animate-pulse">
-      <div className="absolute left-[18px] top-0 bottom-0 w-px bg-gray-100" />
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="flex gap-4">
-          <div className="w-9 h-9 rounded-full bg-gray-200 flex-shrink-0 z-10" />
-          <div className="flex-1 space-y-2 pt-1.5">
-            <div className="h-4 w-2/3 bg-gray-200 rounded" />
-            <div className="h-3 w-1/3 bg-gray-100 rounded" />
+    <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50 animate-pulse overflow-hidden">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 px-4 py-2.5">
+          <div className="w-2 h-2 rounded-full bg-gray-200 flex-shrink-0" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3.5 w-2/3 bg-gray-200 rounded" />
+            <div className="h-2.5 w-1/3 bg-gray-100 rounded" />
           </div>
+          <div className="w-12 h-3 bg-gray-100 rounded" />
         </div>
       ))}
     </div>
@@ -280,7 +426,7 @@ function formatRelativeTime(iso: string): string {
 
 function ClockIcon({ className }: { className?: string }) {
   return (
-    <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" className={className}>
+    <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" className={className}>
       <circle cx="12" cy="12" r="10" />
       <path d="M12 6v6l4 2" strokeLinecap="round" />
     </svg>

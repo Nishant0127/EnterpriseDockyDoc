@@ -86,13 +86,19 @@ export interface WorkspaceActivityQuery {
   entityType?: AuditEntityType;
   action?: AuditAction;
   limit?: number;
+  offset?: number;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export function fetchWorkspaceActivity(query: WorkspaceActivityQuery): Promise<AuditLog[]> {
   const params = new URLSearchParams({ workspaceId: query.workspaceId });
   if (query.entityType) params.set('entityType', query.entityType);
   if (query.action) params.set('action', query.action);
-  if (query.limit) params.set('limit', String(query.limit));
+  if (query.limit != null) params.set('limit', String(query.limit));
+  if (query.offset != null && query.offset > 0) params.set('offset', String(query.offset));
+  if (query.dateFrom) params.set('dateFrom', query.dateFrom);
+  if (query.dateTo) params.set('dateTo', query.dateTo);
   return apiFetch<AuditLog[]>(`/api/v1/audit?${params}`);
 }
 

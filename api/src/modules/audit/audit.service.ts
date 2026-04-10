@@ -65,9 +65,16 @@ export class AuditService {
         workspaceId: query.workspaceId,
         ...(query.entityType && { entityType: query.entityType }),
         ...(query.action && { action: query.action }),
+        ...((query.dateFrom || query.dateTo) && {
+          createdAt: {
+            ...(query.dateFrom && { gte: new Date(query.dateFrom) }),
+            ...(query.dateTo && { lte: new Date(query.dateTo) }),
+          },
+        }),
       },
       include: { user: { select: USER_SELECT } },
       orderBy: { createdAt: 'desc' },
+      skip: query.offset ?? 0,
       take: query.limit ?? 50,
     });
 
