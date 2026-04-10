@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { SignIn } from '@clerk/nextjs';
 import LoginForm from '@/components/auth/LoginForm';
 
 export const metadata: Metadata = {
@@ -6,10 +7,17 @@ export const metadata: Metadata = {
   description: 'Sign in to your DockyDoc workspace',
 };
 
+const clerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
 /**
  * Login page.
- * Route: /login
- * Auth logic is intentionally stubbed — wire up NextAuth or custom JWT here.
+ *
+ * When NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is set:
+ *   Renders Clerk's hosted <SignIn> component — supports Google, Microsoft, and
+ *   any other providers configured in your Clerk dashboard.
+ *
+ * When the key is absent (local dev / open-source):
+ *   Renders the original email+password LoginForm.
  */
 export default function LoginPage() {
   return (
@@ -26,10 +34,26 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Login card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
-          <LoginForm />
-        </div>
+        {clerkEnabled ? (
+          /* Clerk SSO — Google, Microsoft, email+password — all configured in Clerk dashboard */
+          <div className="flex justify-center">
+            <SignIn
+              appearance={{
+                elements: {
+                  rootBox: 'w-full',
+                  card: 'rounded-2xl shadow-sm border border-gray-200 w-full',
+                  headerTitle: 'hidden',
+                  headerSubtitle: 'hidden',
+                },
+              }}
+            />
+          </div>
+        ) : (
+          /* Dev / open-source fallback — email+password form */
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+            <LoginForm />
+          </div>
+        )}
 
         <p className="mt-6 text-center text-xs text-gray-400">
           &copy; {new Date().getFullYear()} DockyDoc. All rights reserved.

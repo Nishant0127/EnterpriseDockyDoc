@@ -7,7 +7,7 @@ import {
   useEffect,
   useState,
 } from 'react';
-import { fetchCurrentUser, switchWorkspaceApi, setStoredToken, ApiError } from '@/lib/api';
+import { fetchCurrentUser, switchWorkspaceApi, ApiError } from '@/lib/api';
 import type { CurrentUser, WorkspaceMembership } from '@/types';
 
 // ------------------------------------------------------------------ //
@@ -111,10 +111,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
-    setStoredToken(null);
     setUser(null);
     setActiveWorkspace(null);
-    window.location.href = '/login';
+    // When Clerk is active, use its signOut so the session cookie is cleared.
+    // In dev mode (no Clerk), just redirect to /login.
+    type ClerkGlobal = { signOut: (opts?: { redirectUrl?: string }) => Promise<void> };
+    const clerk = (window as typeof window & { Clerk?: ClerkGlobal }).Clerk;
+    if (clerk?.signOut) {
+      clerk.signOut({ redirectUrl: '/login' }).catch(() => {
+        window.location.href = '/login';
+      });
+    } else {
+      window.location.href = '/login';
+    }
   }, []);
 
   const switchWorkspace = useCallback(

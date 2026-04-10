@@ -1,35 +1,38 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
 /**
- * Route protection middleware.
+ * Route protection middleware powered by Clerk.
  *
- * NOTE: JWT is stored in localStorage (not a cookie), so it is NOT accessible
- * here — Next.js middleware runs on the server/edge runtime and cannot read
- * localStorage. Therefore, route protection is handled client-side inside
- * UserContext: if fetchCurrentUser() returns a 401, UserContext redirects to
- * /login. This middleware is intentionally a pass-through.
+ * When NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is set:
+ *   - Unauthenticated users hitting protected routes are redirected to /login.
+ *   - Public routes (/login, /register, /s/*, /api/health) pass through freely.
  *
- * If you need server-side protection in the future, switch JWT storage to an
- * HttpOnly cookie and verify it here with `request.cookies.get('dockydoc-jwt')`.
+ * When the key is absent (local dev without Clerk):
+ *   - auth.protect() is never called → all routes pass through.
+ *   - Client-side UserContext handles the 401-redirect fallback as before.
+ *
+ * Note: JWT / localStorage cannot be read in Edge middleware, but Clerk uses
+ * an HttpOnly __session cookie set during the OAuth callback, so this works
+ * server-side without any localStorage access.
  */
 
-// Routes that do NOT require authentication
-const PUBLIC_PATHS = ['/login', '/register', '/forgot-password'];
+const isPublicRoute = createRouteMatcher([
+  '/login(.*)',
+  '/register(.*)',
+  '/forgot-password(.*)',
+  '/s/(.*)',            // public share links
+  '/api/health(.*)',   // health-check endpoint
+]);
 
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  // Allow public paths through without any check
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
+export default clerkMiddleware(async (auth, request) => {
+  // Only enforce Clerk auth when the publishable key is configured.
+  // Without it the middleware is a transparent pass-through.
+  if (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && !isPublicRoute(request)) {
+    await auth.protect();
   }
-
-  // All other routes: pass through — auth is enforced client-side via UserContext.
-  return NextResponse.next();
-}
+});
 
 export const config = {
-  // Apply middleware to all routes except static files and Next.js internals
+  // Apply to all routes except Next.js internals and static assets
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)'],
 };

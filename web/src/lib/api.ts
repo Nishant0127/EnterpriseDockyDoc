@@ -4,36 +4,72 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081';
 
 /**
  * DEV ONLY — the email used to impersonate a user via x-dev-user-email header.
- * This fallback is only used when no JWT token is present in localStorage.
+ * Only sent when no Clerk session token is available (i.e., Clerk is not configured).
  */
 const DEV_USER_EMAIL =
   process.env.NEXT_PUBLIC_DEV_USER_EMAIL ?? 'alice@acmecorp.com';
 
-const JWT_STORAGE_KEY = 'dockydoc:jwt';
+// ------------------------------------------------------------------ //
+// Token helpers
+// ------------------------------------------------------------------ //
 
 /**
- * Read the JWT access token from localStorage.
- * Returns null when called outside the browser (SSR/edge) or when not set.
+ * Get the Clerk session token when Clerk is active.
+ *
+ * Uses `window.Clerk.session.getToken()` — the official Clerk pattern for
+ * obtaining tokens outside of React hooks / components.
+ * Returns null in SSR, when Clerk is not configured, or when no session exists.
  */
-export function getStoredToken(): string | null {
+async function getClerkToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(JWT_STORAGE_KEY);
-}
-
-/**
- * Persist or clear the JWT access token in localStorage.
- * Pass null to remove it (i.e. on logout).
- */
-export function setStoredToken(token: string | null): void {
-  if (typeof window === 'undefined') return;
-  if (token === null) {
-    localStorage.removeItem(JWT_STORAGE_KEY);
-  } else {
-    localStorage.setItem(JWT_STORAGE_KEY, token);
+  try {
+    type ClerkGlobal = {
+      session?: { getToken: () => Promise<string | null> } | null;
+    };
+    const clerk = (window as typeof window & { Clerk?: ClerkGlobal }).Clerk;
+    return (await clerk?.session?.getToken()) ?? null;
+  } catch {
+    return null;
   }
 }
 
+/**
+ * @deprecated No longer backed by localStorage since Clerk manages sessions.
+ * Retained as a no-op so callers that were wired to the old JWT flow (e.g.
+ * LoginForm) compile without changes.
+ */
+export function getStoredToken(): string | null {
+  return null;
+}
+
+/** @deprecated No-op. Tokens are managed by Clerk; nothing to persist. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function setStoredToken(_token: string | null): void {
+  // intentional no-op
+}
+
+// ------------------------------------------------------------------ //
+// Internal: attach auth headers
+// ------------------------------------------------------------------ //
+
+async function buildAuthHeaders(extra?: HeadersInit): Promise<Headers> {
+  const headers = new Headers(extra);
+  const token = await getClerkToken();
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  } else {
+    // DEV ONLY — no Clerk session; impersonate via email header
+    headers.set('x-dev-user-email', DEV_USER_EMAIL);
+  }
+  return headers;
+}
+
+// ------------------------------------------------------------------ //
+// Public fetch helpers
+// ------------------------------------------------------------------ //
+
 interface RequestOptions extends RequestInit {
+  /** Explicit override token — rarely used; prefer the automatic Clerk token. */
   token?: string;
 }
 
@@ -43,16 +79,12 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const { token, ...fetchOptions } = options;
 
-  const headers = new Headers(fetchOptions.headers);
+  const headers = await buildAuthHeaders(fetchOptions.headers);
   headers.set('Content-Type', 'application/json');
 
-  const storedToken = token ?? getStoredToken();
-  if (storedToken) {
-    // Real JWT auth — send Bearer token, skip dev header
-    headers.set('Authorization', `Bearer ${storedToken}`);
-  } else {
-    // DEV ONLY fallback — no JWT present, impersonate via email header
-    headers.set('x-dev-user-email', DEV_USER_EMAIL);
+  // Allow explicit token override (used in edge-case tests / server-actions)
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
   }
 
   const res = await fetch(`${API_URL}${path}`, {
@@ -81,14 +113,7 @@ export async function apiUpload<T>(
   path: string,
   formData: FormData,
 ): Promise<T> {
-  const headers = new Headers();
-  const storedToken = getStoredToken();
-  if (storedToken) {
-    headers.set('Authorization', `Bearer ${storedToken}`);
-  } else {
-    // DEV ONLY fallback
-    headers.set('x-dev-user-email', DEV_USER_EMAIL);
-  }
+  const headers = await buildAuthHeaders();
 
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
@@ -106,17 +131,9 @@ export async function apiUpload<T>(
 
 /**
  * Download a file from the API as a Blob and trigger a browser download.
- * Uses the x-dev-user-email header so auth is applied.
  */
 export async function apiDownload(path: string, fallbackFileName: string): Promise<void> {
-  const headers = new Headers();
-  const storedToken = getStoredToken();
-  if (storedToken) {
-    headers.set('Authorization', `Bearer ${storedToken}`);
-  } else {
-    // DEV ONLY fallback
-    headers.set('x-dev-user-email', DEV_USER_EMAIL);
-  }
+  const headers = await buildAuthHeaders();
 
   const res = await fetch(`${API_URL}${path}`, { headers });
 
