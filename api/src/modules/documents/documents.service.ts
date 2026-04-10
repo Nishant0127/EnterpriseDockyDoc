@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
 import { SearchIndexerService } from '../search/search-indexer.service';
 import { AuditService, AuditAction, AuditEntityType } from '../audit/audit.service';
+import { AiService } from '../ai/ai.service';
 import {
   assertWorkspaceMembership,
   assertEditorOrAbove,
@@ -76,6 +77,7 @@ export class DocumentsService {
     private readonly storage: LocalStorageService,
     private readonly indexer: SearchIndexerService,
     private readonly audit: AuditService,
+    private readonly aiService: AiService,
   ) {}
 
   // ------------------------------------------------------------------ //
@@ -242,6 +244,9 @@ export class DocumentsService {
 
     // 3. Index for search (non-blocking — never fails the upload)
     void this.indexer.indexDocument(docId, file);
+
+    // Trigger AI extraction asynchronously (fire-and-forget)
+    void this.aiService.extractDocument(docId).catch(() => {});
 
     this.audit.log({
       workspaceId: dto.workspaceId,

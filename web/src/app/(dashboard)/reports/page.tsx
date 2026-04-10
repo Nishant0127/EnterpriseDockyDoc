@@ -106,6 +106,13 @@ interface AiSearchResponse {
   relevantDocuments: { id: string; name: string }[];
 }
 
+interface AiInsights {
+  summary: string;
+  insights: string[];
+  recommendations: string[];
+  urgentItems: string[];
+}
+
 type ReportId =
   | 'expiring-docs'
   | 'document-activity'
@@ -174,11 +181,24 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // AI insights (per-report)
+  const [aiInsights, setAiInsights] = useState<AiInsights | null>(null);
+  const [loadingInsights, setLoadingInsights] = useState(false);
+
   // AI search
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiResult, setAiResult] = useState<AiSearchResponse | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  const REPORT_TYPE_MAP: Record<ReportId, string> = {
+    'expiring-docs': 'expiring_documents',
+    'document-activity': 'document_activity',
+    'storage-usage': 'storage_usage',
+    'member-activity': 'member_activity',
+    'tag-coverage': 'tag_coverage',
+    'compliance-audit': 'compliance_exposure',
+  };
 
   async function runReport(id: ReportId) {
     if (!activeWorkspace) return;
@@ -186,6 +206,7 @@ export default function ReportsPage() {
     setReportData(null);
     setError(null);
     setLoading(true);
+    setAiInsights(null);
 
     const wid = activeWorkspace.workspaceId;
     const endpointMap: Record<ReportId, string> = {
@@ -200,6 +221,16 @@ export default function ReportsPage() {
     try {
       const data = await apiFetch<unknown>(endpointMap[id]);
       setReportData(data);
+
+      // Fetch AI insights after report data loads (fire-and-forget, never blocks)
+      setLoadingInsights(true);
+      apiFetch<AiInsights>(
+        `/api/v1/ai/reports/insights?workspaceId=${wid}&reportType=${REPORT_TYPE_MAP[id]}`,
+        { method: 'POST', body: JSON.stringify({ data }) },
+      )
+        .then((insights) => { setAiInsights(insights); })
+        .catch(() => { setAiInsights(null); })
+        .finally(() => { setLoadingInsights(false); });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load report.');
     } finally {
@@ -301,7 +332,7 @@ export default function ReportsPage() {
         <div>
           <div className="flex items-center gap-3 mb-4">
             <button
-              onClick={() => { setActiveReport(null); setReportData(null); }}
+              onClick={() => { setActiveReport(null); setReportData(null); setAiInsights(null); }}
               className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
             >
               <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -330,7 +361,10 @@ export default function ReportsPage() {
           ) : error ? (
             <div className="bg-white rounded-xl border border-red-200 p-6 text-sm text-red-600">{error}</div>
           ) : reportData ? (
-            <ReportView id={activeReport} data={reportData} />
+            <>
+              <ReportView id={activeReport} data={reportData} />
+              <AiInsightsPanel loading={loadingInsights} insights={aiInsights} />
+            </>
           ) : null}
         </div>
       ) : (
@@ -649,6 +683,93 @@ function ComplianceView({ data }: { data: ComplianceReport }) {
         <StatCard label="Active external shares" value={String(data.shares.externalActive)} />
         <StatCard label="Expired-but-active shares" value={String(data.shares.expiredButActive)} valueClass={data.shares.expiredButActive > 0 ? 'text-red-600' : undefined} />
       </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// AI Insights Panel
+// ------------------------------------------------------------------ //
+
+function AiInsightsPanel({
+  loading,
+  insights,
+}: {
+  loading: boolean;
+  insights: { summary: string; insights: string[]; recommendations: string[]; urgentItems: string[] } | null;
+}) {
+  if (!loading && !insights) {
+    return (
+      <p className="mt-4 text-xs text-gray-400">AI insights unavailable</p>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
+        <svg className="animate-spin text-brand-600 flex-shrink-0" width="16" height="16" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        Generating AI insights…
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50 to-indigo-50 p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" className="text-brand-600 flex-shrink-0">
+          <path d="M12 2l2.4 4.8L20 8l-4 3.9 1 5.6L12 15l-5 2.5 1-5.6L4 8l5.6-.8L12 2z" strokeLinejoin="round" />
+        </svg>
+        <h3 className="text-sm font-semibold text-gray-900">AI Insights</h3>
+      </div>
+
+      {insights!.summary && (
+        <p className="text-sm text-gray-700 leading-relaxed mb-4">{insights!.summary}</p>
+      )}
+
+      {insights!.urgentItems.length > 0 && (
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide mb-2">Urgent items</p>
+          <ul className="space-y-1.5">
+            {insights!.urgentItems.map((item, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-orange-800 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                <span className="mt-0.5 flex-shrink-0 w-1.5 h-1.5 rounded-full bg-orange-500" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {insights!.insights.length > 0 && (
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Key insights</p>
+          <ul className="space-y-1">
+            {insights!.insights.map((item, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                <span className="mt-1.5 flex-shrink-0 w-1.5 h-1.5 rounded-full bg-brand-500" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {insights!.recommendations.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Recommendations</p>
+          <ul className="space-y-1">
+            {insights!.recommendations.map((item, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                <span className="mt-1.5 flex-shrink-0 w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

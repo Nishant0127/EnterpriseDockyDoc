@@ -272,8 +272,8 @@ model DocumentMetadata {
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
+  @@unique([documentId, key])
   @@index([documentId])
-  @@index([documentId, key])
   @@map("document_metadata")
 }
 
