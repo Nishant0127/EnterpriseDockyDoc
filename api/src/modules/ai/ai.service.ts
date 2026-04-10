@@ -746,27 +746,50 @@ Respond with ONLY this JSON object:
 
 No markdown. No code blocks. JSON only.`;
 
-    const message = await routing.client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    let rawText: string;
 
-    if (routing.isplatform) {
-      const totalTokens = message.usage.input_tokens + message.usage.output_tokens;
-      await this.trackUsage(workspaceId, totalTokens);
+    if (routing.client) {
+      // Anthropic Claude
+      const message = await routing.client.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      if (routing.isplatform) {
+        const totalTokens = message.usage.input_tokens + message.usage.output_tokens;
+        await this.trackUsage(workspaceId, totalTokens);
+      }
+
+      const content = message.content[0];
+      if (content.type !== 'text') throw new Error('Unexpected AI response type');
+      rawText = content.text.trim();
+    } else if (this.openaiApiKey) {
+      // OpenAI GPT-4o fallback (when only OPENAI_API_KEY is set)
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const OpenAI = require('openai');
+      const openai = new OpenAI.OpenAI({ apiKey: this.openaiApiKey });
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 1024,
+        temperature: 0,
+        response_format: { type: 'json_object' },
+      });
+      rawText = response.choices[0]?.message?.content?.trim() ?? '';
+    } else {
+      return {
+        summary: 'AI insights unavailable — no AI provider configured.',
+        insights: [], recommendations: [], urgentItems: [],
+      };
     }
 
-    const content = message.content[0];
-    if (content.type !== 'text') throw new Error('Unexpected AI response type');
-
     try {
-      const trimmed = content.text.trim();
       let parsed: Record<string, unknown>;
-      if (trimmed.startsWith('{')) {
-        parsed = JSON.parse(trimmed);
+      if (rawText.startsWith('{')) {
+        parsed = JSON.parse(rawText);
       } else {
-        const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error('No JSON in response');
         parsed = JSON.parse(jsonMatch[0]);
       }
@@ -779,7 +802,7 @@ No markdown. No code blocks. JSON only.`;
       };
     } catch {
       return {
-        summary: content.text.slice(0, 300),
+        summary: rawText.slice(0, 300),
         insights: [],
         recommendations: [],
         urgentItems: [],
