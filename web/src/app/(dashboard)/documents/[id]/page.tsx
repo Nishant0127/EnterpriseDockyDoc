@@ -99,6 +99,7 @@ interface AiExtractionResult {
   ocrProvider: string | null;
   extractedAt: string | null;
   appliedFields: string[];
+  userAppliedFields?: string[];
   error: string | null;
 }
 
@@ -1457,13 +1458,15 @@ function AiExtractionSection({
 
   const status = extraction?.status ?? 'none';
 
-  // Determine which fields can still be applied
+  // Determine applied state: userApplied = manually confirmed (locked), applied = AI auto-applied
   const applied = extraction?.appliedFields ?? [];
+  const userApplied = extraction?.userAppliedFields ?? [];
+  const isAppliedByAnyone = (field: string) => applied.includes(field) || userApplied.includes(field);
   const unappliedDates = (['expiryDate', 'renewalDueDate'] as const).filter(
-    (f) => extraction?.[f] != null && !applied.includes(f),
+    (f) => extraction?.[f] != null && !isAppliedByAnyone(f),
   );
-  const hasUnappliedTags = (extraction?.suggestedTags?.length ?? 0) > 0 && !applied.includes('suggestedTags');
-  const hasUnappliedFolder = !!extraction?.suggestedFolder && !applied.includes('suggestedFolder');
+  const hasUnappliedTags = (extraction?.suggestedTags?.length ?? 0) > 0 && !isAppliedByAnyone('suggestedTags');
+  const hasUnappliedFolder = !!extraction?.suggestedFolder && !isAppliedByAnyone('suggestedFolder');
   const allUnapplied = [
     ...unappliedDates,
     ...(hasUnappliedTags ? ['suggestedTags'] : []),
@@ -1600,7 +1603,8 @@ function AiExtractionSection({
                 const iso = extraction[key];
                 if (!iso) return null;
                 const days = daysUntil(iso);
-                const isApplied = applied.includes(key);
+                const isAutoApplied = applied.includes(key);
+                const isUserApplied = userApplied.includes(key);
                 const fieldConf = (extraction.confidenceByField ?? {})[fieldKey] ?? 0;
                 return (
                   <div key={key} className="flex flex-wrap items-center gap-2">
@@ -1618,7 +1622,11 @@ function AiExtractionSection({
                         ? 'Today'
                         : `${days}d remaining`}
                     </span>
-                    {isApplied ? (
+                    {isUserApplied ? (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                        Confirmed ✓
+                      </span>
+                    ) : isAutoApplied ? (
                       <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
                         Auto-applied ✓
                       </span>
@@ -1695,7 +1703,7 @@ function AiExtractionSection({
                     {tag}
                   </span>
                 ))}
-                {!applied.includes('suggestedTags') && (
+                {!isAppliedByAnyone('suggestedTags') ? (
                   <button
                     type="button"
                     onClick={() => onApply(['suggestedTags'])}
@@ -1704,6 +1712,8 @@ function AiExtractionSection({
                   >
                     Apply Tags
                   </button>
+                ) : (
+                  <span className="text-xs text-green-600 font-medium">✓ Applied</span>
                 )}
               </div>
             </div>
@@ -1742,7 +1752,7 @@ function AiExtractionSection({
                   {extraction.suggestedFolder}
                 </span>
               </div>
-              {!applied.includes('suggestedFolder') && (
+              {!isAppliedByAnyone('suggestedFolder') ? (
                 <button
                   type="button"
                   onClick={() => onApply(['suggestedFolder'])}
@@ -1751,8 +1761,9 @@ function AiExtractionSection({
                 >
                   Move Here
                 </button>
-              )}
-              {applied.includes('suggestedFolder') && (
+              ) : userApplied.includes('suggestedFolder') ? (
+                <span className="text-xs text-blue-600 font-medium">✓ Confirmed</span>
+              ) : (
                 <span className="text-xs text-green-600 font-medium">✓ Applied</span>
               )}
             </div>

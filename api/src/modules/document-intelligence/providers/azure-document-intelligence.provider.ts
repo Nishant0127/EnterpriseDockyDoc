@@ -52,10 +52,16 @@ export class AzureDocumentIntelligenceProvider implements OcrProvider {
 
     try {
       const endpoint = this.endpoint!.replace(/\/$/, '');
-      const analyzeUrl = `${endpoint}/documentintelligence/documentModels/prebuilt-read:analyze?api-version=2024-02-29-preview`;
+
+      // Support both Document Intelligence (2024+) and Form Recognizer (older) API paths
+      // Try the newer path first; fall back to legacy if it returns 404/400
+      const analyzeUrl = `${endpoint}/documentintelligence/documentModels/prebuilt-read:analyze?api-version=2024-11-30`;
+      const legacyAnalyzeUrl = `${endpoint}/formrecognizer/documentModels/prebuilt-read:analyze?api-version=2023-07-31`;
+
+      this.logger.log(`[Azure DI] Submitting "${fileName}" (${mimeType}, ${buffer.length} bytes)`);
 
       // Submit document for analysis
-      const submitRes = await fetch(analyzeUrl, {
+      let submitRes = await fetch(analyzeUrl, {
         method: 'POST',
         headers: {
           'Ocp-Apim-Subscription-Key': this.apiKey!,
@@ -64,10 +70,23 @@ export class AzureDocumentIntelligenceProvider implements OcrProvider {
         body: buffer as unknown as BodyInit,
       });
 
+      // If the new API path failed with 404, try the legacy path
+      if (!submitRes.ok && (submitRes.status === 404 || submitRes.status === 400)) {
+        this.logger.log(`[Azure DI] New API path returned ${submitRes.status}, trying legacy formrecognizer path`);
+        submitRes = await fetch(legacyAnalyzeUrl, {
+          method: 'POST',
+          headers: {
+            'Ocp-Apim-Subscription-Key': this.apiKey!,
+            'Content-Type': this.getContentType(mimeType),
+          },
+          body: buffer as unknown as BodyInit,
+        });
+      }
+
       if (!submitRes.ok) {
         const errBody = await submitRes.text();
         this.logger.warn(
-          `Azure DI submit failed (${submitRes.status}): ${errBody.slice(0, 200)}`,
+          `[Azure DI] Submit failed (${submitRes.status}): ${errBody.slice(0, 300)}`,
         );
         return null;
       }
@@ -78,35 +97,40 @@ export class AzureDocumentIntelligenceProvider implements OcrProvider {
         return null;
       }
 
-      // Poll for result (max 30s, 2s intervals)
+      // Poll for result (max 60s, backoff 2s→3s→3s intervals)
       let result: AzureDiResult | null = null;
-      for (let attempt = 0; attempt < 15; attempt++) {
-        await new Promise((r) => setTimeout(r, 2000));
+      const delays = [2000, 2000, 3000, 3000, 3000, 3000, 4000, 4000, 4000, 4000, 5000, 5000, 5000, 5000, 5000];
+      for (let attempt = 0; attempt < delays.length; attempt++) {
+        await new Promise((r) => setTimeout(r, delays[attempt]));
 
         const pollRes = await fetch(operationLocation, {
           headers: { 'Ocp-Apim-Subscription-Key': this.apiKey! },
         });
 
         if (!pollRes.ok) {
-          this.logger.warn(`Azure DI poll failed (${pollRes.status})`);
+          this.logger.warn(`[Azure DI] Poll failed (attempt ${attempt + 1}, status ${pollRes.status})`);
+          // Retry on transient errors
+          if (pollRes.status >= 500) continue;
           return null;
         }
 
         const pollData = (await pollRes.json()) as AzureDiPollResponse;
+        this.logger.debug(`[Azure DI] Poll attempt ${attempt + 1}: status=${pollData.status}`);
 
         if (pollData.status === 'succeeded') {
           result = pollData.analyzeResult ?? null;
           break;
         }
         if (pollData.status === 'failed') {
-          this.logger.warn(`Azure DI analysis failed for ${fileName}`);
+          const errDetail = JSON.stringify((pollData as any).error ?? {});
+          this.logger.warn(`[Azure DI] Analysis failed for "${fileName}": ${errDetail}`);
           return null;
         }
-        // still running — continue polling
+        // notStarted | running — continue polling
       }
 
       if (!result) {
-        this.logger.warn(`Azure DI: timeout waiting for result for ${fileName}`);
+        this.logger.warn(`[Azure DI] Timeout waiting for result for "${fileName}" (${delays.length} attempts)`);
         return null;
       }
 
@@ -128,7 +152,8 @@ export class AzureDocumentIntelligenceProvider implements OcrProvider {
       }
 
       this.logger.log(
-        `Azure DI extracted ${fullText.length} chars from ${fileName} in ${Date.now() - start}ms`,
+        `[Azure DI] Extracted ${fullText.length} chars, ${pages.length} pages, ` +
+        `${Object.keys(keyValuePairs).length} key-value pairs from "${fileName}" in ${Date.now() - start}ms`,
       );
 
       return {

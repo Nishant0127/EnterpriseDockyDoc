@@ -38,6 +38,7 @@ const AI_KEYS = {
   OCR_PROVIDER: 'ai:ocrProvider',
   EXTRACTED_AT: 'ai:extractedAt',
   APPLIED_FIELDS: 'ai:appliedFields',
+  USER_APPLIED_FIELDS: 'ai:userAppliedFields', // fields manually applied by user — never auto-overwrite
   ERROR: 'ai:error',
 } as const;
 
@@ -68,7 +69,8 @@ export interface AiExtractionResult {
   confidenceByField: ConfidenceByField;
   ocrProvider: string | null;
   extractedAt: string | null;
-  appliedFields: string[];
+  appliedFields: string[];       // auto-applied fields (can be re-applied on re-extraction)
+  userAppliedFields: string[];   // manually confirmed by user — never auto-overwritten
   error: string | null;
 }
 
@@ -312,41 +314,78 @@ export class AiService {
       await this.upsertMeta(documentId, AI_KEYS.EXTRACTED_AT, extractedAt);
 
       // ---- 7. Auto-apply high-confidence fields ---------------------- //
-      const appliedFields: string[] = [];
+      //
+      // Thresholds (Part E):
+      //   HIGH   >= 0.85 → auto-apply (if not user-confirmed)
+      //   MEDIUM  0.60–0.84 → suggestion only (shown in UI, not applied)
+      //   LOW    < 0.60 → show only, never auto-apply
+      //
+      // User-confirmed fields (ai:userAppliedFields) are NEVER overwritten.
 
-      const autoApplyThreshold = 0.85;
+      const AUTO_APPLY_THRESHOLD = 0.85;
       const cfb = extracted.confidenceByField;
 
-      // Determine previously AI-applied fields (respect manual edits)
-      const existingAppliedMeta = doc.metadata.find((m) => m.key === AI_KEYS.APPLIED_FIELDS);
-      const previouslyApplied: string[] = existingAppliedMeta
-        ? (() => { try { return JSON.parse(existingAppliedMeta.value) as string[]; } catch { return []; } })()
+      // Load user-confirmed fields — these were manually applied by the user
+      const userAppliedMeta = doc.metadata.find((m) => m.key === AI_KEYS.USER_APPLIED_FIELDS);
+      const userAppliedFields: string[] = userAppliedMeta
+        ? (() => { try { return JSON.parse(userAppliedMeta.value) as string[]; } catch { return []; } })()
         : [];
 
-      const updateData: {
-        expiryDate?: Date;
-        renewalDueDate?: Date;
-      } = {};
+      // Load previous AI auto-applied fields (may be re-applied on re-extraction)
+      const prevAutoAppliedMeta = doc.metadata.find((m) => m.key === AI_KEYS.APPLIED_FIELDS);
+      const prevAutoApplied: string[] = prevAutoAppliedMeta
+        ? (() => { try { return JSON.parse(prevAutoAppliedMeta.value) as string[]; } catch { return []; } })()
+        : [];
 
-      if (extracted.expiryDate && cfb.expiryDate >= autoApplyThreshold) {
-        if (doc.expiryDate === null || previouslyApplied.includes('expiryDate')) {
-          updateData.expiryDate = new Date(extracted.expiryDate);
-          appliedFields.push('expiryDate');
+      const autoApplied: string[] = [];
+
+      const docUpdate: { expiryDate?: Date; renewalDueDate?: Date } = {};
+
+      // expiryDate
+      if (extracted.expiryDate) {
+        const conf = cfb.expiryDate;
+        const isUserConfirmed = userAppliedFields.includes('expiryDate');
+        const wasAiApplied = prevAutoApplied.includes('expiryDate');
+        this.logger.log(
+          `[AutoFill] expiryDate=${extracted.expiryDate} conf=${conf.toFixed(2)} ` +
+          `userConfirmed=${isUserConfirmed} docHasDate=${doc.expiryDate !== null}`,
+        );
+        if (!isUserConfirmed && conf >= AUTO_APPLY_THRESHOLD) {
+          if (doc.expiryDate === null || wasAiApplied) {
+            docUpdate.expiryDate = new Date(extracted.expiryDate);
+            autoApplied.push('expiryDate');
+            this.logger.log(`[AutoFill] ✓ Auto-applied expiryDate=${extracted.expiryDate}`);
+          } else {
+            this.logger.log(`[AutoFill] Skipped expiryDate — document already has a user-set date`);
+          }
+        } else if (conf >= 0.6) {
+          this.logger.log(`[AutoFill] expiryDate is MEDIUM confidence (${conf.toFixed(2)}) — available as suggestion`);
+        } else {
+          this.logger.log(`[AutoFill] expiryDate is LOW confidence (${conf.toFixed(2)}) — shown only`);
         }
       }
 
-      if (extracted.renewalDueDate && cfb.renewalDueDate >= autoApplyThreshold) {
-        if ((doc as any).renewalDueDate === null || previouslyApplied.includes('renewalDueDate')) {
-          updateData.renewalDueDate = new Date(extracted.renewalDueDate);
-          appliedFields.push('renewalDueDate');
+      // renewalDueDate
+      if (extracted.renewalDueDate) {
+        const conf = cfb.renewalDueDate;
+        const isUserConfirmed = userAppliedFields.includes('renewalDueDate');
+        const wasAiApplied = prevAutoApplied.includes('renewalDueDate');
+        if (!isUserConfirmed && conf >= AUTO_APPLY_THRESHOLD) {
+          const docRenewal = (doc as any).renewalDueDate;
+          if (docRenewal === null || wasAiApplied) {
+            docUpdate.renewalDueDate = new Date(extracted.renewalDueDate);
+            autoApplied.push('renewalDueDate');
+            this.logger.log(`[AutoFill] ✓ Auto-applied renewalDueDate=${extracted.renewalDueDate}`);
+          }
         }
       }
 
-      if (Object.keys(updateData).length > 0) {
-        await this.prisma.document.update({ where: { id: documentId }, data: updateData });
+      if (Object.keys(docUpdate).length > 0) {
+        await this.prisma.document.update({ where: { id: documentId }, data: docUpdate });
       }
 
-      await this.upsertMeta(documentId, AI_KEYS.APPLIED_FIELDS, JSON.stringify(appliedFields));
+      // Persist auto-applied fields list (reset each extraction — only tracks THIS run)
+      await this.upsertMeta(documentId, AI_KEYS.APPLIED_FIELDS, JSON.stringify(autoApplied));
 
       // Track token usage for platform clients
       // (We don't have token counts from ExtractionService; use a reasonable estimate)
@@ -379,7 +418,8 @@ export class AiService {
         confidenceByField: extracted.confidenceByField,
         ocrProvider: ocrOutput.provider,
         extractedAt,
-        appliedFields,
+        appliedFields: autoApplied,
+        userAppliedFields,
         error: null,
       };
     } catch (err) {
@@ -453,6 +493,7 @@ export class AiService {
       ocrProvider: meta.get(AI_KEYS.OCR_PROVIDER) || null,
       extractedAt: meta.get(AI_KEYS.EXTRACTED_AT) || null,
       appliedFields: parseJsonArray(AI_KEYS.APPLIED_FIELDS),
+      userAppliedFields: parseJsonArray(AI_KEYS.USER_APPLIED_FIELDS),
       error: meta.get(AI_KEYS.ERROR) || null,
     };
   }
@@ -569,14 +610,30 @@ export class AiService {
       if (field === 'suggestedFolder') {
         const folderName = meta.get(AI_KEYS.SUGGESTED_FOLDER)?.trim();
         if (folderName) {
-          let folder = await this.prisma.folder.findFirst({
-            where: { workspaceId: doc.workspaceId, name: { equals: folderName, mode: 'insensitive' }, parentFolderId: null },
+          // Part D: fuzzy-match existing workspace folders before creating
+          const existingFolders = await this.prisma.folder.findMany({
+            where: { workspaceId: doc.workspaceId, parentFolderId: null },
+            select: { id: true, name: true },
           });
+
+          const normalizedTarget = folderName.toLowerCase();
+          let folder = existingFolders.find(
+            (f) => f.name.toLowerCase() === normalizedTarget,
+          ) ?? existingFolders.find(
+            (f) =>
+              f.name.toLowerCase().includes(normalizedTarget) ||
+              normalizedTarget.includes(f.name.toLowerCase()),
+          ) ?? null;
+
           if (!folder) {
+            this.logger.log(`[ApplyFields] Creating new folder: "${folderName}"`);
             folder = await this.prisma.folder.create({
               data: { workspaceId: doc.workspaceId, name: folderName, createdById: doc.ownerUserId },
             });
+          } else {
+            this.logger.log(`[ApplyFields] Matched existing folder: "${folder.name}" for suggestion "${folderName}"`);
           }
+
           updateData.folderId = folder.id;
           applied.push(field);
         } else {
@@ -590,8 +647,23 @@ export class AiService {
       await this.prisma.document.update({ where: { id: documentId }, data: updateData });
     }
 
+    // Merge auto-applied list
     const newApplied = Array.from(new Set([...existingApplied, ...applied]));
     await this.upsertMeta(documentId, AI_KEYS.APPLIED_FIELDS, JSON.stringify(newApplied));
+
+    // Track user-manually-applied fields (never auto-overwritten on re-extraction)
+    const userAppliedMeta = await this.prisma.documentMetadata.findFirst({
+      where: { documentId, key: AI_KEYS.USER_APPLIED_FIELDS },
+    });
+    const existingUserApplied: string[] = userAppliedMeta
+      ? (() => { try { return JSON.parse(userAppliedMeta.value) as string[]; } catch { return []; } })()
+      : [];
+    const newUserApplied = Array.from(new Set([...existingUserApplied, ...applied]));
+    await this.upsertMeta(documentId, AI_KEYS.USER_APPLIED_FIELDS, JSON.stringify(newUserApplied));
+
+    this.logger.log(
+      `[ApplyFields] doc=${documentId} | applied=[${applied.join(',')}] | skipped=[${skipped.join(',')}]`,
+    );
 
     return { applied, skipped };
   }
@@ -619,38 +691,47 @@ export class AiService {
       };
     }
 
-    const dataJson = JSON.stringify(data, null, 2).slice(0, 4000);
+    const dataJson = JSON.stringify(data, null, 2).slice(0, 5000);
 
-    const prompt = `You are a document management analyst. You have been given ACTUAL data from the system database. Generate concrete, specific insights based on the numbers and information provided.
+    // Determine today's date for relative date reasoning
+    const today = new Date().toISOString().slice(0, 10);
+
+    const prompt = `You are a document management analyst. The JSON data below is LIVE data fetched directly from the database — it is complete and accurate.
 
 Report type: ${reportType}
-Workspace ID: ${workspaceId}
+Today's date: ${today}
 
-ACTUAL DATA (this is real data from the database — do not claim you lack access):
+═══ LIVE DATABASE DATA ═══
 ${dataJson}
+═══════════════════════════
 
-IMPORTANT: You have all the data you need above. Do not say "I don't have access" or "you would need to check". Generate insights based only on what is provided.
+RULES:
+1. Use ONLY the data provided above. Do NOT say "I don't have access", "I cannot see", or "you should check".
+2. Reference actual numbers: e.g. "5 of 23 documents expire within 30 days" not "some documents may expire".
+3. For expiring_documents: name specific documents and their exact expiry dates from the items array.
+4. For compliance_exposure: use the riskScore and the actual expired/expiringSoon counts.
+5. urgentItems should list actual document names or specific findings — not generic advice.
+6. If the data shows 0 issues (e.g. 0 expired documents), say so clearly. Do not invent problems.
 
-Generate a JSON response with specific insights referencing the actual numbers, dates, and items in the data above.
-
+Respond with ONLY this JSON object:
 {
-  "summary": "2-3 sentence executive summary using actual numbers from the data",
+  "summary": "2-3 sentence executive summary with actual numbers from the data",
   "insights": [
-    "Specific insight referencing actual data points (e.g. '5 documents expire within 30 days')",
-    "Another specific insight with real numbers",
-    "Third insight"
+    "Insight 1 with specific data reference",
+    "Insight 2 with specific data reference",
+    "Insight 3 with specific data reference"
   ],
   "recommendations": [
-    "Actionable recommendation based on the data",
-    "Second recommendation"
+    "Actionable recommendation based on findings",
+    "Second recommendation if applicable"
   ],
   "urgentItems": [
-    "Specific urgent item from the data (e.g. document name expiring on date)",
-    "Another urgent item if applicable"
+    "Specific urgent item (name, date, count) from the data",
+    "Second urgent item if applicable"
   ]
 }
 
-Respond with ONLY the JSON object. No markdown, no code blocks.`;
+No markdown. No code blocks. JSON only.`;
 
     const message = await routing.client.messages.create({
       model: 'claude-sonnet-4-6',
@@ -873,7 +954,7 @@ Respond with JSON:
       summary: null, keyPoints: [], suggestedTags: [], suggestedFolder: null,
       riskFlags: [], overallConfidence: 0, dateConfidence: 0,
       confidenceByField: emptyConfidenceByField(), ocrProvider: null,
-      extractedAt: null, appliedFields: [], error: null,
+      extractedAt: null, appliedFields: [], userAppliedFields: [], error: null,
     };
   }
 
@@ -886,7 +967,7 @@ Respond with JSON:
       summary: null, keyPoints: [], suggestedTags: [], suggestedFolder: null,
       riskFlags: [], overallConfidence: 0, dateConfidence: 0,
       confidenceByField: emptyConfidenceByField(), ocrProvider: null,
-      extractedAt: null, appliedFields: [], error,
+      extractedAt: null, appliedFields: [], userAppliedFields: [], error,
     };
   }
 }
