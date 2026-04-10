@@ -25,8 +25,7 @@ export class AuthService {
   async validateUser(email: string, password: string): Promise<{ id: string; email: string } | null> {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user || !user.isActive) return null;
-    // passwordHash is on the User model (added in schema migration).
-    // Cast until `prisma generate` is run locally.
+    // passwordHash added in schema — cast until node_modules is regenerated
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hash: string | null | undefined = (user as any).passwordHash;
     // If no password set — allow in dev mode using any non-empty password
