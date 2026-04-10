@@ -298,7 +298,7 @@ export default function DocumentDetailPage() {
   const badge = STATUS_BADGE[doc.status];
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-7xl">
       {/* Back navigation */}
       <Link
         href="/documents"
@@ -420,82 +420,72 @@ export default function DocumentDetailPage() {
         </div>
       </div>
 
-      {/* Document preview */}
-      {previewVersion !== null && (
-        <div className="mb-5 bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50">
-            <div className="flex items-center gap-2">
-              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className="text-gray-400">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path d="M3 9h18M9 21V9" strokeLinecap="round" />
-              </svg>
-              <span className="text-sm font-medium text-gray-700">Document Preview</span>
-              <span className="text-xs text-gray-400">
-                — v{previewVersion}
-                {previewVersion === doc.currentVersionNumber ? ' (current)' : ''}
-              </span>
-            </div>
-            {/* Version switcher */}
-            <div className="flex items-center gap-1">
-              {doc.versions.map((v: DocumentVersion) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => setPreviewVersion(v.versionNumber)}
-                  className={cn(
-                    'px-2 py-0.5 rounded text-xs font-medium transition-colors',
-                    v.versionNumber === previewVersion
-                      ? 'bg-brand-600 text-white'
-                      : 'text-gray-500 hover:bg-gray-200',
-                  )}
-                >
-                  v{v.versionNumber}
-                </button>
-              ))}
-            </div>
-          </div>
-          <DocumentPreviewCard
-            documentId={doc.id}
-            versionNumber={previewVersion}
-            mimeHint={doc.versions.find((v: DocumentVersion) => v.versionNumber === previewVersion)?.mimeType}
-          />
-        </div>
-      )}
+      {/* HERO ROW: Preview 60% + AI Extraction 40% */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-5">
 
-      {/* 2-column grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-        {/* ---- Overview ------------------------------------------- */}
-        <Section title="Overview">
-          <InfoRow label="Workspace" value={doc.workspace.name} />
-          <InfoRow
-            label="Folder"
-            value={doc.folder ? doc.folder.name : '—'}
-          />
-          <InfoRow
-            label="Owner"
-            value={
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-brand-100 flex items-center justify-center text-[9px] font-semibold text-brand-700">
-                  {initials(doc.owner.firstName, doc.owner.lastName)}
+        {/* ---- Preview (left 60%) ---------------------------------- */}
+        <div className="lg:col-span-3">
+          {previewVersion !== null ? (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50">
+                <div className="flex items-center gap-2">
+                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className="text-gray-400">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path d="M3 9h18M9 21V9" strokeLinecap="round" />
+                  </svg>
+                  <span className="text-sm font-medium text-gray-700">Document Preview</span>
+                  <span className="text-xs text-gray-400">
+                    — v{previewVersion}
+                    {previewVersion === doc.currentVersionNumber ? ' (current)' : ''}
+                  </span>
                 </div>
-                <span>
-                  {doc.owner.firstName} {doc.owner.lastName}
-                </span>
+                {/* Version switcher */}
+                <div className="flex items-center gap-1">
+                  {doc.versions.map((v: DocumentVersion) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => setPreviewVersion(v.versionNumber)}
+                      className={cn(
+                        'px-2 py-0.5 rounded text-xs font-medium transition-colors',
+                        v.versionNumber === previewVersion
+                          ? 'bg-brand-600 text-white'
+                          : 'text-gray-500 hover:bg-gray-200',
+                      )}
+                    >
+                      v{v.versionNumber}
+                    </button>
+                  ))}
+                </div>
               </div>
-            }
-          />
-          <InfoRow label="File type" value={doc.fileType.toUpperCase()} />
-          <InfoRow label="Version" value={`v${doc.currentVersionNumber}`} />
-          <InfoRow label="Created" value={formatDate(doc.createdAt)} />
-          <InfoRow label="Last updated" value={formatDate(doc.updatedAt)} />
-          {doc.description && (
-            <div className="pt-3 mt-1 border-t border-gray-100">
-              <p className="text-xs text-gray-500 mb-1">Description</p>
-              <p className="text-sm text-gray-700 leading-relaxed">{doc.description}</p>
+              <DocumentPreviewCard
+                documentId={doc.id}
+                versionNumber={previewVersion}
+                mimeHint={doc.versions.find((v: DocumentVersion) => v.versionNumber === previewVersion)?.mimeType}
+              />
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-200 flex items-center justify-center p-10 text-sm text-gray-400 min-h-[200px]">
+              No preview available.
             </div>
           )}
-        </Section>
+        </div>
+
+        {/* ---- AI Extraction (right 40%) -------------------------- */}
+        <div className="lg:col-span-2">
+          <AiExtractionSection
+            documentId={doc.id}
+            extraction={aiExtraction}
+            extracting={aiExtracting}
+            applying={aiApplying}
+            onExtract={() => void handleAiExtract()}
+            onApply={(fields) => void handleAiApply(fields)}
+          />
+        </div>
+      </div>
+
+      {/* LOWER GRID */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
         {/* ---- Versions ------------------------------------------- */}
         <Section
@@ -623,6 +613,38 @@ export default function DocumentDetailPage() {
           )}
         </Section>
 
+        {/* ---- Overview ------------------------------------------- */}
+        <Section title="Overview">
+          <InfoRow label="Workspace" value={doc.workspace.name} />
+          <InfoRow
+            label="Folder"
+            value={doc.folder ? doc.folder.name : '—'}
+          />
+          <InfoRow
+            label="Owner"
+            value={
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded-full bg-brand-100 flex items-center justify-center text-[9px] font-semibold text-brand-700">
+                  {initials(doc.owner.firstName, doc.owner.lastName)}
+                </div>
+                <span>
+                  {doc.owner.firstName} {doc.owner.lastName}
+                </span>
+              </div>
+            }
+          />
+          <InfoRow label="File type" value={doc.fileType.toUpperCase()} />
+          <InfoRow label="Version" value={`v${doc.currentVersionNumber}`} />
+          <InfoRow label="Created" value={formatDate(doc.createdAt)} />
+          <InfoRow label="Last updated" value={formatDate(doc.updatedAt)} />
+          {doc.description && (
+            <div className="pt-3 mt-1 border-t border-gray-100">
+              <p className="text-xs text-gray-500 mb-1">Description</p>
+              <p className="text-sm text-gray-700 leading-relaxed">{doc.description}</p>
+            </div>
+          )}
+        </Section>
+
         {/* ---- Tags ----------------------------------------------- */}
         <TagsSection
           doc={doc}
@@ -634,24 +656,13 @@ export default function DocumentDetailPage() {
           onApplyAiTags={() => void handleAiApply(['suggestedTags'])}
         />
 
-        {/* ---- Metadata ------------------------------------------- */}
+        {/* ---- Metadata (collapsed by default) -------------------- */}
         <MetadataSection
           doc={doc}
           canEdit={canEdit}
           onSaved={reload}
+          defaultCollapsed
         />
-
-        {/* ---- AI Extraction (full width) ------------------------- */}
-        <div className="lg:col-span-2">
-          <AiExtractionSection
-            documentId={doc.id}
-            extraction={aiExtraction}
-            extracting={aiExtracting}
-            applying={aiApplying}
-            onExtract={() => void handleAiExtract()}
-            onApply={(fields) => void handleAiApply(fields)}
-          />
-        </div>
 
         {/* ---- Expiry & Reminders (full width) -------------------- */}
         <div className="lg:col-span-2">
@@ -1004,10 +1015,12 @@ function MetadataSection({
   doc,
   canEdit,
   onSaved,
+  defaultCollapsed = false,
 }: {
   doc: DocumentDetail;
   canEdit: boolean;
   onSaved: () => void;
+  defaultCollapsed?: boolean;
 }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
@@ -1074,6 +1087,8 @@ function MetadataSection({
     return (
       <Section
         title="Metadata"
+        collapsible={defaultCollapsed}
+        defaultCollapsed={defaultCollapsed}
         action={
           canEdit ? (
             <button
@@ -2123,18 +2138,44 @@ function Section({
   title,
   action,
   children,
+  collapsible = false,
+  defaultCollapsed = false,
 }: {
   title: string;
   action?: React.ReactNode;
   children: React.ReactNode;
+  collapsible?: boolean;
+  defaultCollapsed?: boolean;
 }) {
+  const [open, setOpen] = useState(!defaultCollapsed);
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+      <div className={cn('flex items-center justify-between', open ? 'mb-4' : '')}>
+        <div className="flex items-center gap-1.5">
+          {collapsible && (
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <svg
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.5}
+                viewBox="0 0 24 24"
+                className={cn('transition-transform duration-200', open ? '' : '-rotate-90')}
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+          )}
+          <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+        </div>
         {action && <div>{action}</div>}
       </div>
-      {children}
+      {open && children}
     </div>
   );
 }
