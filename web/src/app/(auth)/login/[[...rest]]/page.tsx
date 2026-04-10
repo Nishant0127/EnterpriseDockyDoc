@@ -10,11 +10,14 @@ export const metadata: Metadata = {
 const clerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 /**
- * Login page.
+ * Login page — catch-all route required by Clerk's <SignIn> component.
+ *
+ * The [[...rest]] catch-all lets Clerk handle its internal sub-routes
+ * (SSO callback, MFA, factor selection, etc.) without needing separate pages.
  *
  * When NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is set:
- *   Renders Clerk's hosted <SignIn> component — supports Google, Microsoft, and
- *   any other providers configured in your Clerk dashboard.
+ *   Renders Clerk's <SignIn> — supports Google, Microsoft, and any providers
+ *   configured in your Clerk dashboard.
  *
  * When the key is absent (local dev / open-source):
  *   Renders the original email+password LoginForm.
@@ -35,7 +38,7 @@ export default function LoginPage() {
         </div>
 
         {clerkEnabled ? (
-          /* Clerk SSO — Google, Microsoft, email+password — all configured in Clerk dashboard */
+          /* Clerk SSO — Google, Microsoft, etc. — configured in Clerk dashboard */
           <div className="flex justify-center">
             <SignIn
               forceRedirectUrl="/dashboard"
