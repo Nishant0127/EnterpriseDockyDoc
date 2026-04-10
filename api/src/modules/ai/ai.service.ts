@@ -2,6 +2,8 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma/prisma.service';
+import { EncryptionService } from '../../common/services/encryption.service';
+import { PLAN_TOKEN_LIMITS } from '../workspaces/dto/ai-settings.dto';
 
 // ------------------------------------------------------------------ //
 // Metadata key constants
@@ -94,6 +96,7 @@ export class AiService {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly encryption: EncryptionService,
   ) {
     const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
     this.client = apiKey ? new Anthropic({ apiKey }) : null;
@@ -122,15 +125,70 @@ export class AiService {
   }
 
   // ---------------------------------------------------------------- //
+  // Workspace-aware client routing
+  // ---------------------------------------------------------------- //
+  private async getClientForWorkspace(workspaceId: string): Promise<{
+    client: Anthropic;
+    isplatform: boolean;
+    workspaceId: string;
+  } | null> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const workspace = await (this.prisma.workspace as any).findUnique({
+      where: { id: workspaceId },
+      select: {
+        plan: true,
+        aiProvider: true,
+        aiApiKeyEncrypted: true,
+        aiUsageTokens: true,
+      },
+    }) as { plan: string; aiProvider: string; aiApiKeyEncrypted: string | null; aiUsageTokens: number } | null;
+    if (!workspace) return null;
+
+    const isPlatform = workspace.aiProvider !== 'BYOK';
+
+    if (isPlatform) {
+      // Check usage limit
+      const limit = PLAN_TOKEN_LIMITS[workspace.plan] ?? PLAN_TOKEN_LIMITS['FREE'];
+      if (workspace.aiUsageTokens >= limit) {
+        throw new Error(
+          `AI usage limit reached for this workspace (${workspace.aiUsageTokens}/${limit} tokens used on ${workspace.plan} plan). Upgrade to Pro or Enterprise for higher limits.`,
+        );
+      }
+      if (!this.client) return null; // system key not configured
+      return { client: this.client, isplatform: true, workspaceId };
+    } else {
+      // BYOK
+      if (!workspace.aiApiKeyEncrypted) {
+        throw new Error('BYOK is selected but no API key has been configured. Please add your API key in Workspace Settings → AI Configuration.');
+      }
+      let decryptedKey: string;
+      try {
+        decryptedKey = this.encryption.decrypt(workspace.aiApiKeyEncrypted);
+      } catch {
+        throw new Error('Failed to decrypt workspace API key. Please re-enter your API key in Workspace Settings → AI Configuration.');
+      }
+      const byokClient = new Anthropic({ apiKey: decryptedKey });
+      return { client: byokClient, isplatform: false, workspaceId };
+    }
+  }
+
+  private async trackUsage(workspaceId: string, tokens: number): Promise<void> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (this.prisma.workspace as any).update({
+        where: { id: workspaceId },
+        data: { aiUsageTokens: { increment: tokens } },
+      });
+    } catch {
+      // Non-fatal — log but don't fail the request
+      this.logger.warn(`Failed to track AI usage for workspace ${workspaceId}`);
+    }
+  }
+
+  // ---------------------------------------------------------------- //
   // extractDocument
   // ---------------------------------------------------------------- //
   async extractDocument(documentId: string): Promise<AiExtractionResult> {
-    // Handle AI disabled case
-    if (!this.client) {
-      await this.upsertMeta(documentId, AI_KEYS.STATUS, 'disabled');
-      return this.buildDisabledResult();
-    }
-
     // Step 1: Mark as running
     await this.upsertMeta(documentId, AI_KEYS.STATUS, 'running');
 
@@ -141,6 +199,14 @@ export class AiService {
         include: { searchContent: true, metadata: true },
       });
       if (!doc) throw new NotFoundException(`Document ${documentId} not found`);
+
+      // Step 3: Get workspace-appropriate client (handles platform limits + BYOK)
+      const routing = await this.getClientForWorkspace(doc.workspaceId);
+      if (!routing) {
+        await this.upsertMeta(documentId, AI_KEYS.STATUS, 'disabled');
+        return this.buildDisabledResult();
+      }
+      const activeClient = routing.client;
 
       const text = doc.searchContent?.extractedText ?? '';
 
@@ -179,7 +245,7 @@ Return exactly this JSON structure (use null for missing fields, YYYY-MM-DD for 
   "dateConfidence": 0.9
 }`;
 
-      const message = await this.client.messages.create({
+      const message = await activeClient.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }],
@@ -326,6 +392,12 @@ Return exactly this JSON structure (use null for missing fields, YYYY-MM-DD for 
         AI_KEYS.APPLIED_FIELDS,
         JSON.stringify(appliedFields),
       );
+
+      // Track token usage for platform AI
+      if (routing.isplatform) {
+        const totalTokens = message.usage.input_tokens + message.usage.output_tokens;
+        await this.trackUsage(doc.workspaceId, totalTokens);
+      }
 
       // Step 9: Return full AiExtractionResult
       return {
@@ -576,7 +648,9 @@ Return exactly this JSON structure (use null for missing fields, YYYY-MM-DD for 
     recommendations: string[];
     urgentItems: string[];
   }> {
-    if (!this.client) {
+    // Get workspace-appropriate client (handles platform limits + BYOK)
+    const routing = await this.getClientForWorkspace(workspaceId);
+    if (!routing) {
       return {
         summary:
           'AI report insights unavailable — ANTHROPIC_API_KEY not configured.',
@@ -603,11 +677,17 @@ Respond with ONLY this JSON structure. No text before or after. No markdown. No 
   "urgentItems": ["item needing immediate attention based on data", "urgent item 2"]
 }`;
 
-    const message = await this.client.messages.create({
+    const message = await routing.client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 768,
       messages: [{ role: 'user', content: prompt }],
     });
+
+    // Track token usage for platform AI
+    if (routing.isplatform) {
+      const totalTokens = message.usage.input_tokens + message.usage.output_tokens;
+      await this.trackUsage(workspaceId, totalTokens);
+    }
 
     const content = message.content[0];
     if (content.type !== 'text') throw new Error('Unexpected AI response type');

@@ -24,6 +24,9 @@ import type {
   UpdateWorkspaceMemberDto,
   UpdateWorkspaceDto,
 } from './dto/add-member.dto';
+import { EncryptionService } from '../../common/services/encryption.service';
+import type { UpdateAiSettingsDto, AiSettingsResponseDto } from './dto/ai-settings.dto';
+import { PLAN_TOKEN_LIMITS } from './dto/ai-settings.dto';
 
 // Roles that can manage members
 const MANAGER_ROLES = new Set<WorkspaceUserRole>([
@@ -36,6 +39,7 @@ export class WorkspacesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly encryption: EncryptionService,
   ) {}
 
   // ------------------------------------------------------------------ //
@@ -379,6 +383,65 @@ export class WorkspacesService {
     });
 
     return this.toMemberDto(updated);
+  }
+
+  // ------------------------------------------------------------------ //
+  // AI Settings
+  // ------------------------------------------------------------------ //
+
+  async getAiSettings(
+    workspaceId: string,
+    user: DevUserPayload,
+  ): Promise<AiSettingsResponseDto> {
+    assertWorkspaceMembership(user, workspaceId);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const workspace = await (this.prisma.workspace as any).findUnique({
+      where: { id: workspaceId },
+      select: {
+        plan: true,
+        aiProvider: true,
+        aiProviderType: true,
+        aiApiKeyEncrypted: true,
+        aiUsageTokens: true,
+      },
+    }) as { plan: string; aiProvider: string; aiProviderType: string; aiApiKeyEncrypted: string | null; aiUsageTokens: number } | null;
+    if (!workspace) throw new NotFoundException(`Workspace "${workspaceId}" not found`);
+
+    const limit = PLAN_TOKEN_LIMITS[workspace.plan] ?? PLAN_TOKEN_LIMITS['FREE'];
+    const used = workspace.aiUsageTokens;
+
+    return {
+      plan: workspace.plan,
+      aiProvider: workspace.aiProvider,
+      aiProviderType: workspace.aiProviderType,
+      hasApiKey: !!workspace.aiApiKeyEncrypted,
+      aiUsageTokens: used,
+      aiUsageLimit: limit,
+      aiUsagePercent: limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0,
+    };
+  }
+
+  async updateAiSettings(
+    workspaceId: string,
+    dto: UpdateAiSettingsDto,
+    user: DevUserPayload,
+  ): Promise<AiSettingsResponseDto> {
+    assertAdminOrAbove(user, workspaceId);
+
+    const updateData: Record<string, unknown> = {};
+    if (dto.aiProvider !== undefined) updateData.aiProvider = dto.aiProvider;
+    if (dto.aiProviderType !== undefined) updateData.aiProviderType = dto.aiProviderType;
+    if (dto.apiKey !== undefined) {
+      updateData.aiApiKeyEncrypted = this.encryption.encrypt(dto.apiKey);
+    }
+
+    await this.prisma.workspace.update({
+      where: { id: workspaceId },
+      data: updateData as any,
+    });
+
+    return this.getAiSettings(workspaceId, user);
   }
 
   // ------------------------------------------------------------------ //

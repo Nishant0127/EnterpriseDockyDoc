@@ -1,7 +1,11 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { WorkspacesController } from './workspaces.controller';
 import { WorkspacesService } from './workspaces.service';
 import { DevAuthGuard } from '../../common/guards/dev-auth.guard';
+import { PrismaModule } from '../../prisma/prisma.module';
+import { AuditModule } from '../audit/audit.module';
+import { EncryptionService } from '../../common/services/encryption.service';
 
 /**
  * WorkspacesModule — multi-tenant workspace management.
@@ -10,8 +14,9 @@ import { DevAuthGuard } from '../../common/guards/dev-auth.guard';
  * Users belong to one or more workspaces with a specific role.
  */
 @Module({
+  imports: [ConfigModule, PrismaModule, AuditModule],
   controllers: [WorkspacesController],
-  providers: [WorkspacesService, DevAuthGuard],
-  exports: [WorkspacesService],
+  providers: [WorkspacesService, DevAuthGuard, EncryptionService],
+  exports: [WorkspacesService, EncryptionService],
 })
 export class WorkspacesModule {}

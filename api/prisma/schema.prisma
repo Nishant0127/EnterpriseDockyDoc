@@ -99,6 +99,22 @@ enum AuditEntityType {
   WORKSPACE
 }
 
+enum WorkspacePlan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum AiProvider {
+  PLATFORM
+  BYOK
+}
+
+enum AiProviderType {
+  ANTHROPIC
+  OPENAI
+}
+
 // ================================================================== //
 // Core models
 // ================================================================== //
@@ -132,6 +148,11 @@ model Workspace {
   type                WorkspaceType   @default(PERSONAL)
   status              WorkspaceStatus @default(ACTIVE)
   trashRetentionDays  Int             @default(30)
+  plan               WorkspacePlan  @default(FREE)
+  aiProvider         AiProvider     @default(PLATFORM)
+  aiProviderType     AiProviderType @default(ANTHROPIC)
+  aiApiKeyEncrypted  String?
+  aiUsageTokens      Int            @default(0)
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
 

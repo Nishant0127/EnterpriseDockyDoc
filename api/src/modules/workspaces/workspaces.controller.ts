@@ -26,6 +26,7 @@ import {
   WorkspaceSummaryDto,
 } from './dto/workspace-response.dto';
 import { AddWorkspaceMemberDto, UpdateWorkspaceMemberDto, UpdateWorkspaceDto } from './dto/add-member.dto';
+import { UpdateAiSettingsDto, AiSettingsResponseDto } from './dto/ai-settings.dto';
 
 /**
  * Workspaces endpoints.
@@ -173,5 +174,38 @@ export class WorkspacesController {
       { status: 'REMOVED' as any },
       user,
     );
+  }
+
+  /**
+   * GET /api/v1/workspaces/:id/ai-settings
+   * Returns workspace AI configuration. MEMBER-readable.
+   */
+  @Get(':id/ai-settings')
+  @UseGuards(DevAuthGuard)
+  @ApiOperation({ summary: 'Get workspace AI configuration' })
+  @ApiParam({ name: 'id', description: 'Workspace cuid' })
+  @ApiResponse({ status: 200 })
+  getAiSettings(
+    @Param('id') id: string,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<AiSettingsResponseDto> {
+    return this.workspacesService.getAiSettings(id, user);
+  }
+
+  /**
+   * PATCH /api/v1/workspaces/:id/ai-settings
+   * Update AI configuration. ADMIN/OWNER only.
+   */
+  @Patch(':id/ai-settings')
+  @UseGuards(DevAuthGuard)
+  @ApiOperation({ summary: 'Update workspace AI configuration. ADMIN/OWNER only.' })
+  @ApiParam({ name: 'id', description: 'Workspace cuid' })
+  @ApiResponse({ status: 200 })
+  updateAiSettings(
+    @Param('id') id: string,
+    @Body() dto: UpdateAiSettingsDto,
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<AiSettingsResponseDto> {
+    return this.workspacesService.updateAiSettings(id, dto, user);
   }
 }
