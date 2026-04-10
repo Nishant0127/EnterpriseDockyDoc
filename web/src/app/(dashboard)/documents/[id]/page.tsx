@@ -628,7 +628,10 @@ export default function DocumentDetailPage() {
           doc={doc}
           canEdit={canEdit}
           workspaceId={doc.workspace.id}
+          aiExtraction={aiExtraction}
+          applying={aiApplying}
           onSaved={reload}
+          onApplyAiTags={() => void handleAiApply(['suggestedTags'])}
         />
 
         {/* ---- Metadata ------------------------------------------- */}
@@ -748,34 +751,89 @@ export default function DocumentDetailPage() {
 // Tags section
 // ------------------------------------------------------------------ //
 
+// ------------------------------------------------------------------ //
+// Tag color helpers
+// ------------------------------------------------------------------ //
+
+const TAG_PALETTE = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
+
+function deriveTagColor(name: string): string {
+  let h = 5381;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) + h) ^ name.charCodeAt(i);
+  return TAG_PALETTE[Math.abs(h) % TAG_PALETTE.length];
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function TagChip({ name, color, dotted = false }: { name: string; color: string; dotted?: boolean; key?: string }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold',
+        dotted ? 'border border-dashed' : '',
+      )}
+      style={{
+        backgroundColor: `${color}18`,
+        color,
+        ...(dotted ? { borderColor: color } : {}),
+      }}
+    >
+      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+      {name}
+    </span>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Tags section — applied tags + AI suggestions, edit mode
+// ------------------------------------------------------------------ //
+
 function TagsSection({
   doc,
   canEdit,
   workspaceId,
+  aiExtraction,
+  applying,
   onSaved,
+  onApplyAiTags,
 }: {
   doc: DocumentDetail;
   canEdit: boolean;
   workspaceId: string;
+  aiExtraction: AiExtractionResult | null;
+  applying: boolean;
   onSaved: () => void;
+  onApplyAiTags: () => void;
 }) {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [allTags, setAllTags] = useState<Tag[]>([]);
-  const [selected, setSelected] = useState<string[]>(doc.tags.map((t) => t.id));
+  const [selected, setSelected] = useState<string[]>(doc.tags.map((t: { id: string }) => t.id));
   const [saving, setSaving] = useState(false);
+
+  // AI suggestion state — only show tags not yet assigned to doc
+  const aiAppliedFields = [
+    ...(aiExtraction?.appliedFields ?? []),
+    ...(aiExtraction?.userAppliedFields ?? []),
+  ];
+  const aiTagsAlreadyApplied = aiAppliedFields.includes('suggestedTags');
+  const docTagNames = new Set(doc.tags.map((t: { name: string }) => t.name.toLowerCase()));
+  const unassignedSuggestions: string[] = aiTagsAlreadyApplied
+    ? []
+    : (aiExtraction?.suggestedTags ?? []).filter(
+        (n: string) => !docTagNames.has(n.toLowerCase()),
+      );
 
   function startEdit() {
     fetchTags(workspaceId)
-      .then(setAllTags)
+      .then((tags: Tag[]) => setAllTags(tags))
       .catch(() => {});
-    setSelected(doc.tags.map((t) => t.id));
+    setSelected(doc.tags.map((t: { id: string }) => t.id));
     setEditing(true);
   }
 
   function toggleTag(id: string) {
-    setSelected((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    setSelected((prev: string[]) =>
+      prev.includes(id) ? prev.filter((x: string) => x !== id) : [...prev, id],
     );
   }
 
@@ -793,92 +851,140 @@ function TagsSection({
     }
   }
 
-  return (
-    <Section title="Tags">
-      {!editing ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {doc.tags.length === 0 ? (
-            <span className="text-sm text-gray-400">No tags assigned.</span>
-          ) : (
-            doc.tags.map((tag) => (
-              <span
-                key={tag.id}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold"
-                style={
-                  tag.color
-                    ? { backgroundColor: `${tag.color}20`, color: tag.color }
-                    : { backgroundColor: '#f3f4f6', color: '#6b7280' }
-                }
-              >
-                {tag.color && (
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                )}
-                {tag.name}
-              </span>
-            ))
-          )}
-          {canEdit && (
+  // ── read view ────────────────────────────────────────────────────
+  if (!editing) {
+    const hasAnything = doc.tags.length > 0 || unassignedSuggestions.length > 0;
+    return (
+      <Section
+        title="Tags"
+        action={
+          canEdit ? (
             <button
               type="button"
               onClick={startEdit}
-              className="text-xs text-brand-600 hover:underline ml-1"
+              className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline"
             >
-              Edit tags
+              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeLinecap="round" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              Edit Tags
             </button>
-          )}
-        </div>
+          ) : undefined
+        }
+      >
+        {/* Applied tags */}
+        {doc.tags.length === 0 && !hasAnything && (
+          <p className="text-sm text-gray-400">No tags assigned.</p>
+        )}
+        {doc.tags.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {doc.tags.map((tag: { id: string; name: string; color: string | null }) => (
+              <TagChip
+                key={tag.id}
+                name={tag.name}
+                color={tag.color ?? deriveTagColor(tag.name)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* AI suggestions separator */}
+        {unassignedSuggestions.length > 0 && (
+          <div className={cn('pt-3', doc.tags.length > 0 && 'mt-3 border-t border-gray-100')}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+                AI Suggestions
+              </span>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={onApplyAiTags}
+                  disabled={applying}
+                  className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline disabled:opacity-50"
+                >
+                  {applying && <SpinnerIcon size={10} />}
+                  Apply all
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {unassignedSuggestions.map((name: string) => (
+                <TagChip key={name} name={name} color={deriveTagColor(name)} dotted />
+              ))}
+            </div>
+          </div>
+        )}
+      </Section>
+    );
+  }
+
+  // ── edit view ────────────────────────────────────────────────────
+  return (
+    <Section title="Tags">
+      {allTags.length === 0 ? (
+        <p className="text-xs text-gray-400 mb-3">
+          No tags in workspace yet. Create tags in Settings first.
+        </p>
       ) : (
-        <div>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {allTags.length === 0 ? (
-              <p className="text-xs text-gray-400">No tags in workspace. Create tags in Settings.</p>
-            ) : (
-              allTags.map((tag) => {
-                const isOn = selected.includes(tag.id);
-                return (
-                  <button
-                    key={tag.id}
-                    type="button"
-                    onClick={() => toggleTag(tag.id)}
-                    className={cn(
-                      'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border-2 transition-all',
-                      isOn ? 'border-transparent' : 'border-dashed border-gray-300 opacity-50',
-                    )}
-                    style={
-                      tag.color
-                        ? { backgroundColor: isOn ? `${tag.color}20` : 'transparent', color: isOn ? tag.color : '#9ca3af' }
-                        : { backgroundColor: isOn ? '#f3f4f6' : 'transparent', color: isOn ? '#6b7280' : '#9ca3af' }
-                    }
-                  >
-                    {tag.color && isOn && (
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                    )}
-                    {tag.name}
-                  </button>
-                );
-              })
-            )}
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              disabled={saving}
-              className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700"
-            >
-              Cancel
-            </button>
-          </div>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {allTags.map((tag: Tag) => {
+            const isOn = selected.includes(tag.id);
+            const color = tag.color ?? deriveTagColor(tag.name);
+            return (
+              <button
+                key={tag.id}
+                type="button"
+                onClick={() => toggleTag(tag.id)}
+                title={isOn ? `Remove "${tag.name}"` : `Add "${tag.name}"`}
+                className={cn(
+                  'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all select-none',
+                  isOn
+                    ? 'ring-2 ring-offset-1'
+                    : 'opacity-45 hover:opacity-70',
+                )}
+                style={{
+                  backgroundColor: `${color}18`,
+                  color,
+                  ...(isOn ? { ringColor: color } : {}),
+                }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: color }}
+                />
+                {tag.name}
+                {isOn && (
+                  <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" className="ml-0.5">
+                    <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          disabled={saving}
+          className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
     </Section>
   );
 }
@@ -1720,11 +1826,9 @@ function AiExtractionSection({
   const unappliedDates = (['expiryDate', 'renewalDueDate'] as const).filter(
     (f) => extraction?.[f] != null && !isAppliedByAnyone(f),
   );
-  const hasUnappliedTags = (extraction?.suggestedTags?.length ?? 0) > 0 && !isAppliedByAnyone('suggestedTags');
   const hasUnappliedFolder = !!extraction?.suggestedFolder && !isAppliedByAnyone('suggestedFolder');
   const allUnapplied = [
     ...unappliedDates,
-    ...(hasUnappliedTags ? ['suggestedTags'] : []),
     ...(hasUnappliedFolder ? ['suggestedFolder'] : []),
   ];
 
@@ -1942,39 +2046,7 @@ function AiExtractionSection({
             </div>
           )}
 
-          {/* Row 5 — Suggested tags */}
-          {extraction.suggestedTags.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-1.5">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Suggested Tags</p>
-                <ConfidenceBadge confidence={(extraction.confidenceByField ?? {}).suggestedTags ?? 0} />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {extraction.suggestedTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-700 border border-brand-200"
-                  >
-                    {tag}
-                  </span>
-                ))}
-                {!isAppliedByAnyone('suggestedTags') ? (
-                  <button
-                    type="button"
-                    onClick={() => onApply(['suggestedTags'])}
-                    disabled={applying}
-                    className="px-2.5 py-0.5 rounded-lg text-xs font-medium bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
-                  >
-                    Apply Tags
-                  </button>
-                ) : (
-                  <span className="text-xs text-green-600 font-medium">✓ Applied</span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Row 6 — Risk flags */}
+          {/* Row 5 — Risk flags */}
           {extraction.riskFlags.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Risk Flags</p>
