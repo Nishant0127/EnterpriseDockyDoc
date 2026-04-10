@@ -308,6 +308,12 @@ export class DocumentsService {
     // Re-index with updated file content
     void this.indexer.indexDocument(id, file);
 
+    // Re-run AI extraction on the new version (fire-and-forget)
+    void this.aiService.extractDocument(id).catch((err) => {
+      // Non-fatal — version upload already succeeded
+      console.warn(`[DocumentsService] AI re-extraction failed after version upload for ${id}: ${(err as Error).message}`);
+    });
+
     this.audit.log({
       workspaceId: existing.workspaceId,
       userId: user.id,

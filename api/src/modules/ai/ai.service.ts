@@ -352,14 +352,13 @@ export class AiService {
 
       // ---- 7. Auto-apply high-confidence fields ---------------------- //
       //
-      // Thresholds (Part E):
-      //   HIGH   >= 0.85 → auto-apply (if not user-confirmed)
-      //   MEDIUM  0.60–0.84 → suggestion only (shown in UI, not applied)
-      //   LOW    < 0.60 → show only, never auto-apply
+      // Thresholds:
+      //   expiryDate / renewalDueDate: >= 0.60 (pre-scan makes these reliable)
+      //   Other fields: >= 0.85 (reserved for future field auto-apply)
       //
       // User-confirmed fields (ai:userAppliedFields) are NEVER overwritten.
 
-      const AUTO_APPLY_THRESHOLD = 0.85;
+      const EXPIRY_AUTO_APPLY_THRESHOLD = 0.60; // lower — pre-scan regex is very reliable
       const cfb = extracted.confidenceByField;
 
       // Load user-confirmed fields — these were manually applied by the user
@@ -378,41 +377,43 @@ export class AiService {
 
       const docUpdate: { expiryDate?: Date; renewalDueDate?: Date } = {};
 
-      // expiryDate
+      // expiryDate — auto-save whenever AI finds one and user hasn't manually set it
       if (extracted.expiryDate) {
         const conf = cfb.expiryDate;
         const isUserConfirmed = userAppliedFields.includes('expiryDate');
         const wasAiApplied = prevAutoApplied.includes('expiryDate');
         this.logger.log(
           `[AutoFill] expiryDate=${extracted.expiryDate} conf=${conf.toFixed(2)} ` +
-          `userConfirmed=${isUserConfirmed} docHasDate=${doc.expiryDate !== null}`,
+          `userConfirmed=${isUserConfirmed} wasAiApplied=${wasAiApplied} docHasDate=${doc.expiryDate !== null}`,
         );
-        if (!isUserConfirmed && conf >= AUTO_APPLY_THRESHOLD) {
+        if (!isUserConfirmed && conf >= EXPIRY_AUTO_APPLY_THRESHOLD) {
+          // Auto-save if: document has no date yet, OR the existing date was previously AI-applied (can update)
           if (doc.expiryDate === null || wasAiApplied) {
             docUpdate.expiryDate = new Date(extracted.expiryDate);
             autoApplied.push('expiryDate');
-            this.logger.log(`[AutoFill] ✓ Auto-applied expiryDate=${extracted.expiryDate}`);
+            this.logger.log(`[AutoFill] ✓ Auto-saved expiryDate=${extracted.expiryDate} (conf=${conf.toFixed(2)})`);
           } else {
-            this.logger.log(`[AutoFill] Skipped expiryDate — document already has a user-set date`);
+            this.logger.log(`[AutoFill] Skipped expiryDate — user has manually set a date (protected)`);
           }
-        } else if (conf >= 0.6) {
-          this.logger.log(`[AutoFill] expiryDate is MEDIUM confidence (${conf.toFixed(2)}) — available as suggestion`);
-        } else {
-          this.logger.log(`[AutoFill] expiryDate is LOW confidence (${conf.toFixed(2)}) — shown only`);
+        } else if (conf < EXPIRY_AUTO_APPLY_THRESHOLD) {
+          this.logger.log(`[AutoFill] expiryDate conf=${conf.toFixed(2)} below threshold — shown as suggestion only`);
         }
       }
 
-      // renewalDueDate
+      // renewalDueDate — same logic
       if (extracted.renewalDueDate) {
         const conf = cfb.renewalDueDate;
         const isUserConfirmed = userAppliedFields.includes('renewalDueDate');
         const wasAiApplied = prevAutoApplied.includes('renewalDueDate');
-        if (!isUserConfirmed && conf >= AUTO_APPLY_THRESHOLD) {
+        this.logger.log(
+          `[AutoFill] renewalDueDate=${extracted.renewalDueDate} conf=${conf.toFixed(2)} userConfirmed=${isUserConfirmed}`,
+        );
+        if (!isUserConfirmed && conf >= EXPIRY_AUTO_APPLY_THRESHOLD) {
           const docRenewal = (doc as any).renewalDueDate;
           if (docRenewal === null || wasAiApplied) {
             docUpdate.renewalDueDate = new Date(extracted.renewalDueDate);
             autoApplied.push('renewalDueDate');
-            this.logger.log(`[AutoFill] ✓ Auto-applied renewalDueDate=${extracted.renewalDueDate}`);
+            this.logger.log(`[AutoFill] ✓ Auto-saved renewalDueDate=${extracted.renewalDueDate}`);
           }
         }
       }
@@ -647,20 +648,26 @@ export class AiService {
       if (field === 'suggestedFolder') {
         const folderName = meta.get(AI_KEYS.SUGGESTED_FOLDER)?.trim();
         if (folderName) {
-          // Part D: fuzzy-match existing workspace folders before creating
+          // Fetch ALL workspace folders (not just root) to prevent duplicates at any level
           const existingFolders = await this.prisma.folder.findMany({
-            where: { workspaceId: doc.workspaceId, parentFolderId: null },
+            where: { workspaceId: doc.workspaceId },
             select: { id: true, name: true },
           });
 
-          const normalizedTarget = folderName.toLowerCase();
-          let folder = existingFolders.find(
-            (f) => f.name.toLowerCase() === normalizedTarget,
-          ) ?? existingFolders.find(
-            (f) =>
-              f.name.toLowerCase().includes(normalizedTarget) ||
-              normalizedTarget.includes(f.name.toLowerCase()),
-          ) ?? null;
+          // Canonical form: lowercase, replace & → and, strip non-alphanumeric except spaces, collapse spaces
+          const canon = (s: string) =>
+            s.toLowerCase()
+              .replace(/&/g, 'and')
+              .replace(/[^a-z0-9\s]/g, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+
+          const targetCanon = canon(folderName);
+
+          // 1. Exact canonical match  2. Target contained in existing  3. Existing contained in target
+          let folder = existingFolders.find((f) => canon(f.name) === targetCanon)
+            ?? existingFolders.find((f) => canon(f.name).includes(targetCanon) || targetCanon.includes(canon(f.name)))
+            ?? null;
 
           if (!folder) {
             this.logger.log(`[ApplyFields] Creating new folder: "${folderName}"`);
