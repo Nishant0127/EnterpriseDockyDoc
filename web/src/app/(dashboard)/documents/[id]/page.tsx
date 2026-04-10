@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { fetchDocument, downloadDocument, downloadDocumentVersion, deleteDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders, fetchTags, createTag, setDocumentTags, setDocumentMetadata } from '@/lib/documents';
 import { apiFetch } from '@/lib/api';
 import { fetchDocumentActivity, describeAuditLog, auditActionCategory, formatAuditAction } from '@/lib/audit';
@@ -110,6 +110,7 @@ interface AiExtractionResult {
 
 export default function DocumentDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const toast = useToast();
   const { activeWorkspace } = useUser();
   const role = activeWorkspace?.role ?? 'VIEWER';
@@ -183,6 +184,8 @@ export default function DocumentDetailPage() {
     fetchDocument(params.id)
       .then(setDoc)
       .catch(() => setError('Document not found or API unavailable.'));
+    // Keep AI extraction in sync with the document (e.g. after version upload)
+    void loadAiExtraction();
   }
 
   useEffect(() => {
@@ -220,7 +223,7 @@ export default function DocumentDetailPage() {
     try {
       await shredDocument(doc.id);
       toast.success(`"${doc.name}" has been permanently deleted.`);
-      window.location.href = '/documents';
+      router.push('/documents');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Shred failed.');
       setShredding(false);
@@ -893,6 +896,15 @@ function TagsSection({
     }
   }
 
+  // Dirty check — compare selected IDs against current doc tags (order-insensitive)
+  const isTagsDirty = React.useMemo((): boolean => {
+    const currentSet = new Set(doc.tags.map((t: { id: string }) => t.id));
+    const selectedSet = new Set(selected);
+    if (currentSet.size !== selectedSet.size) return true;
+    for (const id of currentSet) if (!selectedSet.has(id)) return true;
+    return false;
+  }, [selected, doc.tags]);
+
   function startEdit() {
     ensureTags().catch(() => {});
     setSelected(doc.tags.map((t: { id: string }) => t.id));
@@ -1071,8 +1083,9 @@ function TagsSection({
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving}
-          className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
+          disabled={saving || !isTagsDirty}
+          title={!isTagsDirty ? 'No changes to save' : undefined}
+          className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -1116,6 +1129,15 @@ function MetadataSection({
   const [rows, setRows] = useState<MetadataRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Dirty check — save is only active when something changed
+  const isDirty = React.useMemo((): boolean => {
+    if (rows.length !== doc.metadata.length) return true;
+    return rows.some((r: MetadataRow, i: number) => {
+      const m = doc.metadata[i];
+      return r.key.trim() !== m.key || r.value.trim() !== m.value;
+    });
+  }, [rows, doc.metadata]);
 
   function startEdit() {
     setRows(doc.metadata.map((m) => ({ id: m.id, key: m.key, value: m.value })));
@@ -1273,8 +1295,9 @@ function MetadataSection({
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
+          disabled={saving || !isDirty}
+          title={!isDirty ? 'No changes to save' : undefined}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {saving && (
             <svg className="animate-spin" width="12" height="12" fill="none" viewBox="0 0 24 24">

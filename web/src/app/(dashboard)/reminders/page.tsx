@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
 import { fetchExpiringDocuments, fetchWorkspaceReminders } from '@/lib/documents';
 import { cn } from '@/lib/utils';
@@ -61,12 +62,17 @@ function daysLabel(days: number): { text: string; class: string } {
 
 export default function RemindersPage() {
   const { activeWorkspace, isLoading: userLoading } = useUser();
+  const searchParams = useSearchParams();
   const [expiring, setExpiring] = useState<ExpiringDocument[]>([]);
   const [reminders, setReminders] = useState<UpcomingReminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<TabId>('reminders');
+  // Allow deep-linking via ?tab=expiring|expired|reminders
+  const tabParam = searchParams.get('tab') as TabId | null;
+  const [activeTab, setActiveTab] = useState<TabId>(
+    tabParam && ['reminders', 'expiring', 'expired'].includes(tabParam) ? tabParam : 'reminders',
+  );
   const [expiringDays, setExpiringDays] = useState(31);
 
   useEffect(() => {

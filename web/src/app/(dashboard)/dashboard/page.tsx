@@ -49,13 +49,42 @@ export default function DashboardPage() {
   return (
     <div className="max-w-6xl">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">
-          {activeWorkspace?.workspaceName ?? 'Dashboard'}
-        </h1>
-        <p className="mt-0.5 text-sm text-gray-500">
-          Welcome back{user ? `, ${user.firstName}` : ''}. Here&apos;s your workspace at a glance.
-        </p>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">
+            {activeWorkspace?.workspaceName ?? 'Dashboard'}
+          </h1>
+          <p className="mt-0.5 text-sm text-gray-500">
+            Welcome back{user ? `, ${user.firstName}` : ''}. Here&apos;s your workspace at a glance.
+          </p>
+        </div>
+        {/* Quick Actions — top right */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Link
+            href="/documents?upload=1"
+            title="Upload document"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 transition-colors"
+          >
+            <UploadIcon className="text-white" />
+            Upload
+          </Link>
+          <Link
+            href="/documents"
+            title="Browse documents"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <FolderIcon className="text-gray-500" />
+            Documents
+          </Link>
+          <Link
+            href="/members"
+            title="Manage members"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <UsersIcon className="text-gray-500" />
+            Members
+          </Link>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -66,6 +95,7 @@ export default function DashboardPage() {
           sub={summary ? `${summary.activeDocuments} active · ${summary.archivedDocuments} archived` : ''}
           icon={<DocIcon />}
           color="brand"
+          href="/documents"
         />
         <KpiCard
           label="Expiring soon"
@@ -73,7 +103,7 @@ export default function DashboardPage() {
           sub="within 90 days"
           icon={<ClockIcon />}
           color={summary && summary.expiringCount > 0 ? 'orange' : 'gray'}
-          href="/reminders"
+          href="/reminders?tab=expiring"
         />
         <KpiCard
           label="Expired"
@@ -81,7 +111,7 @@ export default function DashboardPage() {
           sub="need attention"
           icon={<AlertIcon />}
           color={summary && summary.expiredCount > 0 ? 'red' : 'gray'}
-          href="/reminders"
+          href="/reminders?tab=expired"
         />
         <KpiCard
           label="Active shares"
@@ -214,40 +244,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="mt-6 bg-white rounded-xl border border-gray-200 px-5 py-4">
-        <h2 className="text-sm font-semibold text-gray-900 mb-3">Quick Actions</h2>
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/documents"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
-          >
-            <UploadIcon className="text-white" />
-            Upload Document
-          </Link>
-          <Link
-            href="/members"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <UsersIcon className="text-gray-500" />
-            Add Member
-          </Link>
-          <Link
-            href="/documents"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <FolderIcon className="text-gray-500" />
-            Browse Documents
-          </Link>
-          <Link
-            href="/activity"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <ActivityIcon className="text-gray-500" />
-            View Activity
-          </Link>
-        </div>
-      </div>
     </div>
   );
 }

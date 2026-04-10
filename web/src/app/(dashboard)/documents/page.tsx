@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
 import { fetchFolders, fetchDocuments, uploadDocument, searchDocuments, createFolder, renameFolder, deleteFolder, deleteDocument, updateDocument } from '@/lib/documents';
 import { cn } from '@/lib/utils';
@@ -115,6 +116,7 @@ function Breadcrumb({
 
 export default function DocumentsPage() {
   const { activeWorkspace, isLoading: userLoading } = useUser();
+  const searchParams = useSearchParams();
   const toast = useToast();
   const role = activeWorkspace?.role ?? 'VIEWER';
   const canEdit = role !== 'VIEWER';
@@ -126,6 +128,8 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
+  const [dropFile, setDropFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderParentId, setNewFolderParentId] = useState<string | undefined>(undefined);
   const [renamingFolder, setRenamingFolder] = useState<FolderListItem | null>(null);
@@ -207,6 +211,40 @@ export default function DocumentsPage() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, activeWorkspace?.workspaceId]);
+
+  // Open upload modal automatically when arriving via ?upload=1 (e.g. dashboard Quick Action)
+  useEffect(() => {
+    if (searchParams.get('upload') === '1' && canEdit && !loading) {
+      setShowUpload(true);
+    }
+  // Only run once after initial load
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
+  // Drag-and-drop handlers
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+    if (!canEdit) return;
+    e.preventDefault();
+    setDragOver(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    // Only clear when leaving the container entirely (not when moving between children)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOver(false);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragOver(false);
+    if (!canEdit) return;
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      setDropFile(file);
+      setShowUpload(true);
+    }
+  }
 
   function refreshDocuments() {
     if (!activeWorkspace) return;
@@ -443,7 +481,21 @@ export default function DocumentsPage() {
         {/* --------------------------------------------------------- */}
         {/* Document table                                             */}
         {/* --------------------------------------------------------- */}
-        <div className="flex-1 min-w-0">
+        <div
+          className="flex-1 min-w-0 relative"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {/* Drag-over overlay */}
+          {dragOver && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-brand-400 bg-brand-50/80 pointer-events-none">
+              <svg width="32" height="32" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" className="text-brand-500 mb-2">
+                <path d="M4 16.004V17a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M16 8l-4-4-4 4M12 4v12" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <p className="text-sm font-semibold text-brand-600">Drop file to upload</p>
+            </div>
+          )}
           {selectedFolderId !== null && !showTrash && !isSearching && (
             <Breadcrumb
               crumbs={buildBreadcrumb(selectedFolderId, folders)}
@@ -542,9 +594,11 @@ export default function DocumentsPage() {
           workspaceId={activeWorkspace.workspaceId}
           folders={folders}
           defaultFolderId={selectedFolderId ?? undefined}
-          onClose={() => setShowUpload(false)}
+          initialFile={dropFile ?? undefined}
+          onClose={() => { setShowUpload(false); setDropFile(null); }}
           onSuccess={() => {
             setShowUpload(false);
+            setDropFile(null);
             refreshDocuments();
             toast.success('Document uploaded successfully.');
           }}
@@ -719,18 +773,20 @@ function UploadModal({
   workspaceId,
   folders,
   defaultFolderId,
+  initialFile,
   onClose,
   onSuccess,
 }: {
   workspaceId: string;
   folders: FolderListItem[];
   defaultFolderId?: string;
+  initialFile?: File;
   onClose: () => void;
   onSuccess: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [name, setName] = useState('');
+  const [file, setFile] = useState<File | null>(initialFile ?? null);
+  const [name, setName] = useState(initialFile ? initialFile.name.replace(/\.[^.]+$/, '') : '');
   const [description, setDescription] = useState('');
   const [folderId, setFolderId] = useState(defaultFolderId ?? '');
   const [uploading, setUploading] = useState(false);
