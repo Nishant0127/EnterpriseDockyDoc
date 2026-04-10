@@ -232,39 +232,45 @@ export class AiService {
       const useDocumentPdf = isPdf && !!storageKey;
       const needsFile = useVisionImage || useDocumentPdf;
 
-      const EXTRACTION_JSON_SCHEMA = `Return exactly this JSON structure (use null for missing fields, YYYY-MM-DD for all dates):
+      const promptText = `You are an expert document analyst. Carefully read the entire document and extract all information with maximum accuracy.
+
+CRITICAL INSTRUCTIONS:
+- Look for ALL dates: issue date, effective date, expiry/expiration/valid until/valid through/expires on date, renewal date
+- Dates MUST be in YYYY-MM-DD format. Convert any format (e.g. "31 Dec 2027", "12/31/2027", "December 31, 2027") to YYYY-MM-DD
+- For passports/IDs: look for "Date of expiry", "Expiry date", "Valid until", "Date of issue"
+- For contracts: look for "effective date", "termination date", "renewal date"
+- For insurance/certificates: look for "policy period", "valid from/to", "expiration date"
+- Extract the full name of issuing authority, organization, or government body as "issuer"
+- Extract any reference/document/policy/certificate numbers visible in the document
+- Set overallConfidence based on how much information you could read (0.9+ if you read the full document clearly)
+- Set riskFlags ONLY for genuine risks (expiry within 90 days, missing required fields, suspicious content)
+- Do NOT set riskFlags for inability to read — only for actual document risks
+
+Respond with ONLY a valid JSON object. No text, no markdown, no code blocks before or after.
+
+Document filename: ${doc.name}${!needsFile && text ? `\n\nDocument text content:\n${text.slice(0, 6000)}` : ''}
+
 {
   "documentType": "contract|invoice|insurance|certification|license|id|policy|agreement|report|receipt|other",
-  "title": "string or null",
-  "issuer": "string or null",
-  "counterparty": "string or null",
-  "contractNumber": "string or null",
-  "policyNumber": "string or null",
-  "certificateNumber": "string or null",
-  "referenceNumber": "string or null",
+  "title": "full document title or null",
+  "issuer": "issuing organization/authority or null",
+  "counterparty": "other party name or null",
+  "contractNumber": "contract number or null",
+  "policyNumber": "policy number or null",
+  "certificateNumber": "certificate number or null",
+  "referenceNumber": "any other reference number or null",
   "issueDate": "YYYY-MM-DD or null",
   "effectiveDate": "YYYY-MM-DD or null",
   "expiryDate": "YYYY-MM-DD or null",
   "renewalDueDate": "YYYY-MM-DD or null",
-  "summary": "string",
-  "keyPoints": ["string"],
-  "suggestedTags": ["string"],
-  "suggestedFolder": "string or null",
-  "riskFlags": ["string"],
-  "overallConfidence": 0.85,
-  "dateConfidence": 0.9
+  "summary": "2-3 sentence description of what this document is",
+  "keyPoints": ["important fact 1", "important fact 2"],
+  "suggestedTags": ["tag1", "tag2"],
+  "suggestedFolder": "folder name suggestion or null",
+  "riskFlags": [],
+  "overallConfidence": 0.95,
+  "dateConfidence": 0.95
 }`;
-
-      const promptText = `Respond with ONLY a valid JSON object. No text before or after. No markdown. No code blocks.
-
-You are a document metadata extraction engine. Extract structured information from the document.
-
-Extract ANY expiration/expiry/valid until/valid through/expires on date as expiryDate in YYYY-MM-DD format. This is the most important field.
-
-Document name: ${doc.name}
-Document type hint: ${doc.fileType}${!needsFile ? `\nContent (first 4000 chars):\n${text.slice(0, 4000)}` : ''}
-
-${EXTRACTION_JSON_SCHEMA}`;
 
       let messageContent: Anthropic.MessageParam['content'] = promptText;
 
@@ -301,8 +307,8 @@ ${EXTRACTION_JSON_SCHEMA}`;
       }
 
       const message = await activeClient.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
+        model: 'claude-sonnet-4-6',
+        max_tokens: 2048,
         messages: [{ role: 'user', content: messageContent }],
       });
 
