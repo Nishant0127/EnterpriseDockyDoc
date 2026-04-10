@@ -57,6 +57,23 @@ function initials(firstName: string, lastName: string) {
 // AI Extraction types
 // ------------------------------------------------------------------ //
 
+interface ConfidenceByField {
+  documentType: number;
+  title: number;
+  issuer: number;
+  counterparty: number;
+  contractNumber: number;
+  policyNumber: number;
+  certificateNumber: number;
+  referenceNumber: number;
+  issueDate: number;
+  effectiveDate: number;
+  expiryDate: number;
+  renewalDueDate: number;
+  suggestedTags: number;
+  suggestedFolder: number;
+}
+
 interface AiExtractionResult {
   status: 'done' | 'running' | 'failed' | 'disabled' | 'none';
   documentType: string | null;
@@ -78,6 +95,8 @@ interface AiExtractionResult {
   riskFlags: string[];
   overallConfidence: number;
   dateConfidence: number;
+  confidenceByField: ConfidenceByField;
+  ocrProvider: string | null;
   extractedAt: string | null;
   appliedFields: string[];
   error: string | null;
@@ -1386,6 +1405,24 @@ function confidenceClass(c: number): string {
   return 'bg-red-50 text-red-700 border-red-200';
 }
 
+function ConfidenceBadge({ confidence }: { confidence: number }) {
+  if (confidence <= 0) return null;
+  const pct = Math.round(confidence * 100);
+  const cls =
+    confidence >= 0.85
+      ? 'bg-green-50 text-green-600 border-green-200'
+      : confidence >= 0.6
+      ? 'bg-yellow-50 text-yellow-600 border-yellow-200'
+      : 'bg-gray-50 text-gray-500 border-gray-200';
+  const label =
+    confidence >= 0.85 ? 'High' : confidence >= 0.6 ? 'Med' : 'Low';
+  return (
+    <span className={cn('inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium border', cls)}>
+      {label} {pct}%
+    </span>
+  );
+}
+
 function daysUntil(iso: string): number {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -1497,9 +1534,14 @@ function AiExtractionSection({
             <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium border', confidenceClass(extraction.overallConfidence))}>
               {Math.round(extraction.overallConfidence * 100)}% confidence
             </span>
+            {extraction.ocrProvider && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500 border border-gray-200">
+                via {extraction.ocrProvider.replace('azure-document-intelligence', 'Azure DI').replace('mistral-ocr', 'Mistral').replace('claude-native', 'Claude').replace('search-content-fallback', 'text cache')}
+              </span>
+            )}
             {extraction.extractedAt && (
               <span className="text-xs text-gray-400">
-                Extracted {formatDateTime(extraction.extractedAt)}
+                {formatDateTime(extraction.extractedAt)}
               </span>
             )}
             <button
@@ -1514,21 +1556,25 @@ function AiExtractionSection({
 
           {/* Row 2 — Key fields grid */}
           {(() => {
-            const fields: { label: string; value: string }[] = [];
-            if (extraction.issuer) fields.push({ label: 'Issuer', value: extraction.issuer });
-            if (extraction.counterparty) fields.push({ label: 'Counterparty', value: extraction.counterparty });
-            if (extraction.contractNumber) fields.push({ label: 'Contract No.', value: extraction.contractNumber });
-            if (extraction.policyNumber) fields.push({ label: 'Policy No.', value: extraction.policyNumber });
-            if (extraction.certificateNumber) fields.push({ label: 'Certificate No.', value: extraction.certificateNumber });
-            if (extraction.referenceNumber) fields.push({ label: 'Reference No.', value: extraction.referenceNumber });
-            if (extraction.issueDate) fields.push({ label: 'Issue Date', value: formatDate(extraction.issueDate) });
-            if (extraction.effectiveDate) fields.push({ label: 'Effective Date', value: formatDate(extraction.effectiveDate) });
+            const cbf = extraction.confidenceByField ?? {};
+            const fields: { label: string; value: string; fieldKey: keyof ConfidenceByField }[] = [];
+            if (extraction.issuer) fields.push({ label: 'Issuer', value: extraction.issuer, fieldKey: 'issuer' });
+            if (extraction.counterparty) fields.push({ label: 'Counterparty', value: extraction.counterparty, fieldKey: 'counterparty' });
+            if (extraction.contractNumber) fields.push({ label: 'Contract No.', value: extraction.contractNumber, fieldKey: 'contractNumber' });
+            if (extraction.policyNumber) fields.push({ label: 'Policy No.', value: extraction.policyNumber, fieldKey: 'policyNumber' });
+            if (extraction.certificateNumber) fields.push({ label: 'Certificate No.', value: extraction.certificateNumber, fieldKey: 'certificateNumber' });
+            if (extraction.referenceNumber) fields.push({ label: 'Reference No.', value: extraction.referenceNumber, fieldKey: 'referenceNumber' });
+            if (extraction.issueDate) fields.push({ label: 'Issue Date', value: formatDate(extraction.issueDate), fieldKey: 'issueDate' });
+            if (extraction.effectiveDate) fields.push({ label: 'Effective Date', value: formatDate(extraction.effectiveDate), fieldKey: 'effectiveDate' });
             if (fields.length === 0) return null;
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-                {fields.map(({ label, value }) => (
+                {fields.map(({ label, value, fieldKey }) => (
                   <div key={label}>
-                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-0.5">{label}</p>
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{label}</p>
+                      <ConfidenceBadge confidence={cbf[fieldKey] ?? 0} />
+                    </div>
                     <p className="text-sm text-gray-800">{value}</p>
                   </div>
                 ))}
@@ -1547,18 +1593,22 @@ function AiExtractionSection({
               </div>
               {(
                 [
-                  { key: 'expiryDate', label: 'Expiry Date' },
-                  { key: 'renewalDueDate', label: 'Renewal Due' },
+                  { key: 'expiryDate', label: 'Expiry Date', fieldKey: 'expiryDate' as keyof ConfidenceByField },
+                  { key: 'renewalDueDate', label: 'Renewal Due', fieldKey: 'renewalDueDate' as keyof ConfidenceByField },
                 ] as const
-              ).map(({ key, label }) => {
+              ).map(({ key, label, fieldKey }) => {
                 const iso = extraction[key];
                 if (!iso) return null;
                 const days = daysUntil(iso);
                 const isApplied = applied.includes(key);
+                const fieldConf = (extraction.confidenceByField ?? {})[fieldKey] ?? 0;
                 return (
                   <div key={key} className="flex flex-wrap items-center gap-2">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+                        <ConfidenceBadge confidence={fieldConf} />
+                      </div>
                       <p className="text-sm text-gray-800">{formatDate(iso)}</p>
                     </div>
                     <span className={cn('text-xs', urgencyClass(days))}>
@@ -1632,7 +1682,10 @@ function AiExtractionSection({
           {/* Row 5 — Suggested tags */}
           {extraction.suggestedTags.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Suggested Tags</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Suggested Tags</p>
+                <ConfidenceBadge confidence={(extraction.confidenceByField ?? {}).suggestedTags ?? 0} />
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 {extraction.suggestedTags.map((tag) => (
                   <span
@@ -1680,7 +1733,10 @@ function AiExtractionSection({
           {extraction.suggestedFolder && (
             <div className="flex items-center justify-between py-1">
               <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Suggested Folder</p>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Suggested Folder</p>
+                  <ConfidenceBadge confidence={(extraction.confidenceByField ?? {}).suggestedFolder ?? 0} />
+                </div>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-700">
                   <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
                   {extraction.suggestedFolder}

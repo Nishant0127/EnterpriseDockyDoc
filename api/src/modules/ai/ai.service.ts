@@ -6,6 +6,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EncryptionService } from '../../common/services/encryption.service';
 import { PLAN_TOKEN_LIMITS } from '../workspaces/dto/ai-settings.dto';
+import { OcrService } from '../document-intelligence/ocr.service';
+import { ExtractionService } from '../document-intelligence/extraction.service';
+import type { ConfidenceByField } from '../document-intelligence/extraction.service';
 
 // ------------------------------------------------------------------ //
 // Metadata key constants
@@ -31,6 +34,8 @@ const AI_KEYS = {
   RISK_FLAGS: 'ai:riskFlags',
   OVERALL_CONFIDENCE: 'ai:overallConfidence',
   DATE_CONFIDENCE: 'ai:dateConfidence',
+  CONFIDENCE_BY_FIELD: 'ai:confidenceByField',
+  OCR_PROVIDER: 'ai:ocrProvider',
   EXTRACTED_AT: 'ai:extractedAt',
   APPLIED_FIELDS: 'ai:appliedFields',
   ERROR: 'ai:error',
@@ -60,6 +65,8 @@ export interface AiExtractionResult {
   riskFlags: string[];
   overallConfidence: number;
   dateConfidence: number;
+  confidenceByField: ConfidenceByField;
+  ocrProvider: string | null;
   extractedAt: string | null;
   appliedFields: string[];
   error: string | null;
@@ -76,8 +83,8 @@ function isValidDate(v: unknown): v is string {
 
 function safeString(v: unknown): string | null {
   if (v === null || v === undefined || v === '') return null;
-  if (typeof v === 'string') return v;
-  return String(v);
+  if (typeof v === 'string') return v.trim() || null;
+  return String(v).trim() || null;
 }
 
 function safeStringArray(v: unknown): string[] {
@@ -90,6 +97,15 @@ function safeNumber(v: unknown, fallback = 0): number {
   return isNaN(n) ? fallback : n;
 }
 
+function emptyConfidenceByField(): ConfidenceByField {
+  return {
+    documentType: 0, title: 0, issuer: 0, counterparty: 0,
+    contractNumber: 0, policyNumber: 0, certificateNumber: 0, referenceNumber: 0,
+    issueDate: 0, effectiveDate: 0, expiryDate: 0, renewalDueDate: 0,
+    suggestedTags: 0, suggestedFolder: 0,
+  };
+}
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
@@ -99,6 +115,8 @@ export class AiService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly encryption: EncryptionService,
+    private readonly ocrService: OcrService,
+    private readonly extractionService: ExtractionService,
   ) {
     const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
     this.client = apiKey ? new Anthropic({ apiKey }) : null;
@@ -149,17 +167,15 @@ export class AiService {
     const isPlatform = workspace.aiProvider !== 'BYOK';
 
     if (isPlatform) {
-      // Check usage limit
       const limit = PLAN_TOKEN_LIMITS[workspace.plan] ?? PLAN_TOKEN_LIMITS['FREE'];
       if (workspace.aiUsageTokens >= limit) {
         throw new Error(
           `AI usage limit reached for this workspace (${workspace.aiUsageTokens}/${limit} tokens used on ${workspace.plan} plan). Upgrade to Pro or Enterprise for higher limits.`,
         );
       }
-      if (!this.client) return null; // system key not configured
+      if (!this.client) return null;
       return { client: this.client, isplatform: true, workspaceId };
     } else {
-      // BYOK
       if (!workspace.aiApiKeyEncrypted) {
         throw new Error('BYOK is selected but no API key has been configured. Please add your API key in Workspace Settings → AI Configuration.');
       }
@@ -182,347 +198,202 @@ export class AiService {
         data: { aiUsageTokens: { increment: tokens } },
       });
     } catch {
-      // Non-fatal — log but don't fail the request
       this.logger.warn(`Failed to track AI usage for workspace ${workspaceId}`);
     }
   }
 
   // ---------------------------------------------------------------- //
-  // extractDocument
+  // extractDocument  — main pipeline
   // ---------------------------------------------------------------- //
   async extractDocument(documentId: string): Promise<AiExtractionResult> {
-    // Step 1: Mark as running
     await this.upsertMeta(documentId, AI_KEYS.STATUS, 'running');
 
     try {
-      // Step 2: Fetch document + searchContent
+      // ---- 1. Fetch document ---------------------------------------- //
       const doc = await this.prisma.document.findUnique({
         where: { id: documentId },
         include: { searchContent: true, metadata: true },
       });
       if (!doc) throw new NotFoundException(`Document ${documentId} not found`);
 
-      // Step 3: Get workspace-appropriate client (handles platform limits + BYOK)
+      // ---- 2. Get workspace client ----------------------------------- //
       const routing = await this.getClientForWorkspace(doc.workspaceId);
       if (!routing) {
         await this.upsertMeta(documentId, AI_KEYS.STATUS, 'disabled');
         return this.buildDisabledResult();
       }
-      const activeClient = routing.client;
 
-      const text = doc.searchContent?.extractedText ?? '';
-
+      // ---- 3. Read file buffer --------------------------------------- //
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const storageKey: string = (doc as any).storageKey ?? '';
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const mimeType: string = (doc as any).mimeType ?? '';
 
-      const VISION_IMAGE_TYPES = new Set([
-        'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
-      ]);
-      const isVisionImage = VISION_IMAGE_TYPES.has(mimeType);
-      const isPdf = mimeType === 'application/pdf';
-
-      // Build extraction prompt — always include available text as fallback context
-      const buildPrompt = (includeText: boolean) =>
-        `You are an expert document analyst. Carefully read the entire document and extract all structured information with maximum accuracy.
-
-CRITICAL INSTRUCTIONS:
-- Extract ALL dates: issue date, effective date, expiry/valid until/expires on, renewal date
-- Convert every date to YYYY-MM-DD (e.g. "31 Dec 2027" → "2027-12-31", "12/31/2027" → "2027-12-31")
-- Passports/IDs: look for "Date of expiry", "Expiry date", "Valid until", "Date of issue"
-- Contracts: "effective date", "termination date", "renewal date"
-- Insurance/certificates: "policy period", "valid from/to", "expiration date"
-- Extract full issuing authority name as "issuer"
-- Extract every visible reference/policy/certificate/contract number
-- overallConfidence: 0.9+ if you read the document clearly; lower only if content is genuinely unclear
-- riskFlags: ONLY real document risks (expiry within 90 days, suspicious content). Empty array if none.
-
-Respond with ONLY a valid JSON object. No text, no markdown, no code blocks.
-
-Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nExtracted text (supplementary context):\n${text.slice(0, 6000)}` : ''}
-
-{
-  "documentType": "contract|invoice|insurance|certification|license|id|policy|agreement|report|receipt|other",
-  "title": "full document title or null",
-  "issuer": "issuing organization/authority or null",
-  "counterparty": "other party name or null",
-  "contractNumber": "contract number or null",
-  "policyNumber": "policy number or null",
-  "certificateNumber": "certificate number or null",
-  "referenceNumber": "any other reference number or null",
-  "issueDate": "YYYY-MM-DD or null",
-  "effectiveDate": "YYYY-MM-DD or null",
-  "expiryDate": "YYYY-MM-DD or null",
-  "renewalDueDate": "YYYY-MM-DD or null",
-  "summary": "2-3 sentence description of this document",
-  "keyPoints": ["key fact 1", "key fact 2"],
-  "suggestedTags": ["tag1", "tag2"],
-  "suggestedFolder": "folder name or null",
-  "riskFlags": [],
-  "overallConfidence": 0.95,
-  "dateConfidence": 0.95
-}`;
-
-      // Default: text-only (for DOCX, TXT, etc.)
-      let messageContent: Anthropic.MessageParam['content'] = buildPrompt(true);
-
+      let fileBuffer: Buffer | null = null;
       if (storageKey) {
         const filePath = path.join(process.cwd(), 'uploads', storageKey);
         try {
-          const fileBase64 = fs.readFileSync(filePath).toString('base64');
-
-          if (isPdf) {
-            // PDFs: send raw file via Document API for full layout fidelity
-            // Also include pdf-parse text as supplementary context
-            messageContent = [
-              {
-                type: 'document',
-                source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 },
-              } as Anthropic.DocumentBlockParam,
-              { type: 'text', text: buildPrompt(true) },
-            ];
-            this.logger.debug(`extractDocument ${documentId}: using PDF Document API`);
-          } else if (isVisionImage) {
-            // Images: send via Vision API
-            const safeMediaType = (VISION_IMAGE_TYPES.has(mimeType)
-              ? mimeType
-              : 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
-            messageContent = [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: safeMediaType, data: fileBase64 },
-              },
-              { type: 'text', text: buildPrompt(false) },
-            ];
-            this.logger.debug(`extractDocument ${documentId}: using Vision API`);
-          }
+          fileBuffer = fs.readFileSync(filePath);
         } catch {
-          // File unreadable — fall back to pdf-parse text (already in messageContent)
-          this.logger.warn(`extractDocument ${documentId}: file read failed for ${storageKey}, using text fallback`);
+          this.logger.warn(`extractDocument ${documentId}: could not read file ${storageKey}`);
         }
       }
 
-      const message = await activeClient.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2048,
-        messages: [{ role: 'user', content: messageContent }],
-      });
+      // ---- 4. OCR --------------------------------------------------- //
+      let ocrOutput = fileBuffer
+        ? await this.ocrService.extract(fileBuffer, mimeType, doc.name)
+        : null;
 
-      // Step 4: Parse JSON response carefully
-      const content = message.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Unexpected AI response type');
-      }
-
-      let extracted: Record<string, unknown>;
-      try {
-        // Try direct parse first, then fall back to regex extraction
-        const trimmed = content.text.trim();
-        if (trimmed.startsWith('{')) {
-          extracted = JSON.parse(trimmed);
-        } else {
-          const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
-          if (!jsonMatch) throw new Error('No JSON object found in AI response');
-          extracted = JSON.parse(jsonMatch[0]);
+      // Fallback: use existing searchContent text if OCR failed/unavailable
+      if (!ocrOutput && doc.searchContent?.extractedText) {
+        const fallbackText = doc.searchContent.extractedText.trim();
+        if (fallbackText.length > 10) {
+          ocrOutput = {
+            provider: 'search-content-fallback',
+            fullText: fallbackText,
+            pages: [{ pageNumber: 1, text: fallbackText }],
+            pageCount: 1,
+            confidence: 0.7,
+            processingTimeMs: 0,
+          };
         }
-      } catch (parseErr) {
-        throw new Error(
-          `Failed to parse AI JSON response: ${(parseErr as Error).message}`,
-        );
       }
 
-      // Step 5: Store all extracted fields as individual ai:* metadata entries
-      const expiryDate = isValidDate(extracted.expiryDate)
-        ? extracted.expiryDate
-        : null;
-      const renewalDueDate = isValidDate(extracted.renewalDueDate)
-        ? extracted.renewalDueDate
-        : null;
-      const issueDate = isValidDate(extracted.issueDate)
-        ? extracted.issueDate
-        : null;
-      const effectiveDate = isValidDate(extracted.effectiveDate)
-        ? extracted.effectiveDate
-        : null;
-      const overallConfidence = safeNumber(extracted.overallConfidence, 0);
-      const dateConfidence = safeNumber(extracted.dateConfidence, 0);
+      if (!ocrOutput) {
+        throw new Error('Could not extract text from document — no OCR provider succeeded and no cached text available.');
+      }
 
+      this.logger.log(
+        `extractDocument ${documentId}: OCR via ${ocrOutput.provider}, ${ocrOutput.fullText.length} chars`,
+      );
+
+      // ---- 5. Structured extraction ---------------------------------- //
+      const extracted = await this.extractionService.extract(
+        ocrOutput,
+        doc.name,
+        routing.client, // Pass workspace-specific client for BYOK support
+      );
+
+      if (!extracted) {
+        throw new Error('Structured extraction failed — no AI provider returned a valid result.');
+      }
+
+      // ---- 6. Persist metadata -------------------------------------- //
       const metaEntries: [string, string][] = [
-        [AI_KEYS.DOCUMENT_TYPE, safeString(extracted.documentType) ?? 'other'],
-        [AI_KEYS.TITLE, safeString(extracted.title) ?? ''],
-        [AI_KEYS.ISSUER, safeString(extracted.issuer) ?? ''],
-        [AI_KEYS.COUNTERPARTY, safeString(extracted.counterparty) ?? ''],
-        [AI_KEYS.CONTRACT_NUMBER, safeString(extracted.contractNumber) ?? ''],
-        [AI_KEYS.POLICY_NUMBER, safeString(extracted.policyNumber) ?? ''],
-        [
-          AI_KEYS.CERTIFICATE_NUMBER,
-          safeString(extracted.certificateNumber) ?? '',
-        ],
-        [AI_KEYS.REFERENCE_NUMBER, safeString(extracted.referenceNumber) ?? ''],
-        [AI_KEYS.ISSUE_DATE, issueDate ?? ''],
-        [AI_KEYS.EFFECTIVE_DATE, effectiveDate ?? ''],
-        [AI_KEYS.EXPIRY_DATE, expiryDate ?? ''],
-        [AI_KEYS.RENEWAL_DATE, renewalDueDate ?? ''],
-        [AI_KEYS.SUMMARY, safeString(extracted.summary) ?? ''],
-        [
-          AI_KEYS.KEY_POINTS,
-          JSON.stringify(safeStringArray(extracted.keyPoints)),
-        ],
-        [
-          AI_KEYS.SUGGESTED_TAGS,
-          JSON.stringify(safeStringArray(extracted.suggestedTags)),
-        ],
-        [AI_KEYS.SUGGESTED_FOLDER, safeString(extracted.suggestedFolder) ?? ''],
-        [
-          AI_KEYS.RISK_FLAGS,
-          JSON.stringify(safeStringArray(extracted.riskFlags)),
-        ],
-        [AI_KEYS.OVERALL_CONFIDENCE, String(overallConfidence)],
-        [AI_KEYS.DATE_CONFIDENCE, String(dateConfidence)],
+        [AI_KEYS.DOCUMENT_TYPE, extracted.documentType ?? 'other'],
+        [AI_KEYS.TITLE, extracted.title ?? ''],
+        [AI_KEYS.ISSUER, extracted.issuer ?? ''],
+        [AI_KEYS.COUNTERPARTY, extracted.counterparty ?? ''],
+        [AI_KEYS.CONTRACT_NUMBER, extracted.contractNumber ?? ''],
+        [AI_KEYS.POLICY_NUMBER, extracted.policyNumber ?? ''],
+        [AI_KEYS.CERTIFICATE_NUMBER, extracted.certificateNumber ?? ''],
+        [AI_KEYS.REFERENCE_NUMBER, extracted.referenceNumber ?? ''],
+        [AI_KEYS.ISSUE_DATE, extracted.issueDate ?? ''],
+        [AI_KEYS.EFFECTIVE_DATE, extracted.effectiveDate ?? ''],
+        [AI_KEYS.EXPIRY_DATE, extracted.expiryDate ?? ''],
+        [AI_KEYS.RENEWAL_DATE, extracted.renewalDueDate ?? ''],
+        [AI_KEYS.SUMMARY, extracted.summary ?? ''],
+        [AI_KEYS.KEY_POINTS, JSON.stringify(extracted.keyPoints)],
+        [AI_KEYS.SUGGESTED_TAGS, JSON.stringify(extracted.suggestedTags)],
+        [AI_KEYS.SUGGESTED_FOLDER, extracted.suggestedFolder ?? ''],
+        [AI_KEYS.RISK_FLAGS, JSON.stringify(extracted.riskFlags)],
+        [AI_KEYS.OVERALL_CONFIDENCE, String(extracted.overallConfidence)],
+        [AI_KEYS.DATE_CONFIDENCE, String(extracted.dateConfidence)],
+        [AI_KEYS.CONFIDENCE_BY_FIELD, JSON.stringify(extracted.confidenceByField)],
+        [AI_KEYS.OCR_PROVIDER, ocrOutput.provider],
       ];
 
       for (const [key, value] of metaEntries) {
         await this.upsertMeta(documentId, key, value);
       }
 
-      // Step 6: Set status to done and record extractedAt
       const extractedAt = new Date().toISOString();
       await this.upsertMeta(documentId, AI_KEYS.STATUS, 'done');
       await this.upsertMeta(documentId, AI_KEYS.EXTRACTED_AT, extractedAt);
 
-      // Step 7: Auto-apply high-confidence fields (overallConfidence >= 0.8)
+      // ---- 7. Auto-apply high-confidence fields ---------------------- //
       const appliedFields: string[] = [];
 
-      if (overallConfidence >= 0.8) {
-        // Determine which fields were previously AI-applied (can be overwritten)
-        const existingAppliedMeta = doc.metadata.find(
-          (m) => m.key === AI_KEYS.APPLIED_FIELDS,
-        );
-        const previouslyApplied: string[] = existingAppliedMeta
-          ? (() => {
-              try {
-                return JSON.parse(existingAppliedMeta.value) as string[];
-              } catch {
-                return [];
-              }
-            })()
-          : [];
+      const autoApplyThreshold = 0.85;
+      const cfb = extracted.confidenceByField;
 
-        const updateData: {
-          expiryDate?: Date;
-          renewalDueDate?: Date;
-        } = {};
+      // Determine previously AI-applied fields (respect manual edits)
+      const existingAppliedMeta = doc.metadata.find((m) => m.key === AI_KEYS.APPLIED_FIELDS);
+      const previouslyApplied: string[] = existingAppliedMeta
+        ? (() => { try { return JSON.parse(existingAppliedMeta.value) as string[]; } catch { return []; } })()
+        : [];
 
-        // Auto-apply expiryDate if: doc has none OR it was previously AI-set
-        if (expiryDate) {
-          if (
-            doc.expiryDate === null ||
-            previouslyApplied.includes('expiryDate')
-          ) {
-            updateData.expiryDate = new Date(expiryDate);
-            appliedFields.push('expiryDate');
-          }
-        }
+      const updateData: {
+        expiryDate?: Date;
+        renewalDueDate?: Date;
+      } = {};
 
-        // Auto-apply renewalDueDate if: doc has none OR it was previously AI-set
-        if (renewalDueDate) {
-          if (
-            doc.renewalDueDate === null ||
-            previouslyApplied.includes('renewalDueDate')
-          ) {
-            updateData.renewalDueDate = new Date(renewalDueDate);
-            appliedFields.push('renewalDueDate');
-          }
-        }
-
-        if (Object.keys(updateData).length > 0) {
-          await this.prisma.document.update({
-            where: { id: documentId },
-            data: updateData,
-          });
+      if (extracted.expiryDate && cfb.expiryDate >= autoApplyThreshold) {
+        if (doc.expiryDate === null || previouslyApplied.includes('expiryDate')) {
+          updateData.expiryDate = new Date(extracted.expiryDate);
+          appliedFields.push('expiryDate');
         }
       }
 
-      // Record applied fields (merge with any existing)
-      await this.upsertMeta(
-        documentId,
-        AI_KEYS.APPLIED_FIELDS,
-        JSON.stringify(appliedFields),
-      );
+      if (extracted.renewalDueDate && cfb.renewalDueDate >= autoApplyThreshold) {
+        if ((doc as any).renewalDueDate === null || previouslyApplied.includes('renewalDueDate')) {
+          updateData.renewalDueDate = new Date(extracted.renewalDueDate);
+          appliedFields.push('renewalDueDate');
+        }
+      }
 
-      // Track token usage for platform AI
+      if (Object.keys(updateData).length > 0) {
+        await this.prisma.document.update({ where: { id: documentId }, data: updateData });
+      }
+
+      await this.upsertMeta(documentId, AI_KEYS.APPLIED_FIELDS, JSON.stringify(appliedFields));
+
+      // Track token usage for platform clients
+      // (We don't have token counts from ExtractionService; use a reasonable estimate)
       if (routing.isplatform) {
-        const totalTokens = message.usage.input_tokens + message.usage.output_tokens;
-        await this.trackUsage(doc.workspaceId, totalTokens);
+        const estimatedTokens = Math.ceil(ocrOutput.fullText.length / 4) + 1000;
+        await this.trackUsage(doc.workspaceId, estimatedTokens);
       }
 
-      // Step 9: Return full AiExtractionResult
       return {
         status: 'done',
-        documentType: safeString(extracted.documentType),
-        title: safeString(extracted.title),
-        issuer: safeString(extracted.issuer),
-        counterparty: safeString(extracted.counterparty),
-        contractNumber: safeString(extracted.contractNumber),
-        policyNumber: safeString(extracted.policyNumber),
-        certificateNumber: safeString(extracted.certificateNumber),
-        referenceNumber: safeString(extracted.referenceNumber),
-        issueDate,
-        effectiveDate,
-        expiryDate,
-        renewalDueDate,
-        summary: safeString(extracted.summary),
-        keyPoints: safeStringArray(extracted.keyPoints),
-        suggestedTags: safeStringArray(extracted.suggestedTags),
-        suggestedFolder: safeString(extracted.suggestedFolder),
-        riskFlags: safeStringArray(extracted.riskFlags),
-        overallConfidence,
-        dateConfidence,
+        documentType: extracted.documentType,
+        title: extracted.title,
+        issuer: extracted.issuer,
+        counterparty: extracted.counterparty,
+        contractNumber: extracted.contractNumber,
+        policyNumber: extracted.policyNumber,
+        certificateNumber: extracted.certificateNumber,
+        referenceNumber: extracted.referenceNumber,
+        issueDate: extracted.issueDate,
+        effectiveDate: extracted.effectiveDate,
+        expiryDate: extracted.expiryDate,
+        renewalDueDate: extracted.renewalDueDate,
+        summary: extracted.summary,
+        keyPoints: extracted.keyPoints,
+        suggestedTags: extracted.suggestedTags,
+        suggestedFolder: extracted.suggestedFolder,
+        riskFlags: extracted.riskFlags,
+        overallConfidence: extracted.overallConfidence,
+        dateConfidence: extracted.dateConfidence,
+        confidenceByField: extracted.confidenceByField,
+        ocrProvider: ocrOutput.provider,
         extractedAt,
         appliedFields,
         error: null,
       };
     } catch (err) {
-      // Step 8: On error set ai:status = 'failed', ai:error = message
-      const errorMessage =
-        err instanceof Error ? err.message : 'Unknown error during extraction';
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error during extraction';
       this.logger.error(`extractDocument failed for ${documentId}: ${errorMessage}`);
 
       try {
         await this.upsertMeta(documentId, AI_KEYS.STATUS, 'failed');
         await this.upsertMeta(documentId, AI_KEYS.ERROR, errorMessage);
       } catch (metaErr) {
-        this.logger.error(
-          `Failed to write error metadata: ${(metaErr as Error).message}`,
-        );
+        this.logger.error(`Failed to write error metadata: ${(metaErr as Error).message}`);
       }
 
-      return {
-        status: 'failed',
-        documentType: null,
-        title: null,
-        issuer: null,
-        counterparty: null,
-        contractNumber: null,
-        policyNumber: null,
-        certificateNumber: null,
-        referenceNumber: null,
-        issueDate: null,
-        effectiveDate: null,
-        expiryDate: null,
-        renewalDueDate: null,
-        summary: null,
-        keyPoints: [],
-        suggestedTags: [],
-        suggestedFolder: null,
-        riskFlags: [],
-        overallConfidence: 0,
-        dateConfidence: 0,
-        extractedAt: null,
-        appliedFields: [],
-        error: errorMessage,
-      };
+      return this.buildFailedResult(errorMessage);
     }
   }
 
@@ -536,9 +407,7 @@ Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nEx
 
     if (metaRows.length === 0) return null;
 
-    const meta = new Map<string, string>(
-      metaRows.map((r) => [r.key, r.value]),
-    );
+    const meta = new Map<string, string>(metaRows.map((r) => [r.key, r.value]));
 
     const status = (meta.get(AI_KEYS.STATUS) ?? 'none') as AiExtractionResult['status'];
 
@@ -548,9 +417,15 @@ Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nEx
       try {
         const parsed = JSON.parse(raw);
         return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        return [];
-      }
+      } catch { return []; }
+    };
+
+    const parseConfidenceByField = (): ConfidenceByField => {
+      const raw = meta.get(AI_KEYS.CONFIDENCE_BY_FIELD);
+      if (!raw) return emptyConfidenceByField();
+      try {
+        return JSON.parse(raw) as ConfidenceByField;
+      } catch { return emptyConfidenceByField(); }
     };
 
     return {
@@ -563,18 +438,10 @@ Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nEx
       policyNumber: meta.get(AI_KEYS.POLICY_NUMBER) || null,
       certificateNumber: meta.get(AI_KEYS.CERTIFICATE_NUMBER) || null,
       referenceNumber: meta.get(AI_KEYS.REFERENCE_NUMBER) || null,
-      issueDate: isValidDate(meta.get(AI_KEYS.ISSUE_DATE))
-        ? (meta.get(AI_KEYS.ISSUE_DATE) as string)
-        : null,
-      effectiveDate: isValidDate(meta.get(AI_KEYS.EFFECTIVE_DATE))
-        ? (meta.get(AI_KEYS.EFFECTIVE_DATE) as string)
-        : null,
-      expiryDate: isValidDate(meta.get(AI_KEYS.EXPIRY_DATE))
-        ? (meta.get(AI_KEYS.EXPIRY_DATE) as string)
-        : null,
-      renewalDueDate: isValidDate(meta.get(AI_KEYS.RENEWAL_DATE))
-        ? (meta.get(AI_KEYS.RENEWAL_DATE) as string)
-        : null,
+      issueDate: isValidDate(meta.get(AI_KEYS.ISSUE_DATE)) ? (meta.get(AI_KEYS.ISSUE_DATE) as string) : null,
+      effectiveDate: isValidDate(meta.get(AI_KEYS.EFFECTIVE_DATE)) ? (meta.get(AI_KEYS.EFFECTIVE_DATE) as string) : null,
+      expiryDate: isValidDate(meta.get(AI_KEYS.EXPIRY_DATE)) ? (meta.get(AI_KEYS.EXPIRY_DATE) as string) : null,
+      renewalDueDate: isValidDate(meta.get(AI_KEYS.RENEWAL_DATE)) ? (meta.get(AI_KEYS.RENEWAL_DATE) as string) : null,
       summary: meta.get(AI_KEYS.SUMMARY) || null,
       keyPoints: parseJsonArray(AI_KEYS.KEY_POINTS),
       suggestedTags: parseJsonArray(AI_KEYS.SUGGESTED_TAGS),
@@ -582,6 +449,8 @@ Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nEx
       riskFlags: parseJsonArray(AI_KEYS.RISK_FLAGS),
       overallConfidence: safeNumber(meta.get(AI_KEYS.OVERALL_CONFIDENCE), 0),
       dateConfidence: safeNumber(meta.get(AI_KEYS.DATE_CONFIDENCE), 0),
+      confidenceByField: parseConfidenceByField(),
+      ocrProvider: meta.get(AI_KEYS.OCR_PROVIDER) || null,
       extractedAt: meta.get(AI_KEYS.EXTRACTED_AT) || null,
       appliedFields: parseJsonArray(AI_KEYS.APPLIED_FIELDS),
       error: meta.get(AI_KEYS.ERROR) || null,
@@ -598,7 +467,6 @@ Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nEx
     const applied: string[] = [];
     const skipped: string[] = [];
 
-    // Fetch extraction metadata and current document
     const [metaRows, doc] = await Promise.all([
       this.prisma.documentMetadata.findMany({
         where: { documentId, key: { startsWith: 'ai:' } },
@@ -608,19 +476,11 @@ Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nEx
 
     if (!doc) throw new NotFoundException(`Document ${documentId} not found`);
 
-    const meta = new Map<string, string>(
-      metaRows.map((r) => [r.key, r.value]),
-    );
+    const meta = new Map<string, string>(metaRows.map((r) => [r.key, r.value]));
 
     const appliedMeta = meta.get(AI_KEYS.APPLIED_FIELDS);
     const existingApplied: string[] = appliedMeta
-      ? (() => {
-          try {
-            return JSON.parse(appliedMeta) as string[];
-          } catch {
-            return [];
-          }
-        })()
+      ? (() => { try { return JSON.parse(appliedMeta) as string[]; } catch { return []; } })()
       : [];
 
     const updateData: {
@@ -677,9 +537,10 @@ Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nEx
 
       if (field === 'suggestedTags') {
         const rawTags = meta.get(AI_KEYS.SUGGESTED_TAGS);
-        const tagNames: string[] = rawTags ? (() => { try { return JSON.parse(rawTags) as string[]; } catch { return []; } })() : [];
+        const tagNames: string[] = rawTags
+          ? (() => { try { return JSON.parse(rawTags) as string[]; } catch { return []; } })()
+          : [];
         if (tagNames.length > 0) {
-          // Find-or-create each tag in the workspace, then add to document
           const tagIds: string[] = [];
           for (const name of tagNames) {
             const trimmed = name.trim();
@@ -694,7 +555,6 @@ Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nEx
             }
             tagIds.push(tag.id);
           }
-          // Merge with existing tags (don't replace — add)
           await this.prisma.documentTagMapping.createMany({
             data: tagIds.map((tagId) => ({ documentId, tagId })),
             skipDuplicates: true,
@@ -709,7 +569,6 @@ Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nEx
       if (field === 'suggestedFolder') {
         const folderName = meta.get(AI_KEYS.SUGGESTED_FOLDER)?.trim();
         if (folderName) {
-          // Find-or-create folder in the workspace
           let folder = await this.prisma.folder.findFirst({
             where: { workspaceId: doc.workspaceId, name: { equals: folderName, mode: 'insensitive' }, parentFolderId: null },
           });
@@ -727,21 +586,12 @@ Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nEx
       }
     }
 
-    // Apply document field updates
     if (Object.keys(updateData).length > 0) {
-      await this.prisma.document.update({
-        where: { id: documentId },
-        data: updateData,
-      });
+      await this.prisma.document.update({ where: { id: documentId }, data: updateData });
     }
 
-    // Update ai:appliedFields — merge applied fields (avoid duplicates)
     const newApplied = Array.from(new Set([...existingApplied, ...applied]));
-    await this.upsertMeta(
-      documentId,
-      AI_KEYS.APPLIED_FIELDS,
-      JSON.stringify(newApplied),
-    );
+    await this.upsertMeta(documentId, AI_KEYS.APPLIED_FIELDS, JSON.stringify(newApplied));
 
     return { applied, skipped };
   }
@@ -759,42 +609,55 @@ Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nEx
     recommendations: string[];
     urgentItems: string[];
   }> {
-    // Get workspace-appropriate client (handles platform limits + BYOK)
     const routing = await this.getClientForWorkspace(workspaceId);
     if (!routing) {
       return {
-        summary:
-          'AI report insights unavailable — ANTHROPIC_API_KEY not configured.',
+        summary: 'AI insights unavailable — no AI provider configured for this workspace.',
         insights: [],
         recommendations: [],
         urgentItems: [],
       };
     }
 
-    const prompt = `You are a document management analyst for workspace ${workspaceId}. Here is the actual data. Analyze it and generate insights.
+    const dataJson = JSON.stringify(data, null, 2).slice(0, 4000);
+
+    const prompt = `You are a document management analyst. You have been given ACTUAL data from the system database. Generate concrete, specific insights based on the numbers and information provided.
 
 Report type: ${reportType}
+Workspace ID: ${workspaceId}
 
-Actual data:
-${JSON.stringify(data, null, 2).slice(0, 3000)}
+ACTUAL DATA (this is real data from the database — do not claim you lack access):
+${dataJson}
 
-Based on the numbers, dates, and information above, generate concrete, actionable insights. Do not ask for more data — you have everything you need.
+IMPORTANT: You have all the data you need above. Do not say "I don't have access" or "you would need to check". Generate insights based only on what is provided.
 
-Respond with ONLY this JSON structure. No text before or after. No markdown. No code blocks.
+Generate a JSON response with specific insights referencing the actual numbers, dates, and items in the data above.
+
 {
-  "summary": "2-3 sentence executive summary based on the actual numbers provided",
-  "insights": ["specific insight referencing actual data points", "insight 2", "insight 3"],
-  "recommendations": ["actionable recommendation 1", "recommendation 2"],
-  "urgentItems": ["item needing immediate attention based on data", "urgent item 2"]
-}`;
+  "summary": "2-3 sentence executive summary using actual numbers from the data",
+  "insights": [
+    "Specific insight referencing actual data points (e.g. '5 documents expire within 30 days')",
+    "Another specific insight with real numbers",
+    "Third insight"
+  ],
+  "recommendations": [
+    "Actionable recommendation based on the data",
+    "Second recommendation"
+  ],
+  "urgentItems": [
+    "Specific urgent item from the data (e.g. document name expiring on date)",
+    "Another urgent item if applicable"
+  ]
+}
+
+Respond with ONLY the JSON object. No markdown, no code blocks.`;
 
     const message = await routing.client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 768,
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }],
     });
 
-    // Track token usage for platform AI
     if (routing.isplatform) {
       const totalTokens = message.usage.input_tokens + message.usage.output_tokens;
       await this.trackUsage(workspaceId, totalTokens);
@@ -815,10 +678,7 @@ Respond with ONLY this JSON structure. No text before or after. No markdown. No 
       }
 
       return {
-        summary:
-          typeof parsed.summary === 'string'
-            ? parsed.summary
-            : 'Report generated.',
+        summary: typeof parsed.summary === 'string' ? parsed.summary : 'Report generated.',
         insights: safeStringArray(parsed.insights),
         recommendations: safeStringArray(parsed.recommendations),
         urgentItems: safeStringArray(parsed.urgentItems),
@@ -846,10 +706,7 @@ Respond with ONLY this JSON structure. No text before or after. No markdown. No 
     if (!this.client) {
       return {
         summary: 'AI analysis unavailable — ANTHROPIC_API_KEY not configured.',
-        keyPoints: [],
-        suggestedTags: [],
-        documentType: 'unknown',
-        confidence: 0,
+        keyPoints: [], suggestedTags: [], documentType: 'unknown', confidence: 0,
       };
     }
 
@@ -891,10 +748,7 @@ Respond with this exact JSON structure:
     } catch {
       return {
         summary: content.text.slice(0, 200),
-        keyPoints: [],
-        suggestedTags: [],
-        documentType: 'unknown',
-        confidence: 0.3,
+        keyPoints: [], suggestedTags: [], documentType: 'unknown', confidence: 0.3,
       };
     }
   }
@@ -902,10 +756,7 @@ Respond with this exact JSON structure:
   async searchAssistant(
     workspaceId: string,
     question: string,
-  ): Promise<{
-    answer: string;
-    relevantDocuments: { id: string; name: string }[];
-  }> {
+  ): Promise<{ answer: string; relevantDocuments: { id: string; name: string }[] }> {
     if (!this.client) {
       return {
         answer: 'AI search unavailable — ANTHROPIC_API_KEY not configured.',
@@ -923,10 +774,7 @@ Respond with this exact JSON structure:
     const docContext = docs
       .filter((d) => d.searchContent?.extractedText)
       .slice(0, 10)
-      .map(
-        (d) =>
-          `[${d.id}] ${d.name}: ${d.searchContent!.extractedText.slice(0, 500)}`,
-      )
+      .map((d) => `[${d.id}] ${d.name}: ${d.searchContent!.extractedText.slice(0, 500)}`)
       .join('\n\n');
 
     const prompt = `You are a document search assistant. Answer the user's question based on the documents below.
@@ -967,17 +815,11 @@ Respond with JSON:
   async generateReport(
     type: string,
     data: Record<string, unknown>,
-  ): Promise<{
-    title: string;
-    summary: string;
-    insights: string[];
-    recommendations: string[];
-  }> {
+  ): Promise<{ title: string; summary: string; insights: string[]; recommendations: string[] }> {
     if (!this.client) {
       return {
         title: `${type} Report`,
-        summary:
-          'AI report generation unavailable — ANTHROPIC_API_KEY not configured.',
+        summary: 'AI report generation unavailable — ANTHROPIC_API_KEY not configured.',
         insights: [],
         recommendations: [],
       };
@@ -1025,28 +867,26 @@ Respond with JSON:
   private buildDisabledResult(): AiExtractionResult {
     return {
       status: 'disabled',
-      documentType: null,
-      title: null,
-      issuer: null,
-      counterparty: null,
-      contractNumber: null,
-      policyNumber: null,
-      certificateNumber: null,
-      referenceNumber: null,
-      issueDate: null,
-      effectiveDate: null,
-      expiryDate: null,
-      renewalDueDate: null,
-      summary: null,
-      keyPoints: [],
-      suggestedTags: [],
-      suggestedFolder: null,
-      riskFlags: [],
-      overallConfidence: 0,
-      dateConfidence: 0,
-      extractedAt: null,
-      appliedFields: [],
-      error: null,
+      documentType: null, title: null, issuer: null, counterparty: null,
+      contractNumber: null, policyNumber: null, certificateNumber: null, referenceNumber: null,
+      issueDate: null, effectiveDate: null, expiryDate: null, renewalDueDate: null,
+      summary: null, keyPoints: [], suggestedTags: [], suggestedFolder: null,
+      riskFlags: [], overallConfidence: 0, dateConfidence: 0,
+      confidenceByField: emptyConfidenceByField(), ocrProvider: null,
+      extractedAt: null, appliedFields: [], error: null,
+    };
+  }
+
+  private buildFailedResult(error: string): AiExtractionResult {
+    return {
+      status: 'failed',
+      documentType: null, title: null, issuer: null, counterparty: null,
+      contractNumber: null, policyNumber: null, certificateNumber: null, referenceNumber: null,
+      issueDate: null, effectiveDate: null, expiryDate: null, renewalDueDate: null,
+      summary: null, keyPoints: [], suggestedTags: [], suggestedFolder: null,
+      riskFlags: [], overallConfidence: 0, dateConfidence: 0,
+      confidenceByField: emptyConfidenceByField(), ocrProvider: null,
+      extractedAt: null, appliedFields: [], error,
     };
   }
 }

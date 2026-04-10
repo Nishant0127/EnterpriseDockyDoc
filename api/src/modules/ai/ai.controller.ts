@@ -12,7 +12,9 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IsArray, IsNotEmpty, IsString } from 'class-validator';
 import { AiService } from './ai.service';
-import { DevAuthGuard } from '../../common/guards/dev-auth.guard';
+import { ReportsService } from '../reports/reports.service';
+import { DevAuthGuard, type DevUserPayload } from '../../common/guards/dev-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 // ------------------------------------------------------------------ //
 // DTOs
@@ -38,7 +40,8 @@ class AiApplyFieldsDto {
 }
 
 class AiReportInsightsDto {
-  data!: Record<string, unknown>;
+  // Optional additional context from frontend (merged with DB-fetched data)
+  data?: Record<string, unknown>;
 }
 
 // ------------------------------------------------------------------ //
@@ -48,7 +51,10 @@ class AiReportInsightsDto {
 @Controller('ai')
 @UseGuards(DevAuthGuard)
 export class AiController {
-  constructor(private readonly aiService: AiService) {}
+  constructor(
+    private readonly aiService: AiService,
+    private readonly reportsService: ReportsService,
+  ) {}
 
   // ---------------------------------------------------------------- //
   // Existing endpoints
@@ -83,7 +89,7 @@ export class AiController {
   }
 
   // ---------------------------------------------------------------- //
-  // New extraction endpoints
+  // Extraction endpoints
   // ---------------------------------------------------------------- //
 
   @Post('documents/:id/extract')
@@ -108,10 +114,7 @@ export class AiController {
   @Post('documents/:id/apply')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Apply specific AI-extracted fields to the document' })
-  @ApiResponse({
-    status: 200,
-    description: 'Lists applied and skipped fields',
-  })
+  @ApiResponse({ status: 200, description: 'Lists applied and skipped fields' })
   applyFields(
     @Param('id') id: string,
     @Body() dto: AiApplyFieldsDto,
@@ -119,22 +122,56 @@ export class AiController {
     return this.aiService.applyFields(id, dto.fields ?? []);
   }
 
+  // ---------------------------------------------------------------- //
+  // Report Insights — pre-fetches real DB data per report type
+  // ---------------------------------------------------------------- //
+
   @Post('reports/insights')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Generate AI insights from pre-fetched report data' })
-  @ApiResponse({
-    status: 200,
-    description: 'Summary, insights, recommendations, and urgent items',
-  })
-  reportInsights(
+  @ApiOperation({ summary: 'Generate AI insights from live report data' })
+  @ApiResponse({ status: 200, description: 'Summary, insights, recommendations, urgent items' })
+  async reportInsights(
     @Query('workspaceId') workspaceId: string,
     @Query('reportType') reportType: string,
     @Body() dto: AiReportInsightsDto,
+    @CurrentUser() user: DevUserPayload,
   ) {
-    return this.aiService.generateReportInsights(
-      workspaceId,
-      reportType,
-      dto.data ?? {},
-    );
+    // Pre-fetch real data from the database based on report type
+    // This guarantees AI always has accurate, up-to-date information
+    let freshData: Record<string, unknown> = {};
+
+    try {
+      switch (reportType) {
+        case 'expiring_documents':
+          freshData = await this.reportsService.getExpiringDocuments(workspaceId, user, 90) as unknown as Record<string, unknown>;
+          break;
+        case 'document_activity':
+          freshData = await this.reportsService.getDocumentActivity(workspaceId, user, 30) as unknown as Record<string, unknown>;
+          break;
+        case 'storage_usage':
+          freshData = await this.reportsService.getStorageUsage(workspaceId, user) as unknown as Record<string, unknown>;
+          break;
+        case 'member_activity':
+          freshData = await this.reportsService.getMemberActivity(workspaceId, user, 30) as unknown as Record<string, unknown>;
+          break;
+        case 'tag_coverage':
+          freshData = await this.reportsService.getTagCoverage(workspaceId, user) as unknown as Record<string, unknown>;
+          break;
+        case 'compliance_exposure':
+          freshData = await this.reportsService.getComplianceExposure(workspaceId, user) as unknown as Record<string, unknown>;
+          break;
+        default:
+          // Unknown report type — use whatever the frontend sent
+          freshData = dto.data ?? {};
+      }
+    } catch {
+      // Fall back to frontend-provided data if DB fetch fails
+      freshData = dto.data ?? {};
+    }
+
+    // Merge frontend data with fresh DB data (DB data takes precedence)
+    const mergedData = { ...dto.data, ...freshData };
+
+    return this.aiService.generateReportInsights(workspaceId, reportType, mergedData);
   }
 }
