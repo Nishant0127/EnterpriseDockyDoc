@@ -218,9 +218,18 @@ export default function DocumentsPage() {
   }, [searchQuery, activeWorkspace?.workspaceId]);
 
   // Open upload modal automatically when arriving via ?upload=1 (e.g. dashboard Quick Action)
+  // Also restore trash/folder context when returning from document detail (?view=trash, ?folder=ID)
   useEffect(() => {
-    if (searchParams.get('upload') === '1' && canEdit && !loading) {
+    if (loading) return;
+    if (searchParams.get('upload') === '1' && canEdit) {
       setShowUpload(true);
+    }
+    if (searchParams.get('view') === 'trash') {
+      setShowTrash(true);
+      setSelectedFolderId(null);
+    } else if (searchParams.get('folder')) {
+      setShowTrash(false);
+      setSelectedFolderId(searchParams.get('folder'));
     }
   // Only run once after initial load
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -634,7 +643,7 @@ export default function DocumentsPage() {
                   {displayDocs.map((doc) => (
                     <DocumentRow
                       key={doc.id}
-                      doc={doc}
+                      doc={doc as DocumentListItem}
                       snippet={(doc as SearchResult).snippet}
                       deleting={deletingDocId === doc.id}
                       canEdit={canEdit}
@@ -646,6 +655,13 @@ export default function DocumentsPage() {
                         setDragDocId(null);
                         setDragOverFolderId(null);
                       } : undefined}
+                      fromParam={
+                        showTrash
+                          ? 'trash'
+                          : selectedFolderId
+                          ? `folder:${selectedFolderId}`
+                          : 'all'
+                      }
                     />
                   ))}
                 </tbody>
@@ -1240,6 +1256,7 @@ function DocumentRow({
   dragging,
   onDragStart,
   onDragEnd,
+  fromParam,
 }: {
   doc: DocumentListItem;
   snippet?: string;
@@ -1250,6 +1267,7 @@ function DocumentRow({
   dragging?: boolean;
   onDragStart?: (id: string) => void;
   onDragEnd?: () => void;
+  fromParam?: string;
 }) {
   const badge = STATUS_BADGE[doc.status];
   const expiry = expiryBadge(doc.expiryDate);
@@ -1273,7 +1291,7 @@ function DocumentRow({
       {/* Name */}
       <td className="px-4 py-3">
         <Link
-          href={`/documents/${doc.id}`}
+          href={`/documents/${doc.id}${fromParam ? `?from=${fromParam}` : ''}`}
           className="flex items-center gap-2.5 group"
         >
           <span className="text-lg leading-none">{fileIcon(doc.fileType)}</span>

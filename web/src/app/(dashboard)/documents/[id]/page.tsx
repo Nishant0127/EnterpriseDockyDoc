@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { fetchDocument, downloadDocument, downloadDocumentVersion, deleteDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders, fetchTags, createTag, setDocumentTags, setDocumentMetadata } from '@/lib/documents';
 import { apiFetch } from '@/lib/api';
 import { fetchDocumentActivity, describeAuditLog, auditActionCategory, formatAuditAction } from '@/lib/audit';
@@ -111,7 +111,23 @@ interface AiExtractionResult {
 export default function DocumentDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const toast = useToast();
+
+  // Derive the return URL from the ?from= param set by the documents list
+  const fromParam = searchParams.get('from') ?? 'all';
+  const backHref =
+    fromParam === 'trash'
+      ? '/documents?view=trash'
+      : fromParam.startsWith('folder:')
+      ? `/documents?folder=${fromParam.slice('folder:'.length)}`
+      : '/documents';
+  const backLabel =
+    fromParam === 'trash'
+      ? 'Trash'
+      : fromParam.startsWith('folder:')
+      ? 'Folder'
+      : 'Documents';
   const { activeWorkspace } = useUser();
   const role = activeWorkspace?.role ?? 'VIEWER';
   const canEdit = role !== 'VIEWER';
@@ -133,16 +149,40 @@ export default function DocumentDetailPage() {
   const [aiExtracting, setAiExtracting] = useState(false);
   const [aiApplying, setAiApplying] = useState(false);
   const [previewVersion, setPreviewVersion] = useState<number | null>(null);
+  const aiPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function loadAiExtraction() {
+  function stopAiPolling() {
+    if (aiPollRef.current !== null) {
+      clearInterval(aiPollRef.current);
+      aiPollRef.current = null;
+    }
+  }
+
+  const loadAiExtraction = useCallback(async () => {
     if (!params.id) return;
     try {
       const result = await apiFetch<AiExtractionResult>(`/api/v1/ai/documents/${params.id}/extraction`);
       setAiExtraction(result);
+      // Stop polling once extraction is no longer running
+      if (result.status !== 'running') {
+        stopAiPolling();
+      }
     } catch {
       // silently ignore — extraction may not exist yet
     }
+  }, [params.id]);
+
+  function startAiPolling() {
+    stopAiPolling();
+    aiPollRef.current = setInterval(() => {
+      void loadAiExtraction();
+    }, 3000);
   }
+
+  // Clean up poll on unmount
+  useEffect(() => {
+    return () => stopAiPolling();
+  }, []);
 
   async function handleAiExtract() {
     if (!params.id) return;
@@ -150,6 +190,10 @@ export default function DocumentDetailPage() {
     try {
       const result = await apiFetch<AiExtractionResult>(`/api/v1/ai/documents/${params.id}/extract`, { method: 'POST' });
       setAiExtraction(result);
+      // If extraction kicked off async processing, start polling until done
+      if (result.status === 'running') {
+        startAiPolling();
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'AI extraction failed.');
     } finally {
@@ -195,10 +239,19 @@ export default function DocumentDetailPage() {
       .then((d) => {
         setDoc(d);
         setPreviewVersion((prev: number | null) => prev ?? d.currentVersionNumber);
-        void loadAiExtraction();
+        // Load extraction and auto-poll if already running
+        apiFetch<AiExtractionResult>(`/api/v1/ai/documents/${params.id}/extraction`)
+          .then((result) => {
+            setAiExtraction(result);
+            if (result.status === 'running') {
+              startAiPolling();
+            }
+          })
+          .catch(() => {});
       })
       .catch(() => setError('Document not found or API unavailable.'))
       .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id]);
 
   async function handleDelete() {
@@ -223,7 +276,8 @@ export default function DocumentDetailPage() {
     try {
       await shredDocument(doc.id);
       toast.success(`"${doc.name}" has been permanently deleted.`);
-      router.push('/documents');
+      // Return to original context (trash, folder, or all documents)
+      router.push(backHref);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Shred failed.');
       setShredding(false);
@@ -288,8 +342,8 @@ export default function DocumentDetailPage() {
   if (error || !doc) {
     return (
       <div>
-        <Link href="/documents" className="text-sm text-brand-600 hover:underline mb-4 inline-block">
-          ← Back to Documents
+        <Link href={backHref} className="text-sm text-brand-600 hover:underline mb-4 inline-block">
+          ← Back to {backLabel}
         </Link>
         <div className="rounded-xl bg-red-50 border border-red-200 px-5 py-4 text-sm text-red-700">
           {error ?? 'Document not found.'}
@@ -304,13 +358,13 @@ export default function DocumentDetailPage() {
     <div className="max-w-7xl">
       {/* Back navigation */}
       <Link
-        href="/documents"
+        href={backHref}
         className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 transition-colors mb-5"
       >
         <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
           <polyline points="15 18 9 12 15 6" />
         </svg>
-        Documents
+        {backLabel}
       </Link>
 
       {/* Document header */}
@@ -646,8 +700,20 @@ export default function DocumentDetailPage() {
             extraction={aiExtraction}
             extracting={aiExtracting}
             applying={aiApplying}
+            workspaceId={doc.workspace.id}
+            currentFolderId={doc.folder?.id ?? null}
             onExtract={() => void handleAiExtract()}
             onApply={(fields) => void handleAiApply(fields)}
+            onMoveToFolder={async (folderId) => {
+              try {
+                await updateDocument(doc.id, { folderId });
+                reload();
+                const folder = folderId ? `folder` : 'root';
+                toast.success(folderId ? `Moved to folder.` : 'Removed from folder.');
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : 'Failed to move document.');
+              }
+            }}
           />
         </div>
       </div>
@@ -1940,18 +2006,45 @@ function AiExtractionSection({
   extraction,
   extracting,
   applying,
+  workspaceId,
+  currentFolderId,
   onExtract,
   onApply,
+  onMoveToFolder,
 }: {
   documentId: string;
   extraction: AiExtractionResult | null;
   extracting: boolean;
   applying: boolean;
+  workspaceId: string;
+  currentFolderId: string | null;
   onExtract: () => void;
   onApply: (fields: string[]) => void;
+  onMoveToFolder: (folderId: string | null) => Promise<void>;
 }) {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [confirmApplyAll, setConfirmApplyAll] = useState(false);
+  const [folders, setFolders] = useState<FolderListItem[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined); // undefined = not yet initialized
+  const [movingFolder, setMovingFolder] = useState(false);
+
+  // Fetch workspace folders once on mount (for the folder suggestion dropdown)
+  useEffect(() => {
+    fetchFolders(workspaceId)
+      .then((fs) => {
+        setFolders(fs);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  // When extraction arrives, pre-select the folder that best matches the suggestion
+  useEffect(() => {
+    if (!extraction?.suggestedFolder || folders.length === 0 || selectedFolderId !== undefined) return;
+    const lower = extraction.suggestedFolder.toLowerCase();
+    const match = folders.find((f) => f.name.toLowerCase() === lower);
+    setSelectedFolderId(match?.id ?? null);
+  }, [extraction?.suggestedFolder, folders, selectedFolderId]);
 
   const status = extraction?.status ?? 'none';
 
@@ -1962,11 +2055,8 @@ function AiExtractionSection({
   const unappliedDates = (['expiryDate', 'renewalDueDate'] as const).filter(
     (f) => extraction?.[f] != null && !isAppliedByAnyone(f),
   );
-  const hasUnappliedFolder = !!extraction?.suggestedFolder && !isAppliedByAnyone('suggestedFolder');
-  const allUnapplied = [
-    ...unappliedDates,
-    ...(hasUnappliedFolder ? ['suggestedFolder'] : []),
-  ];
+  // Folder is now handled via the interactive dropdown — exclude from "Apply All"
+  const allUnapplied = [...unappliedDates];
 
   function ExtractButton({ label = 'Extract with AI' }: { label?: string }) {
     return (
@@ -2152,28 +2242,59 @@ function AiExtractionSection({
             );
           })()}
 
-          {/* ④ Suggested folder */}
+          {/* ④ Suggested folder — interactive dropdown */}
           {extraction.suggestedFolder && (
-            <div className="flex items-center gap-2">
-              <span className="w-24 flex-shrink-0 text-[10px] font-medium text-gray-400 uppercase tracking-wide">Folder</span>
-              <span className="flex-1 inline-flex items-center gap-1 text-xs text-gray-700 bg-gray-100 px-2 py-0.5 rounded truncate">
-                <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" className="flex-shrink-0">
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" className="text-gray-400 flex-shrink-0">
                   <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
                 </svg>
-                {extraction.suggestedFolder}
-              </span>
-              <ConfidenceBadge confidence={(extraction.confidenceByField ?? {}).suggestedFolder ?? 0} />
-              {!isAppliedByAnyone('suggestedFolder') ? (
-                <button
-                  type="button"
-                  onClick={() => onApply(['suggestedFolder'])}
-                  disabled={applying}
-                  className="px-2 py-0.5 rounded text-[10px] font-semibold bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 disabled:opacity-50 transition-colors flex-shrink-0"
-                >
-                  Move
-                </button>
+                <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">AI Folder Suggestion</span>
+                <ConfidenceBadge confidence={(extraction.confidenceByField ?? {}).suggestedFolder ?? 0} />
+              </div>
+              {isAppliedByAnyone('suggestedFolder') ? (
+                <div className="flex items-center gap-1.5">
+                  <span className={cn('text-[10px] font-bold', userApplied.includes('suggestedFolder') ? 'text-blue-600' : 'text-green-600')}>✓</span>
+                  <span className="text-xs text-gray-500">Folder applied</span>
+                </div>
               ) : (
-                <span className={cn('text-[10px] font-bold flex-shrink-0', userApplied.includes('suggestedFolder') ? 'text-blue-600' : 'text-green-600')}>✓</span>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedFolderId ?? ''}
+                    onChange={(e) => setSelectedFolderId(e.target.value || null)}
+                    className="flex-1 min-w-0 text-xs border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-brand-400"
+                  >
+                    <option value="">— No folder —</option>
+                    {folders.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                        {f.name.toLowerCase() === extraction.suggestedFolder?.toLowerCase() ? ' ★' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={movingFolder || selectedFolderId === currentFolderId}
+                    onClick={async () => {
+                      setMovingFolder(true);
+                      try {
+                        await onMoveToFolder(selectedFolderId ?? null);
+                      } finally {
+                        setMovingFolder(false);
+                      }
+                    }}
+                    title={selectedFolderId === currentFolderId ? 'Document is already in this folder' : 'Move document to selected folder'}
+                    className="flex-shrink-0 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
+                  >
+                    {movingFolder ? <SpinnerIcon size={9} /> : 'Move'}
+                  </button>
+                </div>
+              )}
+              {!isAppliedByAnyone('suggestedFolder') && extraction.suggestedFolder && (
+                <p className="text-[10px] text-gray-400 italic">
+                  AI suggested: &ldquo;{extraction.suggestedFolder}&rdquo;
+                  {folders.find((f) => f.name.toLowerCase() === extraction.suggestedFolder?.toLowerCase()) ? '' : ' (no exact match in workspace)'}
+                </p>
               )}
             </div>
           )}

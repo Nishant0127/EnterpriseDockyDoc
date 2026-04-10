@@ -60,4 +60,9 @@ export class UpdateWorkspaceMemberDto {
   @IsString()
   @IsNotEmpty()
   lastName?: string;
+
+  @ApiPropertyOptional({ description: 'Update the member\'s email address (global profile)' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 }

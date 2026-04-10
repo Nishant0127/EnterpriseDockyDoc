@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/Toast';
 import type { WorkspaceType } from '@/types';
 
 // ------------------------------------------------------------------ //
@@ -27,6 +28,7 @@ const TYPE_BADGE: Record<WorkspaceType, string> = {
  */
 export default function WorkspaceSwitcher() {
   const { user, activeWorkspace, switchWorkspace } = useUser();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -57,8 +59,10 @@ export default function WorkspaceSwitcher() {
     setSwitching(workspaceId);
     try {
       await switchWorkspace(workspaceId);
+      const ws = user?.workspaces.find((w) => w.workspaceId === workspaceId);
+      toast.success(ws ? `Switched to "${ws.workspaceName}".` : 'Workspace switched.');
     } catch {
-      // Error is already reverted in context — could show a toast here later
+      toast.error('Failed to switch workspace. Please try again.');
     } finally {
       setSwitching(null);
       setOpen(false);

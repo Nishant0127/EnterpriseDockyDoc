@@ -74,8 +74,10 @@ export default function WorkspacesPage() {
             <div
               key={ws.id}
               className={cn(
-                'flex items-center justify-between rounded-xl border p-4 transition-colors',
-                isActive ? 'border-brand-200 bg-brand-50' : 'border-gray-200 bg-white',
+                'flex items-center justify-between rounded-xl border p-4 transition-all',
+                isActive
+                  ? 'border-brand-400 bg-brand-50 shadow-sm ring-1 ring-brand-200'
+                  : 'border-gray-200 bg-white hover:border-gray-300',
               )}
             >
               {/* Left */}
@@ -130,11 +132,26 @@ export default function WorkspacesPage() {
                 className={cn(
                   'flex-shrink-0 ml-4 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
                   isActive
-                    ? 'bg-brand-100 text-brand-700 cursor-default'
+                    ? 'bg-brand-600 text-white cursor-default'
                     : 'border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50',
                 )}
               >
-                {switching === ws.id ? 'Switching…' : isActive ? 'Current' : 'Switch'}
+                {switching === ws.id ? (
+                  <span className="flex items-center gap-1.5">
+                    <svg className="animate-spin" width="11" height="11" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Switching…
+                  </span>
+                ) : isActive ? (
+                  <span className="flex items-center gap-1">
+                    <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    Current
+                  </span>
+                ) : 'Switch'}
               </button>
             </div>
           );

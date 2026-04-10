@@ -239,6 +239,7 @@ function EditRoleModal({
 }) {
   const [firstName, setFirstName] = useState(member.firstName);
   const [lastName, setLastName] = useState(member.lastName);
+  const [email, setEmail] = useState(member.email);
   const [role, setRole] = useState<WorkspaceUserRole>(member.role);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -247,14 +248,19 @@ function EditRoleModal({
     () =>
       role !== member.role ||
       firstName.trim() !== member.firstName ||
-      lastName.trim() !== member.lastName,
-    [role, firstName, lastName, member.role, member.firstName, member.lastName],
+      lastName.trim() !== member.lastName ||
+      email.trim() !== member.email,
+    [role, firstName, lastName, email, member.role, member.firstName, member.lastName, member.email],
   );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!firstName.trim() || !lastName.trim()) {
       setError('First and last name are required.');
+      return;
+    }
+    if (!email.trim()) {
+      setError('Email is required.');
       return;
     }
     if (!isDirty) { onClose(); return; }
@@ -266,6 +272,7 @@ function EditRoleModal({
         role,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
+        ...(email.trim() !== member.email && { email: email.trim() }),
       });
       onSaved();
     } catch (err) {
@@ -281,11 +288,6 @@ function EditRoleModal({
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-gray-900">Edit Member</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
-        </div>
-
-        <div className="mb-4 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Email (read-only)</p>
-          <p className="text-sm text-gray-700">{member.email}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -310,6 +312,19 @@ function EditRoleModal({
                 className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              placeholder="member@example.com"
+            />
+            <p className="text-[10px] text-gray-400 mt-0.5">Changing email affects this user globally across all workspaces.</p>
           </div>
 
           <div>

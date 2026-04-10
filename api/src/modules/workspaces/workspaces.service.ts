@@ -359,12 +359,13 @@ export class WorkspacesService {
     });
 
     // Update user profile fields if provided (global — applies across all workspaces)
-    if (dto.firstName !== undefined || dto.lastName !== undefined) {
+    if (dto.firstName !== undefined || dto.lastName !== undefined || dto.email !== undefined) {
       await this.prisma.user.update({
         where: { id: membership.userId },
         data: {
           ...(dto.firstName !== undefined && { firstName: dto.firstName }),
           ...(dto.lastName !== undefined && { lastName: dto.lastName }),
+          ...(dto.email !== undefined && { email: dto.email }),
         },
       });
     }

@@ -297,7 +297,7 @@ export function addWorkspaceMember(
 export function updateWorkspaceMember(
   workspaceId: string,
   memberId: string,
-  params: { role?: string; status?: string; firstName?: string; lastName?: string },
+  params: { role?: string; status?: string; firstName?: string; lastName?: string; email?: string },
 ): Promise<WorkspaceMember> {
   return apiFetch<WorkspaceMember>(
     `/api/v1/workspaces/${workspaceId}/members/${memberId}`,
