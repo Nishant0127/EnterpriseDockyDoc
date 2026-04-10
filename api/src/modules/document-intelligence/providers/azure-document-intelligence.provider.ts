@@ -53,12 +53,13 @@ export class AzureDocumentIntelligenceProvider implements OcrProvider {
     try {
       const endpoint = this.endpoint!.replace(/\/$/, '');
 
-      // Support both Document Intelligence (2024+) and Form Recognizer (older) API paths
-      // Try the newer path first; fall back to legacy if it returns 404/400
-      const analyzeUrl = `${endpoint}/documentintelligence/documentModels/prebuilt-read:analyze?api-version=2024-11-30`;
-      const legacyAnalyzeUrl = `${endpoint}/formrecognizer/documentModels/prebuilt-read:analyze?api-version=2023-07-31`;
+      // Support both Document Intelligence (2024+) and Form Recognizer (older) API paths.
+      // prebuilt-layout extracts tables, key-value pairs and structured layout (better than prebuilt-read).
+      // Try newer path first; fall back to legacy on 404/400.
+      const analyzeUrl = `${endpoint}/documentintelligence/documentModels/prebuilt-layout:analyze?api-version=2024-11-30`;
+      const legacyAnalyzeUrl = `${endpoint}/formrecognizer/documentModels/prebuilt-layout:analyze?api-version=2023-07-31`;
 
-      this.logger.log(`[Azure DI] Submitting "${fileName}" (${mimeType}, ${buffer.length} bytes)`);
+      this.logger.log(`[Azure DI] Submitting "${fileName}" (${mimeType}, ${buffer.length} bytes) via prebuilt-layout`);
 
       // Submit document for analysis
       let submitRes = await fetch(analyzeUrl, {

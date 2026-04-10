@@ -13,6 +13,7 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IsArray, IsNotEmpty, IsString } from 'class-validator';
 import { AiService } from './ai.service';
 import { ReportsService } from '../reports/reports.service';
+import { OcrService } from '../document-intelligence/ocr.service';
 import { DevAuthGuard, type DevUserPayload } from '../../common/guards/dev-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -54,6 +55,7 @@ export class AiController {
   constructor(
     private readonly aiService: AiService,
     private readonly reportsService: ReportsService,
+    private readonly ocrService: OcrService,
   ) {}
 
   // ---------------------------------------------------------------- //
@@ -64,6 +66,20 @@ export class AiController {
   @ApiOperation({ summary: 'Check AI availability' })
   status() {
     return { enabled: this.aiService.isEnabled };
+  }
+
+  @Get('ocr-status')
+  @ApiOperation({ summary: 'Diagnostic: list OCR provider availability' })
+  ocrStatus() {
+    const providers = this.ocrService.getProviderStatus();
+    const anyAvailable = providers.some((p) => p.available);
+    return {
+      anyAvailable,
+      providers,
+      recommendation: anyAvailable
+        ? null
+        : 'No OCR providers are configured. Set AZURE_DOCUMENT_INTELLIGENCE_KEY, MISTRAL_API_KEY, or OPENAI_API_KEY in your environment.',
+    };
   }
 
   @Get('documents/:id/analyze')

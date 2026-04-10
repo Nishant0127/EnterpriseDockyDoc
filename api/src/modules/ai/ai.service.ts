@@ -112,6 +112,7 @@ function emptyConfidenceByField(): ConfidenceByField {
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly client: Anthropic | null;
+  private readonly openaiApiKey: string | null;
 
   constructor(
     private readonly config: ConfigService,
@@ -122,13 +123,19 @@ export class AiService {
   ) {
     const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
     this.client = apiKey ? new Anthropic({ apiKey }) : null;
-    if (!this.client) {
-      this.logger.warn('ANTHROPIC_API_KEY not set — AI features disabled');
+
+    this.openaiApiKey = this.config.get<string>('OPENAI_API_KEY') ?? null;
+
+    if (!this.client && !this.openaiApiKey) {
+      this.logger.warn('Neither ANTHROPIC_API_KEY nor OPENAI_API_KEY is set — AI features disabled');
+    } else if (!this.client) {
+      this.logger.log('ANTHROPIC_API_KEY not set — using OpenAI GPT-4o for extraction');
     }
   }
 
   get isEnabled(): boolean {
-    return this.client !== null;
+    // Enabled when either Anthropic or OpenAI is configured
+    return this.client !== null || !!this.openaiApiKey;
   }
 
   // ---------------------------------------------------------------- //
@@ -149,8 +156,9 @@ export class AiService {
   // ---------------------------------------------------------------- //
   // Workspace-aware client routing
   // ---------------------------------------------------------------- //
+
   private async getClientForWorkspace(workspaceId: string): Promise<{
-    client: Anthropic;
+    client: Anthropic | null;
     isplatform: boolean;
     workspaceId: string;
   } | null> {
@@ -175,7 +183,12 @@ export class AiService {
           `AI usage limit reached for this workspace (${workspace.aiUsageTokens}/${limit} tokens used on ${workspace.plan} plan). Upgrade to Pro or Enterprise for higher limits.`,
         );
       }
-      if (!this.client) return null;
+      // Allow pipeline to proceed when OpenAI is configured even without Anthropic key.
+      // ExtractionService will use GPT-4o in that case; client override stays null.
+      if (!this.client && !this.openaiApiKey) {
+        this.logger.warn(`[extractDocument] No AI client available for workspace ${workspaceId} — both ANTHROPIC_API_KEY and OPENAI_API_KEY are missing`);
+        return null;
+      }
       return { client: this.client, isplatform: true, workspaceId };
     } else {
       if (!workspace.aiApiKeyEncrypted) {
@@ -273,7 +286,7 @@ export class AiService {
       const extracted = await this.extractionService.extract(
         ocrOutput,
         doc.name,
-        routing.client, // Pass workspace-specific client for BYOK support
+        routing.client ?? undefined, // Pass workspace-specific Anthropic client for BYOK; null → let ExtractionService use OpenAI
       );
 
       if (!extracted) {

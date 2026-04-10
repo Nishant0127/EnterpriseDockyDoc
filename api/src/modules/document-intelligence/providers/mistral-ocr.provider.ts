@@ -43,6 +43,16 @@ export class MistralOcrProvider implements OcrProvider {
   ): Promise<OcrOutput | null> {
     if (!this.isAvailable()) return null;
 
+    // Mistral OCR sends the file as base64 in a JSON body.
+    // Large files produce oversized payloads; skip above 10 MB.
+    const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+    if (buffer.length > MAX_BYTES) {
+      this.logger.warn(
+        `Mistral OCR skipped "${fileName}" — file is ${(buffer.length / 1024 / 1024).toFixed(1)} MB (limit 10 MB)`,
+      );
+      return null;
+    }
+
     const start = Date.now();
 
     try {

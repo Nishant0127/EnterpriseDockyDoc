@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AzureDocumentIntelligenceProvider } from './providers/azure-document-intelligence.provider';
 import { MistralOcrProvider } from './providers/mistral-ocr.provider';
+import { Gpt4oVisionOcrProvider } from './providers/gpt4o-vision-ocr.provider';
 import { ClaudeNativeProvider } from './providers/claude-native.provider';
 import type { OcrOutput, OcrProvider } from './ocr-provider.interface';
 
@@ -10,7 +11,8 @@ import type { OcrOutput, OcrProvider } from './ocr-provider.interface';
  * Priority:
  *   1. Azure Document Intelligence (highest accuracy, layout-aware, key-value pairs)
  *   2. Mistral OCR (good accuracy, markdown-aware)
- *   3. Claude Native (always available fallback: Document API for PDF, Vision for images)
+ *   3. GPT-4o Vision (image fallback — high quality, uses existing OpenAI key)
+ *   4. Claude Native (fallback: Document API for PDF, Vision for images)
  *
  * Each provider is only tried if it's available and can handle the MIME type.
  */
@@ -22,9 +24,10 @@ export class OcrService {
   constructor(
     private readonly azure: AzureDocumentIntelligenceProvider,
     private readonly mistral: MistralOcrProvider,
+    private readonly gpt4oVision: Gpt4oVisionOcrProvider,
     private readonly claudeNative: ClaudeNativeProvider,
   ) {
-    this.providers = [azure, mistral, claudeNative];
+    this.providers = [azure, mistral, gpt4oVision, claudeNative];
 
     this.logger.log(
       `OCR providers available: ${this.providers
