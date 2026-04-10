@@ -212,14 +212,23 @@ export class AiService {
 
       const text = doc.searchContent?.extractedText ?? '';
 
-      // Detect if this is an image with no useful extracted text — use Vision API
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const storageKey: string = (doc as any).storageKey ?? '';
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const mimeType: string = (doc as any).mimeType ?? '';
-      const isImage = mimeType.startsWith('image/') && ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mimeType);
       const hasUsefulText = text.trim().length > 100;
-      const useVision = isImage && !hasUsefulText && storageKey;
+
+      // Image types that Claude Vision supports natively
+      const VISION_IMAGE_TYPES = new Set([
+        'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      ]);
+      const isVisionImage = VISION_IMAGE_TYPES.has(mimeType);
+      const isScannedPdf = mimeType === 'application/pdf' && !hasUsefulText;
+
+      // Use file-based extraction when text layer is absent
+      const useVisionImage = isVisionImage && !hasUsefulText && !!storageKey;
+      const useDocumentPdf = isScannedPdf && !!storageKey;
+      const needsFile = useVisionImage || useDocumentPdf;
 
       const EXTRACTION_JSON_SCHEMA = `Return exactly this JSON structure (use null for missing fields, YYYY-MM-DD for all dates):
 {
@@ -251,30 +260,41 @@ You are a document metadata extraction engine. Extract structured information fr
 Extract ANY expiration/expiry/valid until/valid through/expires on date as expiryDate in YYYY-MM-DD format. This is the most important field.
 
 Document name: ${doc.name}
-Document type hint: ${doc.fileType}${!useVision ? `\nContent (first 4000 chars):\n${text.slice(0, 4000)}` : ''}
+Document type hint: ${doc.fileType}${!needsFile ? `\nContent (first 4000 chars):\n${text.slice(0, 4000)}` : ''}
 
 ${EXTRACTION_JSON_SCHEMA}`;
 
       let messageContent: Anthropic.MessageParam['content'] = promptText;
 
-      if (useVision) {
-        // Read the image file from local storage and send via Vision API
+      if (needsFile) {
         const filePath = path.join(process.cwd(), 'uploads', storageKey);
         try {
-          const imageBase64 = fs.readFileSync(filePath).toString('base64');
-          messageContent = [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-                data: imageBase64,
+          const fileBase64 = fs.readFileSync(filePath).toString('base64');
+
+          if (useVisionImage) {
+            // Send image via Vision API
+            const safeMediaType = VISION_IMAGE_TYPES.has(mimeType)
+              ? (mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp')
+              : 'image/jpeg';
+            messageContent = [
+              {
+                type: 'image',
+                source: { type: 'base64', media_type: safeMediaType, data: fileBase64 },
               },
-            },
-            { type: 'text', text: promptText },
-          ];
+              { type: 'text', text: promptText },
+            ];
+          } else if (useDocumentPdf) {
+            // Send scanned PDF via Document API (Claude reads PDF natively)
+            messageContent = [
+              {
+                type: 'document',
+                source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 },
+              } as Anthropic.DocumentBlockParam,
+              { type: 'text', text: promptText },
+            ];
+          }
         } catch {
-          this.logger.warn(`Vision fallback: could not read ${filePath} — falling back to text-only`);
+          this.logger.warn(`File read failed for ${storageKey} — falling back to text-only extraction`);
         }
       }
 

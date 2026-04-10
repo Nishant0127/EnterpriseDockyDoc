@@ -6,16 +6,13 @@ import * as path from 'path';
  *
  * Supported formats:
  *   .txt / .csv / .md / .json / .xml / text/* MIME — decoded as UTF-8
- *   .pdf  — via pdf-parse (text-layer only; no OCR for scanned PDFs)
+ *   .pdf  — via pdf-parse (text-layer only; scanned PDFs → AI Vision handled separately)
  *   .docx — via mammoth
+ *   .doc  — via mammoth (best-effort; older binary format)
+ *   images — return null (AI Vision handled in extractDocument)
  *
  * Unsupported formats return null.
  * All errors are caught and logged — extraction failures never propagate.
- *
- * Future extension points:
- *   - Add .xlsx extraction (xlsx / exceljs)
- *   - Add OCR (tesseract.js) for scanned PDFs/images
- *   - Add semantic chunking before vector indexing
  */
 @Injectable()
 export class TextExtractorService {
@@ -46,13 +43,19 @@ export class TextExtractorService {
         return await this.extractPdf(buffer);
       }
 
-      // ---- DOCX ------------------------------------------------- //
+      // ---- DOCX / DOC ------------------------------------------- //
       if (
         ext === '.docx' ||
-        mimeType ===
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        ext === '.doc' ||
+        mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        mimeType === 'application/msword'
       ) {
-        return await this.extractDocx(buffer);
+        return await this.extractWord(buffer);
+      }
+
+      // ---- Images — handled by AI Vision, no text extraction ---- //
+      if (mimeType.startsWith('image/')) {
+        return null;
       }
 
       // Unsupported type
@@ -79,8 +82,9 @@ export class TextExtractorService {
     }
   }
 
-  private async extractDocx(buffer: Buffer): Promise<string | null> {
+  private async extractWord(buffer: Buffer): Promise<string | null> {
     try {
+      // mammoth handles both .docx and .doc (best-effort for legacy .doc)
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const mammoth = require('mammoth') as {
         extractRawText: (opts: { buffer: Buffer }) => Promise<{ value: string }>;
@@ -88,7 +92,7 @@ export class TextExtractorService {
       const result = await mammoth.extractRawText({ buffer });
       return result.value.trim() || null;
     } catch (err) {
-      this.logger.warn(`DOCX extraction error: ${(err as Error).message}`);
+      this.logger.warn(`Word extraction error: ${(err as Error).message}`);
       return null;
     }
   }
