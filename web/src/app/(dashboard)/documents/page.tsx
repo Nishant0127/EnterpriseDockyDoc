@@ -137,6 +137,11 @@ export default function DocumentsPage() {
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
+  // Internal document-to-folder drag state
+  const [dragDocId, setDragDocId] = useState<string | null>(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const dragLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -223,6 +228,8 @@ export default function DocumentsPage() {
 
   // Drag-and-drop handlers
   function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+    // Only show file-upload overlay for OS file drops, not internal document moves
+    if (!e.dataTransfer.types.includes('Files')) return;
     if (!canEdit) return;
     e.preventDefault();
     setDragOver(true);
@@ -243,6 +250,43 @@ export default function DocumentsPage() {
     if (file) {
       setDropFile(file);
       setShowUpload(true);
+    }
+    // Clean up internal doc drag state if dropped on table area (not a folder)
+    setDragDocId(null);
+    setDragOverFolderId(null);
+  }
+
+  // Folder drag-enter/leave with debounce to prevent flash when moving between folder rows
+  function handleFolderDragEnter(folderId: string) {
+    if (dragLeaveTimer.current) clearTimeout(dragLeaveTimer.current);
+    setDragOverFolderId(folderId);
+  }
+
+  function handleFolderDragLeave() {
+    dragLeaveTimer.current = setTimeout(() => setDragOverFolderId(null), 60);
+  }
+
+  async function handleMoveDoc(docId: string, targetFolderId: string | null) {
+    // Find current folder to avoid no-op moves
+    const doc = documents.find((d) => d.id === docId);
+    const currentFolderId = (doc as DocumentListItem | undefined)?.folder?.id ?? null;
+    if (currentFolderId === targetFolderId) {
+      setDragDocId(null);
+      setDragOverFolderId(null);
+      return;
+    }
+    try {
+      await updateDocument(docId, { folderId: targetFolderId });
+      setDragDocId(null);
+      setDragOverFolderId(null);
+      refreshDocuments();
+      refreshFolders();
+      const folder = folders.find((f) => f.id === targetFolderId);
+      toast.success(folder ? `Moved to "${folder.name}".` : 'Removed from folder.');
+    } catch (err) {
+      setDragDocId(null);
+      setDragOverFolderId(null);
+      toast.error(err instanceof Error ? err.message : 'Move failed.');
     }
   }
 
@@ -438,13 +482,26 @@ export default function DocumentsPage() {
               )}
             </div>
             <nav className="p-1.5 space-y-0.5">
-              {/* All documents */}
+              {/* All documents — also accepts doc drops to remove from folder */}
               <FolderRow
                 label="All documents"
                 count={!showTrash ? documents.length : undefined}
                 active={selectedFolderId === null && !showTrash}
                 onClick={() => handleSelectFolder(null)}
                 icon="🗂"
+                dragHighlight={dragOverFolderId === '__root__' && dragDocId !== null}
+                onDragOver={(e) => {
+                  if (!e.dataTransfer.types.includes('application/dockydoc-docid')) return;
+                  e.preventDefault();
+                  handleFolderDragEnter('__root__');
+                }}
+                onDragLeave={handleFolderDragLeave}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const docId = e.dataTransfer.getData('application/dockydoc-docid');
+                  if (docId) void handleMoveDoc(docId, null);
+                  else { setDragDocId(null); setDragOverFolderId(null); }
+                }}
               />
               {/* Folder tree */}
               {loading ? (
@@ -461,6 +518,10 @@ export default function DocumentsPage() {
                     onDelete={handleDeleteFolder}
                     onCreateSubfolder={(parentId) => { setNewFolderParentId(parentId); setShowNewFolder(true); }}
                     depth={0}
+                    dragOverFolderId={dragOverFolderId}
+                    onDropDoc={handleMoveDoc}
+                    onDragFolderEnter={handleFolderDragEnter}
+                    onDragFolderLeave={handleFolderDragLeave}
                   />
                 ))
               )}
@@ -579,6 +640,12 @@ export default function DocumentsPage() {
                       canEdit={canEdit}
                       onDelete={() => handleDeleteDoc(doc as DocumentListItem)}
                       onRestore={showTrash ? () => { void handleRestoreDoc(doc as DocumentListItem); } : undefined}
+                      dragging={dragDocId === doc.id}
+                      onDragStart={!showTrash && !isSearching && canEdit ? setDragDocId : undefined}
+                      onDragEnd={!showTrash && !isSearching && canEdit ? () => {
+                        setDragDocId(null);
+                        setDragOverFolderId(null);
+                      } : undefined}
                     />
                   ))}
                 </tbody>
@@ -992,6 +1059,10 @@ function FolderRow({
   onClick,
   icon = '📁',
   indent = 0,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  dragHighlight = false,
 }: {
   label: string;
   count?: number;
@@ -999,14 +1070,23 @@ function FolderRow({
   onClick: () => void;
   icon?: string;
   indent?: number;
+  onDragOver?: (e: React.DragEvent<HTMLButtonElement>) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: React.DragEvent<HTMLButtonElement>) => void;
+  dragHighlight?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       className={cn(
         'w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-left transition-colors text-sm',
-        active
+        dragHighlight
+          ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-400 ring-inset'
+          : active
           ? 'bg-brand-50 text-brand-700 font-medium'
           : 'text-gray-600 hover:bg-gray-100',
       )}
@@ -1014,7 +1094,10 @@ function FolderRow({
     >
       <span className="text-base leading-none">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
-      {count !== undefined && (
+      {dragHighlight && (
+        <span className="text-[10px] font-semibold text-brand-500">Drop</span>
+      )}
+      {!dragHighlight && count !== undefined && (
         <span className="text-xs text-gray-400 tabular-nums">{count}</span>
       )}
     </button>
@@ -1030,6 +1113,10 @@ function FolderTreeNode({
   onDelete,
   onCreateSubfolder,
   depth,
+  dragOverFolderId,
+  onDropDoc,
+  onDragFolderEnter,
+  onDragFolderLeave,
 }: {
   folder: FolderListItem;
   childMap: Map<string, FolderListItem[]>;
@@ -1039,6 +1126,10 @@ function FolderTreeNode({
   onDelete: (f: FolderListItem) => void;
   onCreateSubfolder: (parentId: string) => void;
   depth: number;
+  dragOverFolderId: string | null;
+  onDropDoc: (docId: string, folderId: string) => void;
+  onDragFolderEnter: (folderId: string) => void;
+  onDragFolderLeave: () => void;
 }) {
   const children = childMap.get(folder.id) ?? [];
   const [hovered, setHovered] = useState(false);
@@ -1056,6 +1147,18 @@ function FolderTreeNode({
           active={selectedId === folder.id}
           onClick={() => onSelect(folder.id)}
           indent={depth}
+          dragHighlight={dragOverFolderId === folder.id}
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes('application/dockydoc-docid')) return;
+            e.preventDefault();
+            onDragFolderEnter(folder.id);
+          }}
+          onDragLeave={onDragFolderLeave}
+          onDrop={(e) => {
+            e.preventDefault();
+            const docId = e.dataTransfer.getData('application/dockydoc-docid');
+            if (docId) onDropDoc(docId, folder.id);
+          }}
         />
         {hovered && (
           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 bg-white rounded shadow-sm border border-gray-100 px-1 py-0.5 z-10">
@@ -1104,6 +1207,10 @@ function FolderTreeNode({
           onDelete={onDelete}
           onCreateSubfolder={onCreateSubfolder}
           depth={depth + 1}
+          dragOverFolderId={dragOverFolderId}
+          onDropDoc={onDropDoc}
+          onDragFolderEnter={onDragFolderEnter}
+          onDragFolderLeave={onDragFolderLeave}
         />
       ))}
     </>
@@ -1130,6 +1237,9 @@ function DocumentRow({
   canEdit,
   onDelete,
   onRestore,
+  dragging,
+  onDragStart,
+  onDragEnd,
 }: {
   doc: DocumentListItem;
   snippet?: string;
@@ -1137,6 +1247,9 @@ function DocumentRow({
   canEdit?: boolean;
   onDelete: () => void;
   onRestore?: () => void;
+  dragging?: boolean;
+  onDragStart?: (id: string) => void;
+  onDragEnd?: () => void;
 }) {
   const badge = STATUS_BADGE[doc.status];
   const expiry = expiryBadge(doc.expiryDate);
@@ -1147,7 +1260,16 @@ function DocumentRow({
   });
 
   return (
-    <tr className="hover:bg-gray-50 transition-colors group">
+    <tr
+      className={cn('hover:bg-gray-50 transition-colors group', dragging && 'opacity-40 bg-gray-50')}
+      draggable={!!onDragStart}
+      onDragStart={onDragStart ? (e) => {
+        e.dataTransfer.setData('application/dockydoc-docid', doc.id);
+        e.dataTransfer.effectAllowed = 'move';
+        onDragStart(doc.id);
+      } : undefined}
+      onDragEnd={onDragEnd}
+    >
       {/* Name */}
       <td className="px-4 py-3">
         <Link

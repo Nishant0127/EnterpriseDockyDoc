@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import {
   addWorkspaceMember,
@@ -243,17 +243,21 @@ function EditRoleModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isDirty = useMemo(
+    () =>
+      role !== member.role ||
+      firstName.trim() !== member.firstName ||
+      lastName.trim() !== member.lastName,
+    [role, firstName, lastName, member.role, member.firstName, member.lastName],
+  );
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!firstName.trim() || !lastName.trim()) {
       setError('First and last name are required.');
       return;
     }
-    const unchanged =
-      role === member.role &&
-      firstName.trim() === member.firstName &&
-      lastName.trim() === member.lastName;
-    if (unchanged) { onClose(); return; }
+    if (!isDirty) { onClose(); return; }
 
     setSubmitting(true);
     setError(null);
@@ -279,7 +283,10 @@ function EditRoleModal({
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
 
-        <p className="text-xs text-gray-400 mb-4">{member.email}</p>
+        <div className="mb-4 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Email (read-only)</p>
+          <p className="text-sm text-gray-700">{member.email}</p>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -327,7 +334,12 @@ function EditRoleModal({
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
               Cancel
             </button>
-            <button type="submit" disabled={submitting} className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50">
+            <button
+              type="submit"
+              disabled={submitting || !isDirty}
+              title={!isDirty ? 'No changes to save' : undefined}
+              className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+            >
               {submitting ? 'Saving…' : 'Save'}
             </button>
           </div>

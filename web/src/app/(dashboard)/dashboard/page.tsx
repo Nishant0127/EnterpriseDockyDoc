@@ -293,21 +293,31 @@ function KpiCard({
   href?: string;
 }) {
   const content = (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
+    <div className={cn(
+      'bg-white rounded-xl border border-gray-200 p-5 transition-all duration-150',
+      href && 'group-hover:shadow-md group-hover:-translate-y-0.5 group-hover:border-gray-300',
+    )}>
       <div className="flex items-start justify-between mb-3">
         <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
-        <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', COLOR_ICON[color])}>
+        <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center transition-transform duration-150', COLOR_ICON[color], href && 'group-hover:scale-110')}>
           <span className={COLOR_VALUE[color]}>{icon}</span>
         </div>
       </div>
       <p className={cn('text-3xl font-bold', COLOR_VALUE[color])}>{value}</p>
-      <p className="mt-1 text-xs text-gray-400">{sub}</p>
+      <div className="mt-1 flex items-center justify-between">
+        <p className="text-xs text-gray-400">{sub}</p>
+        {href && (
+          <span className="text-[10px] text-gray-300 group-hover:text-brand-400 transition-colors font-medium">
+            View →
+          </span>
+        )}
+      </div>
     </div>
   );
 
   if (href) {
     return (
-      <Link href={href} className="block hover:shadow-sm transition-shadow rounded-xl">
+      <Link href={href} className="block group rounded-xl">
         {content}
       </Link>
     );

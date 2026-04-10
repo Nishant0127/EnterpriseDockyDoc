@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import { apiFetch } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/Toast';
 import type { WorkspaceListItem, WorkspaceType } from '@/types';
 
 const TYPE_BADGE: Record<WorkspaceType, { label: string; class: string }> = {
@@ -14,6 +15,7 @@ const TYPE_BADGE: Record<WorkspaceType, { label: string; class: string }> = {
 
 export default function WorkspacesPage() {
   const { user, activeWorkspace, switchWorkspace, isLoading: userLoading } = useUser();
+  const toast = useToast();
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState<string | null>(null);
@@ -31,8 +33,10 @@ export default function WorkspacesPage() {
     setSwitching(id);
     try {
       await switchWorkspace(id);
+      const ws = workspaces.find((w) => w.id === id);
+      toast.success(ws ? `Switched to "${ws.name}".` : 'Workspace switched.');
     } catch {
-      // ignore — WorkspaceSwitcher already shows errors
+      toast.error('Failed to switch workspace. Please try again.');
     } finally {
       setSwitching(null);
     }
