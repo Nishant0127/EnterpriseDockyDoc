@@ -4,12 +4,11 @@ import { DocumentsService } from './documents.service';
 import { SearchModule } from '../search/search.module';
 import { AiModule } from '../ai/ai.module';
 import { DevAuthGuard } from '../../common/guards/dev-auth.guard';
-import { AiService } from '../ai/ai.service';
 
 @Module({
   imports: [SearchModule, AiModule],
   controllers: [DocumentsController],
-  providers: [DocumentsService, DevAuthGuard, AiService],
+  providers: [DocumentsService, DevAuthGuard],
   exports: [DocumentsService],
 })
 export class DocumentsModule {}
