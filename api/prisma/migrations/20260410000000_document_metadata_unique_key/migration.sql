@@ -1,5 +1,5 @@
--- DropIndex
+-- DropIndex (idempotent)
 DROP INDEX IF EXISTS "document_metadata_documentId_key_idx";
 
--- CreateIndex
-CREATE UNIQUE INDEX "document_metadata_documentId_key_key" ON "document_metadata"("documentId", "key");
+-- CreateIndex (idempotent)
+CREATE UNIQUE INDEX IF NOT EXISTS "document_metadata_documentId_key_key" ON "document_metadata"("documentId", "key");
