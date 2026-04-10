@@ -821,8 +821,16 @@ function TagsSection({
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selected, setSelected] = useState<string[]>(doc.tags.map((t: { id: string }) => t.id));
   const [saving, setSaving] = useState(false);
-  // Local per-session rejected suggestions (disappear without backend call)
-  const [rejected, setRejected] = useState<Set<string>>(new Set());
+  // Rejected suggestions — initialized from persisted metadata (key: ai:rejectedTags), updated optimistically
+  const [rejected, setRejected] = useState<Set<string>>(() => {
+    const entry = doc.metadata.find((m) => m.key === 'ai:rejectedTags');
+    if (!entry) return new Set<string>();
+    try {
+      const parsed = JSON.parse(entry.value);
+      if (Array.isArray(parsed)) return new Set<string>(parsed.map((s: unknown) => String(s).toLowerCase()));
+    } catch {}
+    return new Set<string>();
+  });
   const [acceptingTag, setAcceptingTag] = useState<string | null>(null);
 
   const aiAppliedFields = [
@@ -867,8 +875,22 @@ function TagsSection({
     }
   }
 
-  function rejectSuggestion(tagName: string) {
-    setRejected((prev: Set<string>) => new Set([...prev, tagName.toLowerCase()]));
+  async function rejectSuggestion(tagName: string) {
+    const lower = tagName.toLowerCase();
+    const newRejected = new Set([...rejected, lower]);
+    setRejected(newRejected); // optimistic UI update
+    // Persist silently — reuse existing metadata, replace ai:rejectedTags entry
+    try {
+      const otherMeta = doc.metadata
+        .filter((m) => m.key !== 'ai:rejectedTags')
+        .map((m) => ({ key: m.key, value: m.value }));
+      await setDocumentMetadata(doc.id, [
+        ...otherMeta,
+        { key: 'ai:rejectedTags', value: JSON.stringify([...newRejected]) },
+      ]);
+    } catch {
+      // Silent fail — UI already updated optimistically; tag stays hidden for this session
+    }
   }
 
   function startEdit() {
@@ -920,7 +942,7 @@ function TagsSection({
       >
         {/* Applied tags */}
         {doc.tags.length === 0 && visibleSuggestions.length === 0 && (
-          <p className="text-xs text-gray-400">No tags assigned.</p>
+          <p className="text-xs text-gray-400 italic">No tags applied yet.</p>
         )}
         {doc.tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
@@ -980,7 +1002,7 @@ function TagsSection({
                         onClick={() => void acceptSuggestion(name)}
                         disabled={isAccepting}
                         title={`Accept "${name}"`}
-                        className="inline-flex items-center justify-center w-5 h-[22px] rounded-r-full border border-l-0 border-dashed bg-green-50 text-green-600 hover:bg-green-500 hover:text-white hover:border-green-500 hover:border-solid transition-all disabled:opacity-50"
+                        className="inline-flex items-center justify-center w-5 h-[22px] rounded-r-full border border-l-0 border-dashed bg-green-50 text-green-600 hover:bg-green-500 hover:text-white hover:border-green-500 hover:border-solid active:scale-90 transition-all duration-150 disabled:opacity-50"
                         style={{ borderColor: color }}
                       >
                         {isAccepting
@@ -993,9 +1015,9 @@ function TagsSection({
                     {canEdit && (
                       <button
                         type="button"
-                        onClick={() => rejectSuggestion(name)}
+                        onClick={() => void rejectSuggestion(name)}
                         title={`Dismiss "${name}"`}
-                        className="inline-flex items-center justify-center w-5 h-[22px] rounded-full border border-dashed bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-500 hover:border-red-300 hover:border-solid transition-all ml-0.5"
+                        className="inline-flex items-center justify-center w-5 h-[22px] rounded-full border border-dashed bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-500 hover:border-red-300 hover:border-solid active:scale-90 transition-all duration-150 ml-0.5"
                         style={{ borderColor: '#d1d5db' }}
                       >
                         <svg width="9" height="9" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" /></svg>
@@ -1173,7 +1195,7 @@ function MetadataSection({
         }
       >
         {doc.metadata.length === 0 ? (
-          <p className="text-sm text-gray-400">No metadata entries.</p>
+          <p className="text-xs text-gray-400 italic">No metadata added.</p>
         ) : (
           <dl className="space-y-2">
             {doc.metadata.map((m) => (
@@ -1352,6 +1374,9 @@ function ExpiryReminderSection({
 
   return (
     <Section title="Expiry &amp; Reminders">
+      {!expiryDate && !renewalDueDate && !isReminderEnabled && (
+        <p className="text-xs text-gray-400 italic mb-4">No expiry dates or reminders configured.</p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1.5">
@@ -1776,7 +1801,7 @@ function DocumentActivitySection({ documentId }: { documentId: string }) {
           ))}
         </div>
       ) : logs.length === 0 ? (
-        <p className="text-sm text-gray-400">No activity recorded yet.</p>
+        <p className="text-xs text-gray-400 italic">No activity yet.</p>
       ) : (
         <div className="space-y-3">
           {logs.map((log) => {
@@ -1844,9 +1869,15 @@ function SpinnerIcon({ size = 14 }: { size?: number }) {
 }
 
 function confidenceClass(c: number): string {
-  if (c >= 0.8) return 'bg-green-50 text-green-700 border-green-200';
+  if (c >= 0.85) return 'bg-green-50 text-green-700 border-green-200';
   if (c >= 0.6) return 'bg-yellow-50 text-yellow-700 border-yellow-200';
   return 'bg-red-50 text-red-700 border-red-200';
+}
+
+function confidenceLabel(c: number): string {
+  if (c >= 0.85) return 'High';
+  if (c >= 0.6) return 'Medium';
+  return 'Low';
 }
 
 function ConfidenceBadge({ confidence }: { confidence: number }) {
@@ -1858,11 +1889,10 @@ function ConfidenceBadge({ confidence }: { confidence: number }) {
       : confidence >= 0.6
       ? 'bg-yellow-50 text-yellow-600 border-yellow-200'
       : 'bg-gray-50 text-gray-500 border-gray-200';
-  const label =
-    confidence >= 0.85 ? 'High' : confidence >= 0.6 ? 'Med' : 'Low';
+  const label = confidence >= 0.85 ? 'High' : confidence >= 0.6 ? 'Medium' : 'Low';
   return (
     <span className={cn('inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium border', cls)}>
-      {label} {pct}%
+      {label} ({pct}%)
     </span>
   );
 }
@@ -1898,6 +1928,7 @@ function AiExtractionSection({
   onApply: (fields: string[]) => void;
 }) {
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [confirmApplyAll, setConfirmApplyAll] = useState(false);
 
   const status = extraction?.status ?? 'none';
 
@@ -1977,7 +2008,7 @@ function AiExtractionSection({
                 </span>
               )}
               <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold border', confidenceClass(extraction.overallConfidence))}>
-                {Math.round(extraction.overallConfidence * 100)}%
+                {confidenceLabel(extraction.overallConfidence)} ({Math.round(extraction.overallConfidence * 100)}%)
               </span>
               <button
                 type="button"
@@ -2018,7 +2049,7 @@ function AiExtractionSection({
                   </svg>
                   <span className="text-[10px] font-bold text-brand-700 uppercase tracking-wide">Key Dates</span>
                   <span className={cn('px-1 py-0.5 rounded text-[10px] font-medium border', confidenceClass(extraction.dateConfidence))}>
-                    {Math.round(extraction.dateConfidence * 100)}%
+                    {confidenceLabel(extraction.dateConfidence)} ({Math.round(extraction.dateConfidence * 100)}%)
                   </span>
                 </div>
                 {allUnapplied.filter(f => f === 'expiryDate' || f === 'renewalDueDate').length > 0 && (
@@ -2026,7 +2057,7 @@ function AiExtractionSection({
                     type="button"
                     onClick={() => onApply(allUnapplied.filter(f => f === 'expiryDate' || f === 'renewalDueDate'))}
                     disabled={applying}
-                    className="text-[10px] font-semibold text-brand-600 hover:text-brand-800 hover:underline disabled:opacity-50 transition-colors"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-brand-200 text-[10px] font-semibold text-brand-600 bg-white hover:bg-brand-50 hover:border-brand-300 transition-colors disabled:opacity-50"
                   >
                     {applying ? <SpinnerIcon size={9} /> : 'Apply all dates'}
                   </button>
@@ -2061,7 +2092,7 @@ function AiExtractionSection({
                         type="button"
                         onClick={() => onApply([key])}
                         disabled={applying}
-                        className="px-2 py-0.5 rounded text-[10px] font-semibold bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 disabled:opacity-50 transition-colors w-12 text-center flex-shrink-0"
+                        className="px-2 py-0.5 rounded text-[10px] font-semibold bg-brand-600 text-white hover:bg-brand-700 active:scale-95 active:bg-brand-800 disabled:opacity-50 transition-all duration-150 w-12 text-center flex-shrink-0"
                       >
                         {applying ? <SpinnerIcon size={9} /> : 'Apply'}
                       </button>
@@ -2177,17 +2208,40 @@ function AiExtractionSection({
             </div>
           )}
 
-          {/* Apply all button */}
+          {/* Apply all button — two-step confirm */}
           {allUnapplied.length > 0 && (
             <div className="pt-1 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => onApply(allUnapplied)}
-                disabled={applying}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
-              >
-                {applying ? <><SpinnerIcon size={12} /> Applying…</> : `Apply All (${allUnapplied.length})`}
-              </button>
+              {confirmApplyAll ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] text-gray-500">
+                    Apply {allUnapplied.length} field{allUnapplied.length > 1 ? 's' : ''}?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setConfirmApplyAll(false); onApply(allUnapplied); }}
+                    disabled={applying}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 transition-colors disabled:opacity-50"
+                  >
+                    {applying ? <SpinnerIcon size={8} /> : 'Yes, apply'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmApplyAll(false)}
+                    className="text-[10px] text-gray-400 hover:text-gray-700 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmApplyAll(true)}
+                  disabled={applying}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-brand-200 text-brand-600 bg-brand-50 text-xs font-medium hover:bg-brand-100 hover:border-brand-300 active:bg-brand-200 transition-colors disabled:opacity-50"
+                >
+                  {applying ? <><SpinnerIcon size={12} /> Applying…</> : `Apply All (${allUnapplied.length})`}
+                </button>
+              )}
             </div>
           )}
         </div>
