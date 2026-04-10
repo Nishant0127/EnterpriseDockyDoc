@@ -515,21 +515,28 @@ export default function DocumentDetailPage() {
                   className={cn(
                     'flex items-center justify-between rounded-lg px-3 py-2.5 border',
                     v.versionNumber === doc.currentVersionNumber
-                      ? 'border-brand-200 bg-brand-50'
+                      ? 'border-brand-200 border-l-2 border-l-brand-500 bg-brand-50'
                       : 'border-gray-100 bg-gray-50',
                   )}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span
-                      className={cn(
-                        'text-xs font-bold tabular-nums px-2 py-0.5 rounded',
-                        v.versionNumber === doc.currentVersionNumber
-                          ? 'bg-brand-600 text-white'
-                          : 'bg-gray-200 text-gray-600',
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span
+                        className={cn(
+                          'text-xs font-bold tabular-nums px-2 py-0.5 rounded',
+                          v.versionNumber === doc.currentVersionNumber
+                            ? 'bg-brand-600 text-white'
+                            : 'bg-gray-200 text-gray-600',
+                        )}
+                      >
+                        v{v.versionNumber}
+                      </span>
+                      {v.versionNumber === doc.currentVersionNumber && (
+                        <span className="text-[9px] font-semibold text-brand-600 uppercase tracking-wide">
+                          current
+                        </span>
                       )}
-                    >
-                      v{v.versionNumber}
-                    </span>
+                    </div>
                     <div className="min-w-0">
                       <p className="text-xs font-medium text-gray-700 truncate">
                         {v.uploadedBy.firstName} {v.uploadedBy.lastName}
@@ -550,9 +557,9 @@ export default function DocumentDetailPage() {
                       onClick={() => setPreviewVersion(v.versionNumber)}
                       title={`Preview v${v.versionNumber}`}
                       className={cn(
-                        'p-1.5 rounded-md text-xs font-medium transition-colors',
+                        'p-1.5 rounded-md transition-colors',
                         v.versionNumber === previewVersion
-                          ? 'bg-brand-50 text-brand-600'
+                          ? 'bg-brand-600 text-white'
                           : 'text-gray-400 hover:text-brand-600 hover:bg-brand-50',
                       )}
                     >
@@ -638,9 +645,9 @@ export default function DocumentDetailPage() {
           <InfoRow label="Created" value={formatDate(doc.createdAt)} />
           <InfoRow label="Last updated" value={formatDate(doc.updatedAt)} />
           {doc.description && (
-            <div className="pt-3 mt-1 border-t border-gray-100">
-              <p className="text-xs text-gray-500 mb-1">Description</p>
-              <p className="text-sm text-gray-700 leading-relaxed">{doc.description}</p>
+            <div className="pt-2 mt-1 border-t border-gray-50">
+              <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-1">Description</p>
+              <p className="text-xs text-gray-600 leading-relaxed">{doc.description}</p>
             </div>
           )}
         </Section>
@@ -1899,39 +1906,46 @@ function AiExtractionSection({
 
       {/* ── status: done ──────────────────────────────────────────── */}
       {status === 'done' && extraction && (
-        <div className="space-y-5">
+        <div className="space-y-4">
 
-          {/* Row 1 — Classification bar */}
-          <div className="flex flex-wrap items-center gap-2">
-            {extraction.documentType && (
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-brand-600 text-white tracking-wide">
-                {extraction.documentType.toUpperCase()}
+          {/* Header strip: doc type + confidence + re-extract */}
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {extraction.documentType && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-brand-600 text-white tracking-widest uppercase">
+                  {extraction.documentType}
+                </span>
+              )}
+              <span className={cn('px-2 py-0.5 rounded text-[10px] font-semibold border', confidenceClass(extraction.overallConfidence))}>
+                {Math.round(extraction.overallConfidence * 100)}% confidence
               </span>
+              <button
+                type="button"
+                onClick={onExtract}
+                disabled={extracting}
+                className="ml-auto text-[10px] text-brand-600 hover:underline disabled:opacity-50 flex items-center gap-1"
+              >
+                {extracting ? <><SpinnerIcon size={10} /> Re-extracting…</> : 'Re-extract'}
+              </button>
+            </div>
+            {(extraction.ocrProvider || extraction.extractedAt) && (
+              <p className="mt-1 text-[10px] text-gray-400">
+                {extraction.ocrProvider && (
+                  <span>
+                    via {extraction.ocrProvider
+                      .replace('azure-document-intelligence', 'Azure DI')
+                      .replace('mistral-ocr', 'Mistral')
+                      .replace('claude-native', 'Claude')
+                      .replace('search-content-fallback', 'text cache')}
+                  </span>
+                )}
+                {extraction.ocrProvider && extraction.extractedAt && ' · '}
+                {extraction.extractedAt && <span>{formatDateTime(extraction.extractedAt)}</span>}
+              </p>
             )}
-            <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium border', confidenceClass(extraction.overallConfidence))}>
-              {Math.round(extraction.overallConfidence * 100)}% confidence
-            </span>
-            {extraction.ocrProvider && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500 border border-gray-200">
-                via {extraction.ocrProvider.replace('azure-document-intelligence', 'Azure DI').replace('mistral-ocr', 'Mistral').replace('claude-native', 'Claude').replace('search-content-fallback', 'text cache')}
-              </span>
-            )}
-            {extraction.extractedAt && (
-              <span className="text-xs text-gray-400">
-                {formatDateTime(extraction.extractedAt)}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={onExtract}
-              disabled={extracting}
-              className="ml-auto text-xs text-brand-600 hover:underline disabled:opacity-50 flex items-center gap-1"
-            >
-              {extracting ? <><SpinnerIcon size={10} /> Re-extracting…</> : 'Re-extract'}
-            </button>
           </div>
 
-          {/* Row 2 — Key fields grid */}
+          {/* Key fields — compact scannable rows */}
           {(() => {
             const cbf = extraction.confidenceByField ?? {};
             const fields: { label: string; value: string; fieldKey: keyof ConfidenceByField }[] = [];
@@ -1945,33 +1959,33 @@ function AiExtractionSection({
             if (extraction.effectiveDate) fields.push({ label: 'Effective Date', value: formatDate(extraction.effectiveDate), fieldKey: 'effectiveDate' });
             if (fields.length === 0) return null;
             return (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+              <div className="divide-y divide-gray-50">
                 {fields.map(({ label, value, fieldKey }) => (
-                  <div key={label}>
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-                      <ConfidenceBadge confidence={cbf[fieldKey] ?? 0} />
-                    </div>
-                    <p className="text-sm text-gray-800">{value}</p>
+                  <div key={label} className="flex items-center gap-2 py-1.5">
+                    <span className="w-24 flex-shrink-0 text-[10px] font-medium text-gray-400 uppercase tracking-wide">
+                      {label}
+                    </span>
+                    <span className="flex-1 text-xs text-gray-800 truncate">{value}</span>
+                    <ConfidenceBadge confidence={cbf[fieldKey] ?? 0} />
                   </div>
                 ))}
               </div>
             );
           })()}
 
-          {/* Row 3 — Critical dates panel */}
+          {/* Critical dates panel */}
           {(extraction.expiryDate || extraction.renewalDueDate) && (
-            <div className="rounded-lg bg-brand-50 border border-brand-100 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <p className="text-xs font-semibold text-brand-700 uppercase tracking-wide">Detected Dates</p>
-                <span className={cn('px-1.5 py-0.5 rounded text-xs font-medium border', confidenceClass(extraction.dateConfidence))}>
-                  {Math.round(extraction.dateConfidence * 100)}% date confidence
+            <div className="rounded-lg bg-brand-50 border border-brand-100 p-3 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <p className="text-[10px] font-semibold text-brand-700 uppercase tracking-wide">Key Dates</p>
+                <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium border', confidenceClass(extraction.dateConfidence))}>
+                  {Math.round(extraction.dateConfidence * 100)}%
                 </span>
               </div>
               {(
                 [
-                  { key: 'expiryDate', label: 'Expiry Date', fieldKey: 'expiryDate' as keyof ConfidenceByField },
-                  { key: 'renewalDueDate', label: 'Renewal Due', fieldKey: 'renewalDueDate' as keyof ConfidenceByField },
+                  { key: 'expiryDate', label: 'Expiry', fieldKey: 'expiryDate' as keyof ConfidenceByField },
+                  { key: 'renewalDueDate', label: 'Renewal', fieldKey: 'renewalDueDate' as keyof ConfidenceByField },
                 ] as const
               ).map(({ key, label, fieldKey }) => {
                 const iso = extraction[key];
@@ -1981,37 +1995,31 @@ function AiExtractionSection({
                 const isUserApplied = userApplied.includes(key);
                 const fieldConf = (extraction.confidenceByField ?? {})[fieldKey] ?? 0;
                 return (
-                  <div key={key} className="flex flex-wrap items-center gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
-                        <ConfidenceBadge confidence={fieldConf} />
-                      </div>
-                      <p className="text-sm text-gray-800">{formatDate(iso)}</p>
-                    </div>
-                    <span className={cn('text-xs', urgencyClass(days))}>
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="w-14 flex-shrink-0 text-[10px] font-medium text-gray-500 uppercase tracking-wide">
+                      {label}
+                    </span>
+                    <span className="flex-1 text-xs text-gray-800">{formatDate(iso)}</span>
+                    <ConfidenceBadge confidence={fieldConf} />
+                    <span className={cn('text-[10px] tabular-nums', urgencyClass(days))}>
                       {days < 0
-                        ? `${Math.abs(days)}d overdue`
+                        ? `${Math.abs(days)}d over`
                         : days === 0
-                        ? 'Today'
-                        : `${days}d remaining`}
+                        ? 'today'
+                        : `${days}d`}
                     </span>
                     {isUserApplied ? (
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                        Confirmed ✓
-                      </span>
+                      <span className="text-[10px] text-blue-600 font-semibold">✓</span>
                     ) : isAutoApplied ? (
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
-                        Auto-applied ✓
-                      </span>
+                      <span className="text-[10px] text-green-600 font-semibold">✓</span>
                     ) : (
                       <button
                         type="button"
                         onClick={() => onApply([key])}
                         disabled={applying}
-                        className="px-2.5 py-0.5 rounded-lg text-xs font-medium bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
+                        className="px-2 py-0.5 rounded text-[10px] font-medium bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
                       >
-                        {applying ? <SpinnerIcon size={10} /> : 'Apply'}
+                        {applying ? <SpinnerIcon size={9} /> : 'Apply'}
                       </button>
                     )}
                   </div>
@@ -2020,58 +2028,49 @@ function AiExtractionSection({
             </div>
           )}
 
-          {/* Row 4 — Summary & key points (collapsible) */}
-          {(extraction.summary || extraction.keyPoints.length > 0) && (
-            <div className="border border-gray-100 rounded-lg overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setSummaryOpen((o) => !o)}
-                className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors"
-              >
-                <span>Summary &amp; Key Points</span>
-                <svg
-                  width="14"
-                  height="14"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  viewBox="0 0 24 24"
-                  className={cn('transition-transform', summaryOpen && 'rotate-180')}
-                >
-                  <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Suggested folder */}
+          {extraction.suggestedFolder && (
+            <div className="flex items-center gap-2">
+              <span className="w-24 flex-shrink-0 text-[10px] font-medium text-gray-400 uppercase tracking-wide">
+                Folder
+              </span>
+              <span className="flex-1 inline-flex items-center gap-1 text-xs text-gray-700 bg-gray-100 px-2 py-0.5 rounded truncate">
+                <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" className="flex-shrink-0">
+                  <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
                 </svg>
-              </button>
-              {summaryOpen && (
-                <div className="px-4 py-3 space-y-3">
-                  {extraction.summary && (
-                    <p className="text-sm text-gray-700 leading-relaxed">{extraction.summary}</p>
-                  )}
-                  {extraction.keyPoints.length > 0 && (
-                    <ul className="space-y-1.5">
-                      {extraction.keyPoints.map((pt, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                          <span className="text-brand-400 mt-0.5 flex-shrink-0">•</span>
-                          {pt}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+                {extraction.suggestedFolder}
+              </span>
+              <ConfidenceBadge confidence={(extraction.confidenceByField ?? {}).suggestedFolder ?? 0} />
+              {!isAppliedByAnyone('suggestedFolder') ? (
+                <button
+                  type="button"
+                  onClick={() => onApply(['suggestedFolder'])}
+                  disabled={applying}
+                  className="px-2 py-0.5 rounded text-[10px] font-medium bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors flex-shrink-0"
+                >
+                  Move
+                </button>
+              ) : (
+                <span className="text-[10px] font-semibold flex-shrink-0">
+                  {userApplied.includes('suggestedFolder')
+                    ? <span className="text-blue-600">✓</span>
+                    : <span className="text-green-600">✓</span>}
+                </span>
               )}
             </div>
           )}
 
-          {/* Row 5 — Risk flags */}
+          {/* Risk flags */}
           {extraction.riskFlags.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Risk Flags</p>
-              <div className="flex flex-wrap gap-2">
+            <div>
+              <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-1.5">Risk Flags</p>
+              <div className="flex flex-wrap gap-1.5">
                 {extraction.riskFlags.map((flag, i) => (
                   <span
                     key={i}
-                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-orange-50 text-orange-700 border border-orange-200"
                   >
-                    <svg width="10" height="10" fill="currentColor" viewBox="0 0 20 20" className="flex-shrink-0">
+                    <svg width="9" height="9" fill="currentColor" viewBox="0 0 20 20" className="flex-shrink-0">
                       <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                     </svg>
                     {flag}
@@ -2081,32 +2080,43 @@ function AiExtractionSection({
             </div>
           )}
 
-          {/* Suggested folder */}
-          {extraction.suggestedFolder && (
-            <div className="flex items-center justify-between py-1">
-              <div>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Suggested Folder</p>
-                  <ConfidenceBadge confidence={(extraction.confidenceByField ?? {}).suggestedFolder ?? 0} />
-                </div>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-700">
-                  <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
-                  {extraction.suggestedFolder}
-                </span>
-              </div>
-              {!isAppliedByAnyone('suggestedFolder') ? (
-                <button
-                  type="button"
-                  onClick={() => onApply(['suggestedFolder'])}
-                  disabled={applying}
-                  className="px-2.5 py-0.5 rounded-lg text-xs font-medium bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
+          {/* Summary & key points (collapsible) */}
+          {(extraction.summary || extraction.keyPoints.length > 0) && (
+            <div className="border border-gray-100 rounded-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setSummaryOpen((o) => !o)}
+                className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <span>Summary &amp; Key Points</span>
+                <svg
+                  width="13"
+                  height="13"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                  className={cn('transition-transform text-gray-400', summaryOpen && 'rotate-180')}
                 >
-                  Move Here
-                </button>
-              ) : userApplied.includes('suggestedFolder') ? (
-                <span className="text-xs text-blue-600 font-medium">✓ Confirmed</span>
-              ) : (
-                <span className="text-xs text-green-600 font-medium">✓ Applied</span>
+                  <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              {summaryOpen && (
+                <div className="px-3 py-2.5 space-y-2.5">
+                  {extraction.summary && (
+                    <p className="text-xs text-gray-600 leading-relaxed">{extraction.summary}</p>
+                  )}
+                  {extraction.keyPoints.length > 0 && (
+                    <ul className="space-y-1">
+                      {extraction.keyPoints.map((pt, i) => (
+                        <li key={i} className="flex items-start gap-1.5 text-xs text-gray-600">
+                          <span className="text-brand-400 mt-0.5 flex-shrink-0">·</span>
+                          {pt}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -2151,25 +2161,28 @@ function Section({
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
       <div className={cn('flex items-center justify-between', open ? 'mb-4' : '')}>
-        <div className="flex items-center gap-1.5">
+        <div
+          className={cn(
+            'flex items-center gap-1.5',
+            collapsible && 'cursor-pointer select-none',
+          )}
+          onClick={collapsible ? () => setOpen((o) => !o) : undefined}
+        >
           {collapsible && (
-            <button
-              type="button"
-              onClick={() => setOpen((o) => !o)}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+            <svg
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.5}
+              viewBox="0 0 24 24"
+              className={cn(
+                'text-gray-400 transition-transform duration-200 flex-shrink-0',
+                open ? '' : '-rotate-90',
+              )}
             >
-              <svg
-                width="14"
-                height="14"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2.5}
-                viewBox="0 0 24 24"
-                className={cn('transition-transform duration-200', open ? '' : '-rotate-90')}
-              >
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </button>
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
           )}
           <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
         </div>
@@ -2188,11 +2201,11 @@ function InfoRow({
   value: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-3 py-1.5 border-b border-gray-50 last:border-0">
-      <span className="w-28 flex-shrink-0 text-xs text-gray-400 font-medium pt-0.5">
+    <div className="flex items-start gap-2 py-1 border-b border-gray-50 last:border-0">
+      <span className="w-24 flex-shrink-0 text-[10px] font-medium text-gray-400 uppercase tracking-wide pt-0.5">
         {label}
       </span>
-      <span className="flex-1 text-sm text-gray-700">{value}</span>
+      <span className="flex-1 text-xs text-gray-700">{value}</span>
     </div>
   );
 }
@@ -2203,13 +2216,17 @@ function InfoRow({
 
 function DetailSkeleton() {
   return (
-    <div className="max-w-5xl animate-pulse">
+    <div className="max-w-7xl animate-pulse">
       <div className="h-4 w-28 bg-gray-200 rounded mb-5" />
       <div className="h-7 w-64 bg-gray-200 rounded mb-2" />
       <div className="h-4 w-40 bg-gray-100 rounded mb-6" />
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-5">
+        <div className="lg:col-span-3 bg-gray-100 rounded-xl h-72" />
+        <div className="lg:col-span-2 bg-gray-100 rounded-xl h-72" />
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="bg-gray-100 rounded-xl h-48" />
+          <div key={i} className="bg-gray-100 rounded-xl h-40" />
         ))}
       </div>
     </div>
