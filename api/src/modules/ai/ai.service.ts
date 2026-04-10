@@ -216,39 +216,31 @@ export class AiService {
       const storageKey: string = (doc as any).storageKey ?? '';
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const mimeType: string = (doc as any).mimeType ?? '';
-      const hasUsefulText = text.trim().length > 100;
 
-      // Image types that Claude Vision supports natively
       const VISION_IMAGE_TYPES = new Set([
         'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
       ]);
       const isVisionImage = VISION_IMAGE_TYPES.has(mimeType);
       const isPdf = mimeType === 'application/pdf';
 
-      // PDFs: ALWAYS send the raw file via Document API — pdf-parse text loses
-      // all layout context (tables, columns, headers), giving Claude garbage to parse.
-      // Claude's Document API reads the actual PDF with full fidelity.
-      const useVisionImage = isVisionImage && !hasUsefulText && !!storageKey;
-      const useDocumentPdf = isPdf && !!storageKey;
-      const needsFile = useVisionImage || useDocumentPdf;
-
-      const promptText = `You are an expert document analyst. Carefully read the entire document and extract all information with maximum accuracy.
+      // Build extraction prompt — always include available text as fallback context
+      const buildPrompt = (includeText: boolean) =>
+        `You are an expert document analyst. Carefully read the entire document and extract all structured information with maximum accuracy.
 
 CRITICAL INSTRUCTIONS:
-- Look for ALL dates: issue date, effective date, expiry/expiration/valid until/valid through/expires on date, renewal date
-- Dates MUST be in YYYY-MM-DD format. Convert any format (e.g. "31 Dec 2027", "12/31/2027", "December 31, 2027") to YYYY-MM-DD
-- For passports/IDs: look for "Date of expiry", "Expiry date", "Valid until", "Date of issue"
-- For contracts: look for "effective date", "termination date", "renewal date"
-- For insurance/certificates: look for "policy period", "valid from/to", "expiration date"
-- Extract the full name of issuing authority, organization, or government body as "issuer"
-- Extract any reference/document/policy/certificate numbers visible in the document
-- Set overallConfidence based on how much information you could read (0.9+ if you read the full document clearly)
-- Set riskFlags ONLY for genuine risks (expiry within 90 days, missing required fields, suspicious content)
-- Do NOT set riskFlags for inability to read — only for actual document risks
+- Extract ALL dates: issue date, effective date, expiry/valid until/expires on, renewal date
+- Convert every date to YYYY-MM-DD (e.g. "31 Dec 2027" → "2027-12-31", "12/31/2027" → "2027-12-31")
+- Passports/IDs: look for "Date of expiry", "Expiry date", "Valid until", "Date of issue"
+- Contracts: "effective date", "termination date", "renewal date"
+- Insurance/certificates: "policy period", "valid from/to", "expiration date"
+- Extract full issuing authority name as "issuer"
+- Extract every visible reference/policy/certificate/contract number
+- overallConfidence: 0.9+ if you read the document clearly; lower only if content is genuinely unclear
+- riskFlags: ONLY real document risks (expiry within 90 days, suspicious content). Empty array if none.
 
-Respond with ONLY a valid JSON object. No text, no markdown, no code blocks before or after.
+Respond with ONLY a valid JSON object. No text, no markdown, no code blocks.
 
-Document filename: ${doc.name}${!needsFile && text ? `\n\nDocument text content:\n${text.slice(0, 6000)}` : ''}
+Document filename: ${doc.name}${includeText && text.trim().length > 50 ? `\n\nExtracted text (supplementary context):\n${text.slice(0, 6000)}` : ''}
 
 {
   "documentType": "contract|invoice|insurance|certification|license|id|policy|agreement|report|receipt|other",
@@ -263,46 +255,51 @@ Document filename: ${doc.name}${!needsFile && text ? `\n\nDocument text content:
   "effectiveDate": "YYYY-MM-DD or null",
   "expiryDate": "YYYY-MM-DD or null",
   "renewalDueDate": "YYYY-MM-DD or null",
-  "summary": "2-3 sentence description of what this document is",
-  "keyPoints": ["important fact 1", "important fact 2"],
+  "summary": "2-3 sentence description of this document",
+  "keyPoints": ["key fact 1", "key fact 2"],
   "suggestedTags": ["tag1", "tag2"],
-  "suggestedFolder": "folder name suggestion or null",
+  "suggestedFolder": "folder name or null",
   "riskFlags": [],
   "overallConfidence": 0.95,
   "dateConfidence": 0.95
 }`;
 
-      let messageContent: Anthropic.MessageParam['content'] = promptText;
+      // Default: text-only (for DOCX, TXT, etc.)
+      let messageContent: Anthropic.MessageParam['content'] = buildPrompt(true);
 
-      if (needsFile) {
+      if (storageKey) {
         const filePath = path.join(process.cwd(), 'uploads', storageKey);
         try {
           const fileBase64 = fs.readFileSync(filePath).toString('base64');
 
-          if (useVisionImage) {
-            // Send image via Vision API
-            const safeMediaType = VISION_IMAGE_TYPES.has(mimeType)
-              ? (mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp')
-              : 'image/jpeg';
-            messageContent = [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: safeMediaType, data: fileBase64 },
-              },
-              { type: 'text', text: promptText },
-            ];
-          } else if (useDocumentPdf) {
-            // Send scanned PDF via Document API (Claude reads PDF natively)
+          if (isPdf) {
+            // PDFs: send raw file via Document API for full layout fidelity
+            // Also include pdf-parse text as supplementary context
             messageContent = [
               {
                 type: 'document',
                 source: { type: 'base64', media_type: 'application/pdf', data: fileBase64 },
               } as Anthropic.DocumentBlockParam,
-              { type: 'text', text: promptText },
+              { type: 'text', text: buildPrompt(true) },
             ];
+            this.logger.debug(`extractDocument ${documentId}: using PDF Document API`);
+          } else if (isVisionImage) {
+            // Images: send via Vision API
+            const safeMediaType = (VISION_IMAGE_TYPES.has(mimeType)
+              ? mimeType
+              : 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+            messageContent = [
+              {
+                type: 'image',
+                source: { type: 'base64', media_type: safeMediaType, data: fileBase64 },
+              },
+              { type: 'text', text: buildPrompt(false) },
+            ];
+            this.logger.debug(`extractDocument ${documentId}: using Vision API`);
           }
         } catch {
-          this.logger.warn(`File read failed for ${storageKey} — falling back to text-only extraction`);
+          // File unreadable — fall back to pdf-parse text (already in messageContent)
+          this.logger.warn(`extractDocument ${documentId}: file read failed for ${storageKey}, using text fallback`);
         }
       }
 
@@ -630,9 +627,12 @@ Document filename: ${doc.name}${!needsFile && text ? `\n\nDocument text content:
       expiryDate?: Date | null;
       renewalDueDate?: Date | null;
       isReminderEnabled?: boolean;
+      folderId?: string | null;
     } = {};
 
-    const supportedFields = new Set(['expiryDate', 'renewalDueDate', 'isReminderEnabled']);
+    const supportedFields = new Set([
+      'expiryDate', 'renewalDueDate', 'isReminderEnabled', 'suggestedTags', 'suggestedFolder',
+    ]);
 
     for (const field of fields) {
       if (!supportedFields.has(field)) {
@@ -643,7 +643,7 @@ Document filename: ${doc.name}${!needsFile && text ? `\n\nDocument text content:
       if (field === 'expiryDate') {
         const rawDate = meta.get(AI_KEYS.EXPIRY_DATE);
         if (isValidDate(rawDate)) {
-          updateData.expiryDate = new Date(rawDate);
+          updateData.expiryDate = new Date(rawDate as string);
           applied.push(field);
         } else {
           skipped.push(field);
@@ -654,7 +654,7 @@ Document filename: ${doc.name}${!needsFile && text ? `\n\nDocument text content:
       if (field === 'renewalDueDate') {
         const rawDate = meta.get(AI_KEYS.RENEWAL_DATE);
         if (isValidDate(rawDate)) {
-          updateData.renewalDueDate = new Date(rawDate);
+          updateData.renewalDueDate = new Date(rawDate as string);
           applied.push(field);
         } else {
           skipped.push(field);
@@ -663,7 +663,6 @@ Document filename: ${doc.name}${!needsFile && text ? `\n\nDocument text content:
       }
 
       if (field === 'isReminderEnabled') {
-        // Enable reminder if there is an expiryDate or renewalDueDate extracted
         const hasExpiry =
           isValidDate(meta.get(AI_KEYS.EXPIRY_DATE)) ||
           isValidDate(meta.get(AI_KEYS.RENEWAL_DATE));
@@ -675,9 +674,60 @@ Document filename: ${doc.name}${!needsFile && text ? `\n\nDocument text content:
         }
         continue;
       }
+
+      if (field === 'suggestedTags') {
+        const rawTags = meta.get(AI_KEYS.SUGGESTED_TAGS);
+        const tagNames: string[] = rawTags ? (() => { try { return JSON.parse(rawTags) as string[]; } catch { return []; } })() : [];
+        if (tagNames.length > 0) {
+          // Find-or-create each tag in the workspace, then add to document
+          const tagIds: string[] = [];
+          for (const name of tagNames) {
+            const trimmed = name.trim();
+            if (!trimmed) continue;
+            let tag = await this.prisma.documentTag.findFirst({
+              where: { workspaceId: doc.workspaceId, name: { equals: trimmed, mode: 'insensitive' } },
+            });
+            if (!tag) {
+              tag = await this.prisma.documentTag.create({
+                data: { workspaceId: doc.workspaceId, name: trimmed },
+              });
+            }
+            tagIds.push(tag.id);
+          }
+          // Merge with existing tags (don't replace — add)
+          await this.prisma.documentTagMapping.createMany({
+            data: tagIds.map((tagId) => ({ documentId, tagId })),
+            skipDuplicates: true,
+          });
+          applied.push(field);
+        } else {
+          skipped.push(field);
+        }
+        continue;
+      }
+
+      if (field === 'suggestedFolder') {
+        const folderName = meta.get(AI_KEYS.SUGGESTED_FOLDER)?.trim();
+        if (folderName) {
+          // Find-or-create folder in the workspace
+          let folder = await this.prisma.folder.findFirst({
+            where: { workspaceId: doc.workspaceId, name: { equals: folderName, mode: 'insensitive' }, parentFolderId: null },
+          });
+          if (!folder) {
+            folder = await this.prisma.folder.create({
+              data: { workspaceId: doc.workspaceId, name: folderName, createdById: doc.ownerUserId },
+            });
+          }
+          updateData.folderId = folder.id;
+          applied.push(field);
+        } else {
+          skipped.push(field);
+        }
+        continue;
+      }
     }
 
-    // Apply updates to document
+    // Apply document field updates
     if (Object.keys(updateData).length > 0) {
       await this.prisma.document.update({
         where: { id: documentId },

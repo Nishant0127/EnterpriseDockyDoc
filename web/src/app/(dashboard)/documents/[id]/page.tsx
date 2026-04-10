@@ -138,12 +138,17 @@ export default function DocumentDetailPage() {
     if (!params.id) return;
     setAiApplying(true);
     try {
-      await apiFetch<{ applied: string[]; skipped: string[] }>(`/api/v1/ai/documents/${params.id}/apply`, {
+      const result = await apiFetch<{ applied: string[]; skipped: string[] }>(`/api/v1/ai/documents/${params.id}/apply`, {
         method: 'POST',
         body: JSON.stringify({ fields }),
       });
       reload();
       await loadAiExtraction();
+      if (result.applied.length > 0) {
+        toast.success(`Applied: ${result.applied.join(', ')}`);
+      } else {
+        toast.error('Nothing to apply — fields may already be set or have no extracted value.');
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to apply AI suggestions.');
     } finally {
@@ -1415,11 +1420,18 @@ function AiExtractionSection({
 
   const status = extraction?.status ?? 'none';
 
-  // Determine which date fields are unapplied
+  // Determine which fields can still be applied
   const applied = extraction?.appliedFields ?? [];
   const unappliedDates = (['expiryDate', 'renewalDueDate'] as const).filter(
     (f) => extraction?.[f] != null && !applied.includes(f),
   );
+  const hasUnappliedTags = (extraction?.suggestedTags?.length ?? 0) > 0 && !applied.includes('suggestedTags');
+  const hasUnappliedFolder = !!extraction?.suggestedFolder && !applied.includes('suggestedFolder');
+  const allUnapplied = [
+    ...unappliedDates,
+    ...(hasUnappliedTags ? ['suggestedTags'] : []),
+    ...(hasUnappliedFolder ? ['suggestedFolder'] : []),
+  ];
 
   function ExtractButton({ label = 'Extract with AI' }: { label?: string }) {
     return (
@@ -1664,16 +1676,42 @@ function AiExtractionSection({
             </div>
           )}
 
+          {/* Suggested folder */}
+          {extraction.suggestedFolder && (
+            <div className="flex items-center justify-between py-1">
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Suggested Folder</p>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-700">
+                  <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+                  {extraction.suggestedFolder}
+                </span>
+              </div>
+              {!applied.includes('suggestedFolder') && (
+                <button
+                  type="button"
+                  onClick={() => onApply(['suggestedFolder'])}
+                  disabled={applying}
+                  className="px-2.5 py-0.5 rounded-lg text-xs font-medium bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
+                >
+                  Move Here
+                </button>
+              )}
+              {applied.includes('suggestedFolder') && (
+                <span className="text-xs text-green-600 font-medium">✓ Applied</span>
+              )}
+            </div>
+          )}
+
           {/* Apply all button */}
-          {unappliedDates.length > 0 && (
+          {allUnapplied.length > 0 && (
             <div className="pt-1 border-t border-gray-100">
               <button
                 type="button"
-                onClick={() => onApply(unappliedDates as string[])}
+                onClick={() => onApply(allUnapplied)}
                 disabled={applying}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
               >
-                {applying ? <><SpinnerIcon size={12} /> Applying…</> : 'Apply All Suggestions'}
+                {applying ? <><SpinnerIcon size={12} /> Applying…</> : `Apply All (${allUnapplied.length})`}
               </button>
             </div>
           )}
