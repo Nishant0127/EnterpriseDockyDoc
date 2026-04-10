@@ -1003,6 +1003,89 @@ Respond with JSON:
   }
 
   // ---------------------------------------------------------------- //
+  // debugExtract — step-by-step diagnostic for troubleshooting
+  // ---------------------------------------------------------------- //
+  async debugExtract(documentId: string): Promise<Record<string, unknown>> {
+    const steps: Record<string, unknown>[] = [];
+
+    // 1. Fetch document
+    const doc = await this.prisma.document.findUnique({
+      where: { id: documentId },
+      include: {
+        searchContent: true,
+        versions: { orderBy: { versionNumber: 'desc' }, take: 1, select: { storageKey: true, mimeType: true } },
+      },
+    });
+    if (!doc) return { error: `Document ${documentId} not found` };
+
+    steps.push({
+      step: '1_document',
+      name: doc.name,
+      versionsFound: doc.versions.length,
+      storageKey: doc.versions[0]?.storageKey ?? null,
+      mimeType: doc.versions[0]?.mimeType ?? null,
+      searchContentLength: doc.searchContent?.extractedText?.length ?? 0,
+    });
+
+    // 2. Read file
+    const currentVersion = doc.versions[0] ?? null;
+    const storageKey = currentVersion?.storageKey ?? '';
+    const mimeType = currentVersion?.mimeType ?? '';
+    let fileBuffer: Buffer | null = null;
+    let fileError: string | null = null;
+
+    if (storageKey) {
+      const segments = storageKey.split('/').filter((s) => s.length > 0 && s !== '..' && s !== '.');
+      const filePath = path.join(process.cwd(), 'uploads', ...segments);
+      try {
+        fileBuffer = fs.readFileSync(filePath);
+        steps.push({ step: '2_file', status: 'ok', path: filePath, bytes: fileBuffer.length });
+      } catch (e) {
+        fileError = (e as Error).message;
+        steps.push({ step: '2_file', status: 'error', path: filePath, error: fileError });
+      }
+    } else {
+      steps.push({ step: '2_file', status: 'no_storage_key', storageKey });
+    }
+
+    // 3. Try each OCR provider independently
+    if (fileBuffer) {
+      const ocrProviderStatus = this.ocrService.getProviderStatus();
+      steps.push({ step: '3_ocr_providers', providers: ocrProviderStatus });
+
+      // Test OCR (uses the normal priority chain)
+      try {
+        const ocrResult = await this.ocrService.extract(fileBuffer, mimeType, doc.name);
+        if (ocrResult) {
+          steps.push({
+            step: '3_ocr_result', status: 'ok',
+            provider: ocrResult.provider,
+            textLength: ocrResult.fullText.length,
+            textPreview: ocrResult.fullText.slice(0, 200),
+            pageCount: ocrResult.pageCount,
+          });
+        } else {
+          steps.push({ step: '3_ocr_result', status: 'all_providers_failed' });
+        }
+      } catch (e) {
+        steps.push({ step: '3_ocr_result', status: 'error', error: (e as Error).message });
+      }
+    } else {
+      steps.push({ step: '3_ocr_result', status: 'skipped_no_file' });
+    }
+
+    // 4. AI provider availability
+    steps.push({
+      step: '4_ai_providers',
+      anthropicKey: !!(this.config.get<string>('ANTHROPIC_API_KEY')),
+      openaiKey: !!this.openaiApiKey,
+      anthropicClientReady: !!this.client,
+    });
+
+    return { documentId, steps };
+  }
+
+  // ---------------------------------------------------------------- //
   // Private helpers
   // ---------------------------------------------------------------- //
   private buildDisabledResult(): AiExtractionResult {

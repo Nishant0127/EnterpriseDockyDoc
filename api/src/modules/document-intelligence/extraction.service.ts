@@ -629,7 +629,8 @@ function buildJsonTemplate(): string {
 // OpenAI strict JSON schema
 // ------------------------------------------------------------------ //
 function getOpenAiSchema() {
-  const nullable = (t: string) => ({ type: [t, 'null'] });
+  // OpenAI strict mode requires anyOf for nullable fields, NOT { type: [x, 'null'] }
+  const nullable = (t: string) => ({ anyOf: [{ type: t }, { type: 'null' }] });
   return {
     type: 'object',
     properties: {

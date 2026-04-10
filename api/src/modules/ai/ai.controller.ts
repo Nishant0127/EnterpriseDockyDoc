@@ -108,6 +108,12 @@ export class AiController {
   // Extraction endpoints
   // ---------------------------------------------------------------- //
 
+  @Get('documents/:id/debug')
+  @ApiOperation({ summary: 'Step-by-step diagnostic: file read → OCR → AI provider check' })
+  debugExtract(@Param('id') id: string) {
+    return this.aiService.debugExtract(id);
+  }
+
   @Post('documents/:id/extract')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Run full AI extraction on a document' })
