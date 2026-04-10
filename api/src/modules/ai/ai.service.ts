@@ -223,11 +223,13 @@ export class AiService {
         'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
       ]);
       const isVisionImage = VISION_IMAGE_TYPES.has(mimeType);
-      const isScannedPdf = mimeType === 'application/pdf' && !hasUsefulText;
+      const isPdf = mimeType === 'application/pdf';
 
-      // Use file-based extraction when text layer is absent
+      // PDFs: ALWAYS send the raw file via Document API — pdf-parse text loses
+      // all layout context (tables, columns, headers), giving Claude garbage to parse.
+      // Claude's Document API reads the actual PDF with full fidelity.
       const useVisionImage = isVisionImage && !hasUsefulText && !!storageKey;
-      const useDocumentPdf = isScannedPdf && !!storageKey;
+      const useDocumentPdf = isPdf && !!storageKey;
       const needsFile = useVisionImage || useDocumentPdf;
 
       const EXTRACTION_JSON_SCHEMA = `Return exactly this JSON structure (use null for missing fields, YYYY-MM-DD for all dates):
