@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { fetchDocument, downloadDocument, downloadDocumentVersion, deleteDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders, fetchTags, setDocumentTags, setDocumentMetadata } from '@/lib/documents';
+import { fetchDocument, downloadDocument, downloadDocumentVersion, deleteDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders, fetchTags, createTag, setDocumentTags, setDocumentMetadata } from '@/lib/documents';
 import { apiFetch } from '@/lib/api';
 import { fetchDocumentActivity, describeAuditLog, auditActionCategory, formatAuditAction } from '@/lib/audit';
 import { cn } from '@/lib/utils';
@@ -420,74 +420,37 @@ export default function DocumentDetailPage() {
         </div>
       </div>
 
-      {/* HERO ROW: Preview 60% + AI Extraction 40% */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-5">
+      {/* ── ROW 1: Control layer — Overview + Versions ─────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
 
-        {/* ---- Preview (left 60%) ---------------------------------- */}
-        <div className="lg:col-span-3">
-          {previewVersion !== null ? (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50">
-                <div className="flex items-center gap-2">
-                  <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className="text-gray-400">
-                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                    <path d="M3 9h18M9 21V9" strokeLinecap="round" />
-                  </svg>
-                  <span className="text-sm font-medium text-gray-700">Document Preview</span>
-                  <span className="text-xs text-gray-400">
-                    — v{previewVersion}
-                    {previewVersion === doc.currentVersionNumber ? ' (current)' : ''}
-                  </span>
+        {/* Overview */}
+        <Section title="Overview">
+          <InfoRow label="Workspace" value={doc.workspace.name} />
+          <InfoRow label="Folder" value={doc.folder ? doc.folder.name : '—'} />
+          <InfoRow
+            label="Owner"
+            value={
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded-full bg-brand-100 flex items-center justify-center text-[9px] font-semibold text-brand-700">
+                  {initials(doc.owner.firstName, doc.owner.lastName)}
                 </div>
-                {/* Version switcher */}
-                <div className="flex items-center gap-1">
-                  {doc.versions.map((v: DocumentVersion) => (
-                    <button
-                      key={v.id}
-                      type="button"
-                      onClick={() => setPreviewVersion(v.versionNumber)}
-                      className={cn(
-                        'px-2 py-0.5 rounded text-xs font-medium transition-colors',
-                        v.versionNumber === previewVersion
-                          ? 'bg-brand-600 text-white'
-                          : 'text-gray-500 hover:bg-gray-200',
-                      )}
-                    >
-                      v{v.versionNumber}
-                    </button>
-                  ))}
-                </div>
+                <span>{doc.owner.firstName} {doc.owner.lastName}</span>
               </div>
-              <DocumentPreviewCard
-                documentId={doc.id}
-                versionNumber={previewVersion}
-                mimeHint={doc.versions.find((v: DocumentVersion) => v.versionNumber === previewVersion)?.mimeType}
-              />
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-gray-200 flex items-center justify-center p-10 text-sm text-gray-400 min-h-[200px]">
-              No preview available.
+            }
+          />
+          <InfoRow label="File type" value={doc.fileType.toUpperCase()} />
+          <InfoRow label="Version" value={`v${doc.currentVersionNumber}`} />
+          <InfoRow label="Created" value={formatDate(doc.createdAt)} />
+          <InfoRow label="Last updated" value={formatDate(doc.updatedAt)} />
+          {doc.description && (
+            <div className="pt-2 mt-1 border-t border-gray-50">
+              <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-1">Description</p>
+              <p className="text-xs text-gray-600 leading-relaxed">{doc.description}</p>
             </div>
           )}
-        </div>
+        </Section>
 
-        {/* ---- AI Extraction (right 40%) -------------------------- */}
-        <div className="lg:col-span-2">
-          <AiExtractionSection
-            documentId={doc.id}
-            extraction={aiExtraction}
-            extracting={aiExtracting}
-            applying={aiApplying}
-            onExtract={() => void handleAiExtract()}
-            onApply={(fields) => void handleAiApply(fields)}
-          />
-        </div>
-      </div>
-
-      {/* LOWER GRID */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-        {/* ---- Versions ------------------------------------------- */}
+        {/* Versions */}
         <Section
           title={`Versions (${doc.versionCount})`}
           action={
@@ -495,7 +458,7 @@ export default function DocumentDetailPage() {
               <button
                 type="button"
                 onClick={() => setShowVersionUpload(true)}
-                className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline"
+                className="inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 hover:underline transition-colors"
               >
                 <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                   <path d="M4 16.004V17a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M16 8l-4-4-4 4M12 4v12" strokeLinecap="round" strokeLinejoin="round" />
@@ -513,10 +476,10 @@ export default function DocumentDetailPage() {
                 <div
                   key={v.id}
                   className={cn(
-                    'flex items-center justify-between rounded-lg px-3 py-2.5 border',
+                    'flex items-center justify-between rounded-lg px-3 py-2.5 border transition-all',
                     v.versionNumber === doc.currentVersionNumber
                       ? 'border-brand-200 border-l-2 border-l-brand-500 bg-brand-50'
-                      : 'border-gray-100 bg-gray-50',
+                      : 'border-gray-100 bg-gray-50 hover:border-gray-200 hover:bg-white',
                   )}
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -541,17 +504,15 @@ export default function DocumentDetailPage() {
                       <p className="text-xs font-medium text-gray-700 truncate">
                         {v.uploadedBy.firstName} {v.uploadedBy.lastName}
                       </p>
-                      <p className="text-[10px] text-gray-400">
-                        {formatDateTime(v.createdAt)}
-                      </p>
+                      <p className="text-[10px] text-gray-400">{formatDateTime(v.createdAt)}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0 ml-2">
                     <div className="text-right mr-1">
-                      <p className="text-xs text-gray-500">{formatBytes(v.fileSizeBytes)}</p>
-                      <p className="text-[10px] text-gray-400 truncate max-w-28">{v.mimeType}</p>
+                      <p className="text-[10px] text-gray-500">{formatBytes(v.fileSizeBytes)}</p>
+                      <p className="text-[10px] text-gray-400 truncate max-w-24">{v.mimeType}</p>
                     </div>
-                    {/* Preview this version */}
+                    {/* Preview */}
                     <button
                       type="button"
                       onClick={() => setPreviewVersion(v.versionNumber)}
@@ -559,7 +520,7 @@ export default function DocumentDetailPage() {
                       className={cn(
                         'p-1.5 rounded-md transition-colors',
                         v.versionNumber === previewVersion
-                          ? 'bg-brand-600 text-white'
+                          ? 'bg-brand-600 text-white shadow-sm'
                           : 'text-gray-400 hover:text-brand-600 hover:bg-brand-50',
                       )}
                     >
@@ -568,7 +529,7 @@ export default function DocumentDetailPage() {
                         <circle cx="12" cy="12" r="3" />
                       </svg>
                     </button>
-                    {/* Per-version download */}
+                    {/* Download */}
                     {parseInt(v.fileSizeBytes, 10) > 0 && (
                       <button
                         type="button"
@@ -589,7 +550,7 @@ export default function DocumentDetailPage() {
                         )}
                       </button>
                     )}
-                    {/* Per-version delete — editor+, only when > 1 version exists */}
+                    {/* Delete */}
                     {canEdit && doc.versions.length > 1 && (
                       <button
                         type="button"
@@ -619,40 +580,82 @@ export default function DocumentDetailPage() {
             </div>
           )}
         </Section>
+      </div>
 
-        {/* ---- Overview ------------------------------------------- */}
-        <Section title="Overview">
-          <InfoRow label="Workspace" value={doc.workspace.name} />
-          <InfoRow
-            label="Folder"
-            value={doc.folder ? doc.folder.name : '—'}
-          />
-          <InfoRow
-            label="Owner"
-            value={
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-brand-100 flex items-center justify-center text-[9px] font-semibold text-brand-700">
-                  {initials(doc.owner.firstName, doc.owner.lastName)}
-                </div>
-                <span>
-                  {doc.owner.firstName} {doc.owner.lastName}
-                </span>
+      {/* ── ROW 2: Main interaction — Preview + AI ──────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-5">
+
+        {/* Preview (left 60%) */}
+        <div className="lg:col-span-3">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden h-full">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/80">
+              <div className="flex items-center gap-2 min-w-0">
+                <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className="text-gray-400 flex-shrink-0">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M3 9h18M9 21V9" strokeLinecap="round" />
+                </svg>
+                <span className="text-xs font-semibold text-gray-600">Preview</span>
+                {previewVersion !== null && (
+                  <span className="text-[10px] text-gray-400 truncate">
+                    v{previewVersion}{previewVersion === doc.currentVersionNumber ? ' · current' : ''}
+                  </span>
+                )}
               </div>
-            }
-          />
-          <InfoRow label="File type" value={doc.fileType.toUpperCase()} />
-          <InfoRow label="Version" value={`v${doc.currentVersionNumber}`} />
-          <InfoRow label="Created" value={formatDate(doc.createdAt)} />
-          <InfoRow label="Last updated" value={formatDate(doc.updatedAt)} />
-          {doc.description && (
-            <div className="pt-2 mt-1 border-t border-gray-50">
-              <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-1">Description</p>
-              <p className="text-xs text-gray-600 leading-relaxed">{doc.description}</p>
+              {/* Version tabs */}
+              {doc.versions.length > 0 && (
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {doc.versions.map((v: DocumentVersion) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => setPreviewVersion(v.versionNumber)}
+                      className={cn(
+                        'px-2 py-0.5 rounded text-[10px] font-semibold transition-colors',
+                        v.versionNumber === previewVersion
+                          ? 'bg-brand-600 text-white'
+                          : 'text-gray-400 hover:text-gray-700 hover:bg-gray-200',
+                      )}
+                    >
+                      v{v.versionNumber}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </Section>
+            {previewVersion !== null ? (
+              <DocumentPreviewCard
+                documentId={doc.id}
+                versionNumber={previewVersion}
+                mimeHint={doc.versions.find((v: DocumentVersion) => v.versionNumber === previewVersion)?.mimeType}
+              />
+            ) : (
+              <div className="flex items-center justify-center p-12 text-sm text-gray-400 min-h-[240px]">
+                No preview available.
+              </div>
+            )}
+          </div>
+        </div>
 
-        {/* ---- Tags ----------------------------------------------- */}
+        {/* AI Intelligence Panel (right 40%) */}
+        <div className="lg:col-span-2">
+          <AiExtractionSection
+            documentId={doc.id}
+            extraction={aiExtraction}
+            extracting={aiExtracting}
+            applying={aiApplying}
+            onExtract={() => void handleAiExtract()}
+            onApply={(fields) => void handleAiApply(fields)}
+          />
+        </div>
+      </div>
+
+      {/* ── ROW 3: Expiry & Reminders ───────────────────────────────── */}
+      <div className="mb-5">
+        <ExpiryReminderSection doc={doc} onSaved={reload} />
+      </div>
+
+      {/* ── ROW 4: Tags + Metadata ──────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
         <TagsSection
           doc={doc}
           canEdit={canEdit}
@@ -662,30 +665,21 @@ export default function DocumentDetailPage() {
           onSaved={reload}
           onApplyAiTags={() => void handleAiApply(['suggestedTags'])}
         />
-
-        {/* ---- Metadata (collapsed by default) -------------------- */}
         <MetadataSection
           doc={doc}
           canEdit={canEdit}
           onSaved={reload}
           defaultCollapsed
         />
-
-        {/* ---- Expiry & Reminders (full width) -------------------- */}
-        <div className="lg:col-span-2">
-          <ExpiryReminderSection doc={doc} onSaved={reload} />
-        </div>
-
-        {/* ---- Sharing (full width) -------------------------------- */}
-        <div className="lg:col-span-2">
-          <ShareSection documentId={doc.id} />
-        </div>
-
-        {/* ---- Activity (full width) ------------------------------- */}
-        <div className="lg:col-span-2">
-          <DocumentActivitySection documentId={doc.id} />
-        </div>
       </div>
+
+      {/* ── ROW 5: Sharing ──────────────────────────────────────────── */}
+      <div className="mb-5">
+        <ShareSection documentId={doc.id} />
+      </div>
+
+      {/* ── ROW 6: Activity ─────────────────────────────────────────── */}
+      <DocumentActivitySection documentId={doc.id} />
 
       {/* Version upload modal */}
       {showVersionUpload && (
@@ -802,7 +796,7 @@ function TagChip({ name, color, dotted = false }: { name: string; color: string;
 }
 
 // ------------------------------------------------------------------ //
-// Tags section — applied tags + AI suggestions, edit mode
+// Tags section — applied tags + AI suggestions with per-tag +/- actions
 // ------------------------------------------------------------------ //
 
 function TagsSection({
@@ -827,24 +821,58 @@ function TagsSection({
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [selected, setSelected] = useState<string[]>(doc.tags.map((t: { id: string }) => t.id));
   const [saving, setSaving] = useState(false);
+  // Local per-session rejected suggestions (disappear without backend call)
+  const [rejected, setRejected] = useState<Set<string>>(new Set());
+  const [acceptingTag, setAcceptingTag] = useState<string | null>(null);
 
-  // AI suggestion state — only show tags not yet assigned to doc
   const aiAppliedFields = [
     ...(aiExtraction?.appliedFields ?? []),
     ...(aiExtraction?.userAppliedFields ?? []),
   ];
   const aiTagsAlreadyApplied = aiAppliedFields.includes('suggestedTags');
   const docTagNames = new Set(doc.tags.map((t: { name: string }) => t.name.toLowerCase()));
-  const unassignedSuggestions: string[] = aiTagsAlreadyApplied
+  // Suggestions filtered: not already on doc, not rejected
+  const visibleSuggestions: string[] = aiTagsAlreadyApplied
     ? []
     : (aiExtraction?.suggestedTags ?? []).filter(
-        (n: string) => !docTagNames.has(n.toLowerCase()),
+        (n: string) => !docTagNames.has(n.toLowerCase()) && !rejected.has(n.toLowerCase()),
       );
 
+  async function ensureTags(): Promise<Tag[]> {
+    if (allTags.length > 0) return allTags;
+    const tags = await fetchTags(workspaceId);
+    setAllTags(tags);
+    return tags;
+  }
+
+  async function acceptSuggestion(tagName: string) {
+    setAcceptingTag(tagName);
+    try {
+      let tags = await ensureTags();
+      let match = tags.find((t: Tag) => t.name.toLowerCase() === tagName.toLowerCase());
+      if (!match) {
+        // Create the tag with a derived color
+        match = await createTag(workspaceId, tagName, deriveTagColor(tagName));
+        setAllTags((prev: Tag[]) => [...prev, match!]);
+      }
+      const currentIds = doc.tags.map((t: { id: string }) => t.id);
+      if (!currentIds.includes(match.id)) {
+        await setDocumentTags(doc.id, [...currentIds, match.id]);
+      }
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to apply tag.');
+    } finally {
+      setAcceptingTag(null);
+    }
+  }
+
+  function rejectSuggestion(tagName: string) {
+    setRejected((prev: Set<string>) => new Set([...prev, tagName.toLowerCase()]));
+  }
+
   function startEdit() {
-    fetchTags(workspaceId)
-      .then((tags: Tag[]) => setAllTags(tags))
-      .catch(() => {});
+    ensureTags().catch(() => {});
     setSelected(doc.tags.map((t: { id: string }) => t.id));
     setEditing(true);
   }
@@ -871,7 +899,6 @@ function TagsSection({
 
   // ── read view ────────────────────────────────────────────────────
   if (!editing) {
-    const hasAnything = doc.tags.length > 0 || unassignedSuggestions.length > 0;
     return (
       <Section
         title="Tags"
@@ -880,23 +907,23 @@ function TagsSection({
             <button
               type="button"
               onClick={startEdit}
-              className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline"
+              className="inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 hover:underline transition-colors"
             >
               <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" strokeLinecap="round" />
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
               </svg>
-              Edit Tags
+              Edit
             </button>
           ) : undefined
         }
       >
         {/* Applied tags */}
-        {doc.tags.length === 0 && !hasAnything && (
-          <p className="text-sm text-gray-400">No tags assigned.</p>
+        {doc.tags.length === 0 && visibleSuggestions.length === 0 && (
+          <p className="text-xs text-gray-400">No tags assigned.</p>
         )}
         {doc.tags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {doc.tags.map((tag: { id: string; name: string; color: string | null }) => (
               <TagChip
                 key={tag.id}
@@ -907,32 +934,76 @@ function TagsSection({
           </div>
         )}
 
-        {/* AI suggestions separator */}
-        {unassignedSuggestions.length > 0 && (
-          <div className={cn('pt-3', doc.tags.length > 0 && 'mt-3 border-t border-gray-100')}>
+        {/* AI suggestions — per-tag +/- actions */}
+        {visibleSuggestions.length > 0 && (
+          <div className={cn(doc.tags.length > 0 && 'mt-3 pt-3 border-t border-gray-100')}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-                <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <svg width="9" height="9" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                 </svg>
                 AI Suggestions
               </span>
-              {canEdit && (
+              {canEdit && visibleSuggestions.length > 1 && (
                 <button
                   type="button"
                   onClick={onApplyAiTags}
                   disabled={applying}
-                  className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline disabled:opacity-50"
+                  className="inline-flex items-center gap-1 text-[10px] font-medium text-brand-600 hover:underline disabled:opacity-50 transition-colors"
                 >
-                  {applying && <SpinnerIcon size={10} />}
+                  {applying ? <SpinnerIcon size={9} /> : null}
                   Apply all
                 </button>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              {unassignedSuggestions.map((name: string) => (
-                <TagChip key={name} name={name} color={deriveTagColor(name)} dotted />
-              ))}
+              {visibleSuggestions.map((name: string) => {
+                const isAccepting = acceptingTag === name;
+                const color = deriveTagColor(name);
+                return (
+                  <div
+                    key={name}
+                    className="inline-flex items-center gap-0.5 group"
+                  >
+                    {/* Dotted suggestion chip */}
+                    <span
+                      className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-l-full border border-dashed text-xs font-semibold"
+                      style={{ backgroundColor: `${color}12`, color, borderColor: color }}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                      {name}
+                    </span>
+                    {/* Accept (+) */}
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => void acceptSuggestion(name)}
+                        disabled={isAccepting}
+                        title={`Accept "${name}"`}
+                        className="inline-flex items-center justify-center w-5 h-[22px] rounded-r-full border border-l-0 border-dashed bg-green-50 text-green-600 hover:bg-green-500 hover:text-white hover:border-green-500 hover:border-solid transition-all disabled:opacity-50"
+                        style={{ borderColor: color }}
+                      >
+                        {isAccepting
+                          ? <SpinnerIcon size={8} />
+                          : <svg width="9" height="9" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" strokeLinecap="round" /></svg>
+                        }
+                      </button>
+                    )}
+                    {/* Reject (−) */}
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => rejectSuggestion(name)}
+                        title={`Dismiss "${name}"`}
+                        className="inline-flex items-center justify-center w-5 h-[22px] rounded-full border border-dashed bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-500 hover:border-red-300 hover:border-solid transition-all ml-0.5"
+                        style={{ borderColor: '#d1d5db' }}
+                      >
+                        <svg width="9" height="9" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" /></svg>
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -944,9 +1015,7 @@ function TagsSection({
   return (
     <Section title="Tags">
       {allTags.length === 0 ? (
-        <p className="text-xs text-gray-400 mb-3">
-          No tags in workspace yet. Create tags in Settings first.
-        </p>
+        <p className="text-xs text-gray-400 mb-3">No tags in workspace yet. Create tags in Settings first.</p>
       ) : (
         <div className="flex flex-wrap gap-2 mb-4">
           {allTags.map((tag: Tag) => {
@@ -960,20 +1029,11 @@ function TagsSection({
                 title={isOn ? `Remove "${tag.name}"` : `Add "${tag.name}"`}
                 className={cn(
                   'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition-all select-none',
-                  isOn
-                    ? 'ring-2 ring-offset-1'
-                    : 'opacity-45 hover:opacity-70',
+                  isOn ? 'opacity-100 ring-2 ring-offset-1' : 'opacity-40 hover:opacity-70',
                 )}
-                style={{
-                  backgroundColor: `${color}18`,
-                  color,
-                  ...(isOn ? { ringColor: color } : {}),
-                }}
+                style={{ backgroundColor: `${color}18`, color }}
               >
-                <span
-                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: color }}
-                />
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
                 {tag.name}
                 {isOn && (
                   <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" className="ml-0.5">
@@ -998,7 +1058,7 @@ function TagsSection({
           type="button"
           onClick={() => setEditing(false)}
           disabled={saving}
-          className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+          className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50 transition-colors"
         >
           Cancel
         </button>
@@ -1868,12 +1928,12 @@ function AiExtractionSection({
   }
 
   return (
-    <Section title="AI Extraction">
+    <Section title="AI Intelligence">
       {/* ── status: none ──────────────────────────────────────────── */}
       {status === 'none' && (
-        <div className="flex items-center gap-3">
-          <p className="text-sm text-gray-400 flex-1">
-            Use AI to automatically extract key fields, dates, and insights from this document.
+        <div className="space-y-3">
+          <p className="text-xs text-gray-400 leading-relaxed">
+            Extract key fields, dates, and insights automatically from this document.
           </p>
           <ExtractButton />
         </div>
@@ -1881,23 +1941,23 @@ function AiExtractionSection({
 
       {/* ── status: running ───────────────────────────────────────── */}
       {status === 'running' && (
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <SpinnerIcon size={16} />
-          <span>AI extraction in progress…</span>
+        <div className="flex items-center gap-2 text-xs text-gray-500 py-1">
+          <SpinnerIcon size={14} />
+          <span>Extracting…</span>
         </div>
       )}
 
       {/* ── status: disabled ──────────────────────────────────────── */}
       {status === 'disabled' && (
-        <p className="text-sm text-gray-400">
-          AI unavailable — <span className="font-mono text-xs">ANTHROPIC_API_KEY</span> not configured.
+        <p className="text-xs text-gray-400">
+          AI unavailable — <code className="font-mono text-[10px] bg-gray-100 px-1 rounded">ANTHROPIC_API_KEY</code> not configured.
         </p>
       )}
 
       {/* ── status: failed ────────────────────────────────────────── */}
       {status === 'failed' && (
-        <div className="space-y-2">
-          <p className="text-sm text-red-600">
+        <div className="space-y-2.5">
+          <p className="text-xs text-red-600">
             {extraction?.error ?? 'Extraction failed. Please try again.'}
           </p>
           <ExtractButton label="Retry Extraction" />
@@ -1906,37 +1966,37 @@ function AiExtractionSection({
 
       {/* ── status: done ──────────────────────────────────────────── */}
       {status === 'done' && extraction && (
-        <div className="space-y-4">
+        <div className="space-y-3">
 
-          {/* Header strip: doc type + confidence + re-extract */}
+          {/* ① Header: doc type + confidence + re-extract */}
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {extraction.documentType && (
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-brand-600 text-white tracking-widest uppercase">
                   {extraction.documentType}
                 </span>
               )}
-              <span className={cn('px-2 py-0.5 rounded text-[10px] font-semibold border', confidenceClass(extraction.overallConfidence))}>
-                {Math.round(extraction.overallConfidence * 100)}% confidence
+              <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold border', confidenceClass(extraction.overallConfidence))}>
+                {Math.round(extraction.overallConfidence * 100)}%
               </span>
               <button
                 type="button"
                 onClick={onExtract}
                 disabled={extracting}
-                className="ml-auto text-[10px] text-brand-600 hover:underline disabled:opacity-50 flex items-center gap-1"
+                className="ml-auto text-[10px] text-gray-400 hover:text-brand-600 hover:underline disabled:opacity-50 flex items-center gap-1 transition-colors"
               >
-                {extracting ? <><SpinnerIcon size={10} /> Re-extracting…</> : 'Re-extract'}
+                {extracting ? <><SpinnerIcon size={9} /> Re-extracting…</> : 'Re-extract'}
               </button>
             </div>
             {(extraction.ocrProvider || extraction.extractedAt) && (
-              <p className="mt-1 text-[10px] text-gray-400">
+              <p className="mt-0.5 text-[10px] text-gray-400">
                 {extraction.ocrProvider && (
                   <span>
-                    via {extraction.ocrProvider
+                    {extraction.ocrProvider
                       .replace('azure-document-intelligence', 'Azure DI')
                       .replace('mistral-ocr', 'Mistral')
                       .replace('claude-native', 'Claude')
-                      .replace('search-content-fallback', 'text cache')}
+                      .replace('search-content-fallback', 'text')}
                   </span>
                 )}
                 {extraction.ocrProvider && extraction.extractedAt && ' · '}
@@ -1945,7 +2005,74 @@ function AiExtractionSection({
             )}
           </div>
 
-          {/* Key fields — compact scannable rows */}
+          {/* ② Critical dates — HIGHEST PRIORITY (moved to top) */}
+          {(extraction.expiryDate || extraction.renewalDueDate) && (
+            <div className="rounded-lg border-2 border-brand-200 bg-brand-50 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className="text-brand-600 flex-shrink-0">
+                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                    <line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round" />
+                    <line x1="8" y1="2" x2="8" y2="6" strokeLinecap="round" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
+                  <span className="text-[10px] font-bold text-brand-700 uppercase tracking-wide">Key Dates</span>
+                  <span className={cn('px-1 py-0.5 rounded text-[10px] font-medium border', confidenceClass(extraction.dateConfidence))}>
+                    {Math.round(extraction.dateConfidence * 100)}%
+                  </span>
+                </div>
+                {allUnapplied.filter(f => f === 'expiryDate' || f === 'renewalDueDate').length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onApply(allUnapplied.filter(f => f === 'expiryDate' || f === 'renewalDueDate'))}
+                    disabled={applying}
+                    className="text-[10px] font-semibold text-brand-600 hover:text-brand-800 hover:underline disabled:opacity-50 transition-colors"
+                  >
+                    {applying ? <SpinnerIcon size={9} /> : 'Apply all dates'}
+                  </button>
+                )}
+              </div>
+              {(
+                [
+                  { key: 'expiryDate', label: 'Expiry', fieldKey: 'expiryDate' as keyof ConfidenceByField },
+                  { key: 'renewalDueDate', label: 'Renewal', fieldKey: 'renewalDueDate' as keyof ConfidenceByField },
+                ] as const
+              ).map(({ key, label, fieldKey }) => {
+                const iso = extraction[key];
+                if (!iso) return null;
+                const days = daysUntil(iso);
+                const isAutoApplied = applied.includes(key);
+                const isUserApplied = userApplied.includes(key);
+                const fieldConf = (extraction.confidenceByField ?? {})[fieldKey] ?? 0;
+                return (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="w-12 flex-shrink-0 text-[10px] font-semibold text-brand-600 uppercase tracking-wide">
+                      {label}
+                    </span>
+                    <span className="flex-1 text-xs font-medium text-gray-900">{formatDate(iso)}</span>
+                    <ConfidenceBadge confidence={fieldConf} />
+                    <span className={cn('text-[10px] font-semibold tabular-nums min-w-[36px] text-right', urgencyClass(days))}>
+                      {days < 0 ? `${Math.abs(days)}d over` : days === 0 ? 'today' : `${days}d`}
+                    </span>
+                    {isUserApplied || isAutoApplied ? (
+                      <span className={cn('text-[10px] font-bold w-4 text-center', isUserApplied ? 'text-blue-600' : 'text-green-600')}>✓</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onApply([key])}
+                        disabled={applying}
+                        className="px-2 py-0.5 rounded text-[10px] font-semibold bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 disabled:opacity-50 transition-colors w-12 text-center flex-shrink-0"
+                      >
+                        {applying ? <SpinnerIcon size={9} /> : 'Apply'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ③ Key fields — identifiers, parties, reference numbers */}
           {(() => {
             const cbf = extraction.confidenceByField ?? {};
             const fields: { label: string; value: string; fieldKey: keyof ConfidenceByField }[] = [];
@@ -1962,9 +2089,7 @@ function AiExtractionSection({
               <div className="divide-y divide-gray-50">
                 {fields.map(({ label, value, fieldKey }) => (
                   <div key={label} className="flex items-center gap-2 py-1.5">
-                    <span className="w-24 flex-shrink-0 text-[10px] font-medium text-gray-400 uppercase tracking-wide">
-                      {label}
-                    </span>
+                    <span className="w-24 flex-shrink-0 text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</span>
                     <span className="flex-1 text-xs text-gray-800 truncate">{value}</span>
                     <ConfidenceBadge confidence={cbf[fieldKey] ?? 0} />
                   </div>
@@ -1973,67 +2098,10 @@ function AiExtractionSection({
             );
           })()}
 
-          {/* Critical dates panel */}
-          {(extraction.expiryDate || extraction.renewalDueDate) && (
-            <div className="rounded-lg bg-brand-50 border border-brand-100 p-3 space-y-2">
-              <div className="flex items-center gap-1.5">
-                <p className="text-[10px] font-semibold text-brand-700 uppercase tracking-wide">Key Dates</p>
-                <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium border', confidenceClass(extraction.dateConfidence))}>
-                  {Math.round(extraction.dateConfidence * 100)}%
-                </span>
-              </div>
-              {(
-                [
-                  { key: 'expiryDate', label: 'Expiry', fieldKey: 'expiryDate' as keyof ConfidenceByField },
-                  { key: 'renewalDueDate', label: 'Renewal', fieldKey: 'renewalDueDate' as keyof ConfidenceByField },
-                ] as const
-              ).map(({ key, label, fieldKey }) => {
-                const iso = extraction[key];
-                if (!iso) return null;
-                const days = daysUntil(iso);
-                const isAutoApplied = applied.includes(key);
-                const isUserApplied = userApplied.includes(key);
-                const fieldConf = (extraction.confidenceByField ?? {})[fieldKey] ?? 0;
-                return (
-                  <div key={key} className="flex items-center gap-2">
-                    <span className="w-14 flex-shrink-0 text-[10px] font-medium text-gray-500 uppercase tracking-wide">
-                      {label}
-                    </span>
-                    <span className="flex-1 text-xs text-gray-800">{formatDate(iso)}</span>
-                    <ConfidenceBadge confidence={fieldConf} />
-                    <span className={cn('text-[10px] tabular-nums', urgencyClass(days))}>
-                      {days < 0
-                        ? `${Math.abs(days)}d over`
-                        : days === 0
-                        ? 'today'
-                        : `${days}d`}
-                    </span>
-                    {isUserApplied ? (
-                      <span className="text-[10px] text-blue-600 font-semibold">✓</span>
-                    ) : isAutoApplied ? (
-                      <span className="text-[10px] text-green-600 font-semibold">✓</span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => onApply([key])}
-                        disabled={applying}
-                        className="px-2 py-0.5 rounded text-[10px] font-medium bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
-                      >
-                        {applying ? <SpinnerIcon size={9} /> : 'Apply'}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Suggested folder */}
+          {/* ④ Suggested folder */}
           {extraction.suggestedFolder && (
             <div className="flex items-center gap-2">
-              <span className="w-24 flex-shrink-0 text-[10px] font-medium text-gray-400 uppercase tracking-wide">
-                Folder
-              </span>
+              <span className="w-24 flex-shrink-0 text-[10px] font-medium text-gray-400 uppercase tracking-wide">Folder</span>
               <span className="flex-1 inline-flex items-center gap-1 text-xs text-gray-700 bg-gray-100 px-2 py-0.5 rounded truncate">
                 <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" className="flex-shrink-0">
                   <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
@@ -2046,33 +2114,28 @@ function AiExtractionSection({
                   type="button"
                   onClick={() => onApply(['suggestedFolder'])}
                   disabled={applying}
-                  className="px-2 py-0.5 rounded text-[10px] font-medium bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors flex-shrink-0"
+                  className="px-2 py-0.5 rounded text-[10px] font-semibold bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 disabled:opacity-50 transition-colors flex-shrink-0"
                 >
                   Move
                 </button>
               ) : (
-                <span className="text-[10px] font-semibold flex-shrink-0">
-                  {userApplied.includes('suggestedFolder')
-                    ? <span className="text-blue-600">✓</span>
-                    : <span className="text-green-600">✓</span>}
-                </span>
+                <span className={cn('text-[10px] font-bold flex-shrink-0', userApplied.includes('suggestedFolder') ? 'text-blue-600' : 'text-green-600')}>✓</span>
               )}
             </div>
           )}
 
-          {/* Risk flags */}
+          {/* ⑤ Risk flags */}
           {extraction.riskFlags.length > 0 && (
             <div>
-              <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-1.5">Risk Flags</p>
+              <p className="text-[10px] font-semibold text-orange-600 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                <svg width="9" height="9" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                Risk Flags
+              </p>
               <div className="flex flex-wrap gap-1.5">
                 {extraction.riskFlags.map((flag, i) => (
-                  <span
-                    key={i}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-orange-50 text-orange-700 border border-orange-200"
-                  >
-                    <svg width="9" height="9" fill="currentColor" viewBox="0 0 20 20" className="flex-shrink-0">
-                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
+                  <span key={i} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-orange-50 text-orange-700 border border-orange-200">
                     {flag}
                   </span>
                 ))}
@@ -2080,29 +2143,22 @@ function AiExtractionSection({
             </div>
           )}
 
-          {/* Summary & key points (collapsible) */}
+          {/* ⑥ Summary & key points (collapsible — lowest priority) */}
           {(extraction.summary || extraction.keyPoints.length > 0) && (
             <div className="border border-gray-100 rounded-lg overflow-hidden">
               <button
                 type="button"
                 onClick={() => setSummaryOpen((o) => !o)}
-                className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 transition-colors"
+                className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 hover:bg-gray-100 transition-colors"
               >
                 <span>Summary &amp; Key Points</span>
-                <svg
-                  width="13"
-                  height="13"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  viewBox="0 0 24 24"
-                  className={cn('transition-transform text-gray-400', summaryOpen && 'rotate-180')}
-                >
+                <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
+                  className={cn('transition-transform text-gray-400', summaryOpen && 'rotate-180')}>
                   <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
               {summaryOpen && (
-                <div className="px-3 py-2.5 space-y-2.5">
+                <div className="px-3 py-2.5 space-y-2">
                   {extraction.summary && (
                     <p className="text-xs text-gray-600 leading-relaxed">{extraction.summary}</p>
                   )}
