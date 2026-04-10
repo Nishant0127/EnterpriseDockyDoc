@@ -1,5 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EncryptionService } from '../../common/services/encryption.service';
@@ -210,19 +212,16 @@ export class AiService {
 
       const text = doc.searchContent?.extractedText ?? '';
 
-      // Step 3: Build strict JSON-only prompt and send to Claude
-      const prompt = `Respond with ONLY a valid JSON object. No text before or after. No markdown. No code blocks.
+      // Detect if this is an image with no useful extracted text — use Vision API
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const storageKey: string = (doc as any).storageKey ?? '';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mimeType: string = (doc as any).mimeType ?? '';
+      const isImage = mimeType.startsWith('image/') && ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mimeType);
+      const hasUsefulText = text.trim().length > 100;
+      const useVision = isImage && !hasUsefulText && storageKey;
 
-You are a document metadata extraction engine. Extract structured information from the document below.
-
-Extract ANY expiration/expiry/valid until/valid through/expires on date as expiryDate in YYYY-MM-DD format. This is the most important field.
-
-Document name: ${doc.name}
-Document type hint: ${doc.fileType}
-Content (first 4000 chars):
-${text.slice(0, 4000)}
-
-Return exactly this JSON structure (use null for missing fields, YYYY-MM-DD for all dates):
+      const EXTRACTION_JSON_SCHEMA = `Return exactly this JSON structure (use null for missing fields, YYYY-MM-DD for all dates):
 {
   "documentType": "contract|invoice|insurance|certification|license|id|policy|agreement|report|receipt|other",
   "title": "string or null",
@@ -245,10 +244,44 @@ Return exactly this JSON structure (use null for missing fields, YYYY-MM-DD for 
   "dateConfidence": 0.9
 }`;
 
+      const promptText = `Respond with ONLY a valid JSON object. No text before or after. No markdown. No code blocks.
+
+You are a document metadata extraction engine. Extract structured information from the document.
+
+Extract ANY expiration/expiry/valid until/valid through/expires on date as expiryDate in YYYY-MM-DD format. This is the most important field.
+
+Document name: ${doc.name}
+Document type hint: ${doc.fileType}${!useVision ? `\nContent (first 4000 chars):\n${text.slice(0, 4000)}` : ''}
+
+${EXTRACTION_JSON_SCHEMA}`;
+
+      let messageContent: Anthropic.MessageParam['content'] = promptText;
+
+      if (useVision) {
+        // Read the image file from local storage and send via Vision API
+        const filePath = path.join(process.cwd(), 'uploads', storageKey);
+        try {
+          const imageBase64 = fs.readFileSync(filePath).toString('base64');
+          messageContent = [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                data: imageBase64,
+              },
+            },
+            { type: 'text', text: promptText },
+          ];
+        } catch {
+          this.logger.warn(`Vision fallback: could not read ${filePath} — falling back to text-only`);
+        }
+      }
+
       const message = await activeClient.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: 'user', content: messageContent }],
       });
 
       // Step 4: Parse JSON response carefully
