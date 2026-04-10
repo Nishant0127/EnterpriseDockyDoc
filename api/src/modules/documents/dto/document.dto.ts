@@ -11,7 +11,9 @@ import {
   Max,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { DocumentStatus, ReminderChannel, ReminderStatus } from '@prisma/client';
 
 // ------------------------------------------------------------------ //
@@ -87,6 +89,23 @@ export class UpdateDocumentDto {
   @IsOptional()
   @IsBoolean()
   isReminderEnabled?: boolean;
+}
+
+// ------------------------------------------------------------------ //
+// Metadata DTOs
+// ------------------------------------------------------------------ //
+
+export class MetadataEntryDto {
+  @ApiProperty() @IsString() @IsNotEmpty() key!: string;
+  @ApiProperty() @IsString() value!: string;
+}
+
+export class SetDocumentMetadataDto {
+  @ApiProperty({ type: [MetadataEntryDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MetadataEntryDto)
+  entries!: MetadataEntryDto[];
 }
 
 // ------------------------------------------------------------------ //

@@ -619,6 +619,43 @@ export class DocumentsService {
   }
 
   // ------------------------------------------------------------------ //
+  // Metadata
+  // ------------------------------------------------------------------ //
+
+  async setMetadata(
+    id: string,
+    entries: { key: string; value: string }[],
+    user: DevUserPayload,
+  ): Promise<{ id: string; key: string; value: string }[]> {
+    const doc = await this.prisma.document.findUnique({ where: { id } });
+    if (!doc) throw new NotFoundException(`Document "${id}" not found`);
+    assertEditorOrAbove(user, doc.workspaceId);
+
+    // Upsert each entry (unique on documentId+key), delete any keys not in the new list
+    await this.prisma.$transaction(async (tx) => {
+      // Remove entries whose keys are no longer present
+      const keys = entries.map((e) => e.key);
+      await tx.documentMetadata.deleteMany({
+        where: { documentId: id, key: { notIn: keys } },
+      });
+      // Upsert each entry
+      for (const entry of entries) {
+        await tx.documentMetadata.upsert({
+          where: { documentId_key: { documentId: id, key: entry.key } },
+          create: { documentId: id, key: entry.key, value: entry.value },
+          update: { value: entry.value },
+        });
+      }
+    });
+
+    const updated = await this.prisma.documentMetadata.findMany({
+      where: { documentId: id },
+      orderBy: { key: 'asc' },
+    });
+    return updated.map((m) => ({ id: m.id, key: m.key, value: m.value }));
+  }
+
+  // ------------------------------------------------------------------ //
   // Reminders
   // ------------------------------------------------------------------ //
 

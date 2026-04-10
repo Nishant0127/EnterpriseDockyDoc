@@ -190,6 +190,23 @@ export function downloadDocumentVersion(
 }
 
 // ------------------------------------------------------------------ //
+// Documents — metadata
+// ------------------------------------------------------------------ //
+
+export function setDocumentMetadata(
+  documentId: string,
+  entries: { key: string; value: string }[],
+): Promise<{ id: string; key: string; value: string }[]> {
+  return apiFetch<{ id: string; key: string; value: string }[]>(
+    `/api/v1/documents/${documentId}/metadata`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ entries }),
+    },
+  );
+}
+
+// ------------------------------------------------------------------ //
 // Search
 // ------------------------------------------------------------------ //
 

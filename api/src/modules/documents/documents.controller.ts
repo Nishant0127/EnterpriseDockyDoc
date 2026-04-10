@@ -34,6 +34,7 @@ import {
   DocumentListItemDto,
   DocumentQueryDto,
   DocumentReminderDto,
+  SetDocumentMetadataDto,
   SetDocumentRemindersDto,
   SetDocumentTagsDto,
   UpdateDocumentDto,
@@ -323,6 +324,23 @@ export class DocumentsController {
     @CurrentUser() user: DevUserPayload,
   ) {
     return this.documentsService.setTags(id, dto, user);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Metadata — upsert entries
+  // ------------------------------------------------------------------ //
+
+  @Put(':id/metadata')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Set metadata for a document (upserts entries, removes unlisted keys)' })
+  @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 200, description: 'Updated metadata list' })
+  setMetadata(
+    @Param('id') id: string,
+    @Body() dto: SetDocumentMetadataDto,
+    @CurrentUser() user: DevUserPayload,
+  ) {
+    return this.documentsService.setMetadata(id, dto.entries, user);
   }
 
   // ------------------------------------------------------------------ //

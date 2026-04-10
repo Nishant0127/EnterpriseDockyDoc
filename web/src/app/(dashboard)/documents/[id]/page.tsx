@@ -10,8 +10,9 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
 import ConfirmModal from '@/components/ui/ConfirmModal';
 import { useUser } from '@/context/UserContext';
-import type { AuditLog, DocumentDetail, DocumentStatus, FolderListItem, Tag } from '@/types';
+import type { AuditLog, DocumentDetail, DocumentStatus, DocumentVersion, FolderListItem, Tag } from '@/types';
 import ShareSection from './ShareSection';
+import DocumentPreviewCard from './DocumentPreviewCard';
 
 // ------------------------------------------------------------------ //
 // Status config
@@ -130,6 +131,7 @@ export default function DocumentDetailPage() {
   const [aiExtraction, setAiExtraction] = useState<AiExtractionResult | null>(null);
   const [aiExtracting, setAiExtracting] = useState(false);
   const [aiApplying, setAiApplying] = useState(false);
+  const [previewVersion, setPreviewVersion] = useState<number | null>(null);
 
   async function loadAiExtraction() {
     if (!params.id) return;
@@ -189,6 +191,7 @@ export default function DocumentDetailPage() {
     fetchDocument(params.id)
       .then((d) => {
         setDoc(d);
+        setPreviewVersion((prev: number | null) => prev ?? d.currentVersionNumber);
         void loadAiExtraction();
       })
       .catch(() => setError('Document not found or API unavailable.'))
@@ -417,6 +420,48 @@ export default function DocumentDetailPage() {
         </div>
       </div>
 
+      {/* Document preview */}
+      {previewVersion !== null && (
+        <div className="mb-5 bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50">
+            <div className="flex items-center gap-2">
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className="text-gray-400">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M3 9h18M9 21V9" strokeLinecap="round" />
+              </svg>
+              <span className="text-sm font-medium text-gray-700">Document Preview</span>
+              <span className="text-xs text-gray-400">
+                — v{previewVersion}
+                {previewVersion === doc.currentVersionNumber ? ' (current)' : ''}
+              </span>
+            </div>
+            {/* Version switcher */}
+            <div className="flex items-center gap-1">
+              {doc.versions.map((v: DocumentVersion) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => setPreviewVersion(v.versionNumber)}
+                  className={cn(
+                    'px-2 py-0.5 rounded text-xs font-medium transition-colors',
+                    v.versionNumber === previewVersion
+                      ? 'bg-brand-600 text-white'
+                      : 'text-gray-500 hover:bg-gray-200',
+                  )}
+                >
+                  v{v.versionNumber}
+                </button>
+              ))}
+            </div>
+          </div>
+          <DocumentPreviewCard
+            documentId={doc.id}
+            versionNumber={previewVersion}
+            mimeHint={doc.versions.find((v: DocumentVersion) => v.versionNumber === previewVersion)?.mimeType}
+          />
+        </div>
+      )}
+
       {/* 2-column grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
@@ -509,6 +554,23 @@ export default function DocumentDetailPage() {
                       <p className="text-xs text-gray-500">{formatBytes(v.fileSizeBytes)}</p>
                       <p className="text-[10px] text-gray-400 truncate max-w-28">{v.mimeType}</p>
                     </div>
+                    {/* Preview this version */}
+                    <button
+                      type="button"
+                      onClick={() => setPreviewVersion(v.versionNumber)}
+                      title={`Preview v${v.versionNumber}`}
+                      className={cn(
+                        'p-1.5 rounded-md text-xs font-medium transition-colors',
+                        v.versionNumber === previewVersion
+                          ? 'bg-brand-50 text-brand-600'
+                          : 'text-gray-400 hover:text-brand-600 hover:bg-brand-50',
+                      )}
+                    >
+                      <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </button>
                     {/* Per-version download */}
                     {parseInt(v.fileSizeBytes, 10) > 0 && (
                       <button
