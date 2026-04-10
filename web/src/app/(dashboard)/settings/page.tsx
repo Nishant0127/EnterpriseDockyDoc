@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import { fetchWorkspaceDetail, fetchTags, createTag, updateTag, deleteTag, renameWorkspace } from '@/lib/documents';
+import type { AiSettings } from '@/lib/documents';
+import { fetchAiSettings, updateAiSettings } from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
 import ConfirmModal from '@/components/ui/ConfirmModal';
@@ -19,6 +21,12 @@ export default function SettingsPage() {
   const [renameValue, setRenameValue] = useState('');
   const [renameSaving, setRenameSaving] = useState(false);
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
+  const [aiSettingsLoading, setAiSettingsLoading] = useState(false);
+  const [aiProviderMode, setAiProviderMode] = useState<'PLATFORM' | 'BYOK'>('PLATFORM');
+  const [byokKey, setByokKey] = useState('');
+  const [aiSaving, setAiSaving] = useState(false);
+  const [showByokKey, setShowByokKey] = useState(false);
 
   useEffect(() => {
     if (!activeWorkspace) return;
@@ -33,6 +41,14 @@ export default function SettingsPage() {
       .then(setTags)
       .catch(() => setTags([]))
       .finally(() => setTagsLoading(false));
+    setAiSettingsLoading(true);
+    fetchAiSettings(activeWorkspace.workspaceId)
+      .then((s) => {
+        setAiSettings(s);
+        setAiProviderMode(s.aiProvider);
+      })
+      .catch(() => setAiSettings(null))
+      .finally(() => setAiSettingsLoading(false));
   }, [activeWorkspace?.workspaceId]);
 
   function refreshTags() {
@@ -55,6 +71,28 @@ export default function SettingsPage() {
       toast.error(err instanceof Error ? err.message : 'Failed to rename workspace.');
     } finally {
       setRenameSaving(false);
+    }
+  }
+
+  async function handleSaveAiSettings(e: React.FormEvent) {
+    e.preventDefault();
+    if (!activeWorkspace) return;
+    setAiSaving(true);
+    try {
+      const payload: { aiProvider: string; apiKey?: string } = {
+        aiProvider: aiProviderMode,
+      };
+      if (aiProviderMode === 'BYOK' && byokKey.trim()) {
+        payload.apiKey = byokKey.trim();
+      }
+      const updated = await updateAiSettings(activeWorkspace.workspaceId, payload);
+      setAiSettings(updated);
+      setByokKey('');
+      toast.success('AI settings saved.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save AI settings.');
+    } finally {
+      setAiSaving(false);
     }
   }
 
@@ -188,6 +226,130 @@ export default function SettingsPage() {
           <p className="text-sm text-gray-400 py-1">
             Connect with third-party tools — coming soon.
           </p>
+        </SettingsCard>
+
+        {/* AI Configuration */}
+        <SettingsCard title="AI Configuration">
+          {aiSettingsLoading ? (
+            <div className="py-4 text-center text-sm text-gray-400">Loading AI settings…</div>
+          ) : aiSettings === null ? (
+            <div className="py-4 text-center text-sm text-gray-400">AI settings unavailable.</div>
+          ) : (
+            <form onSubmit={handleSaveAiSettings} className="space-y-4 py-2">
+              {/* Plan badge */}
+              <div className="flex items-center justify-between py-2 border-b border-gray-50">
+                <span className="text-xs text-gray-500 font-medium w-28 flex-shrink-0">Plan</span>
+                <span className={cn(
+                  'text-xs font-semibold px-2 py-0.5 rounded-full',
+                  aiSettings.plan === 'FREE' && 'bg-gray-100 text-gray-600',
+                  aiSettings.plan === 'PRO' && 'bg-blue-100 text-blue-700',
+                  aiSettings.plan === 'ENTERPRISE' && 'bg-purple-100 text-purple-700',
+                )}>
+                  {aiSettings.plan}
+                </span>
+              </div>
+
+              {/* Provider toggle */}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAiProviderMode('PLATFORM')}
+                  className={cn(
+                    'flex-1 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors',
+                    aiProviderMode === 'PLATFORM'
+                      ? 'border-blue-500 bg-blue-50 text-blue-800'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300',
+                  )}
+                >
+                  <div className="font-medium">Use DockyDoc AI</div>
+                  <div className="text-xs mt-0.5 opacity-70">Managed by DockyDoc, usage tracked</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiProviderMode('BYOK')}
+                  className={cn(
+                    'flex-1 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors',
+                    aiProviderMode === 'BYOK'
+                      ? 'border-blue-500 bg-blue-50 text-blue-800'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300',
+                  )}
+                >
+                  <div className="font-medium">Bring Your Own Key</div>
+                  <div className="text-xs mt-0.5 opacity-70">Use your Anthropic API key</div>
+                </button>
+              </div>
+
+              {/* Platform: usage meter */}
+              {aiProviderMode === 'PLATFORM' && (
+                <div className="rounded-lg bg-gray-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs text-gray-600">
+                    <span>Tokens used this period</span>
+                    <span className="font-medium tabular-nums">
+                      {aiSettings.aiUsageTokens.toLocaleString()} / {aiSettings.aiUsageLimit.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        'h-full rounded-full transition-all',
+                        aiSettings.aiUsagePercent >= 90 ? 'bg-red-500' :
+                        aiSettings.aiUsagePercent >= 70 ? 'bg-yellow-500' : 'bg-blue-500',
+                      )}
+                      style={{ width: `${aiSettings.aiUsagePercent}%` }}
+                    />
+                  </div>
+                  {aiSettings.aiUsagePercent >= 90 && (
+                    <p className="text-xs text-red-600">
+                      Usage limit nearly reached. Upgrade your plan to continue using AI features.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* BYOK: API key input */}
+              {aiProviderMode === 'BYOK' && (
+                <div className="space-y-2">
+                  {aiSettings.hasApiKey && (
+                    <p className="text-xs text-green-600 flex items-center gap-1">
+                      <span>✓</span> API key saved. Enter a new key below to replace it.
+                    </p>
+                  )}
+                  <div className="relative">
+                    <input
+                      type={showByokKey ? 'text' : 'password'}
+                      value={byokKey}
+                      onChange={(e) => setByokKey(e.target.value)}
+                      placeholder={aiSettings.hasApiKey ? 'Enter new key to replace…' : 'sk-ant-…'}
+                      className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm pr-16 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowByokKey((v) => !v)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600"
+                    >
+                      {showByokKey ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Keys are encrypted at rest. Never shared or logged.
+                  </p>
+                </div>
+              )}
+
+              {/* Save button — only show if user can edit */}
+              {canRename && (
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="submit"
+                    disabled={aiSaving || (aiProviderMode === 'BYOK' && !aiSettings.hasApiKey && !byokKey.trim())}
+                    className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {aiSaving ? 'Saving…' : 'Save AI Settings'}
+                  </button>
+                </div>
+              )}
+            </form>
+          )}
         </SettingsCard>
 
         <SettingsCard title="Danger zone">

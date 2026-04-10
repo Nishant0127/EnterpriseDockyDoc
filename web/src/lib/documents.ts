@@ -327,3 +327,31 @@ export function fetchWorkspaceReminders(workspaceId: string): Promise<UpcomingRe
     `/api/v1/reminders?workspaceId=${encodeURIComponent(workspaceId)}`,
   );
 }
+
+// ------------------------------------------------------------------ //
+// AI Settings
+// ------------------------------------------------------------------ //
+
+export interface AiSettings {
+  plan: string;
+  aiProvider: 'PLATFORM' | 'BYOK';
+  aiProviderType: 'ANTHROPIC' | 'OPENAI';
+  hasApiKey: boolean;
+  aiUsageTokens: number;
+  aiUsageLimit: number;
+  aiUsagePercent: number;
+}
+
+export async function fetchAiSettings(workspaceId: string): Promise<AiSettings> {
+  return apiFetch<AiSettings>(`/api/v1/workspaces/${workspaceId}/ai-settings`);
+}
+
+export async function updateAiSettings(
+  workspaceId: string,
+  data: { aiProvider?: string; aiProviderType?: string; apiKey?: string },
+): Promise<AiSettings> {
+  return apiFetch<AiSettings>(`/api/v1/workspaces/${workspaceId}/ai-settings`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
