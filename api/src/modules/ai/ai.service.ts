@@ -224,10 +224,18 @@ export class AiService {
     await this.upsertMeta(documentId, AI_KEYS.STATUS, 'running');
 
     try {
-      // ---- 1. Fetch document ---------------------------------------- //
+      // ---- 1. Fetch document (include current version for storageKey/mimeType) //
       const doc = await this.prisma.document.findUnique({
         where: { id: documentId },
-        include: { searchContent: true, metadata: true },
+        include: {
+          searchContent: true,
+          metadata: true,
+          versions: {
+            orderBy: { versionNumber: 'desc' },
+            take: 1,
+            select: { storageKey: true, mimeType: true },
+          },
+        },
       });
       if (!doc) throw new NotFoundException(`Document ${documentId} not found`);
 
@@ -238,20 +246,36 @@ export class AiService {
         return this.buildDisabledResult();
       }
 
-      // ---- 3. Read file buffer --------------------------------------- //
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const storageKey: string = (doc as any).storageKey ?? '';
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mimeType: string = (doc as any).mimeType ?? '';
+      // ---- 3. Read file buffer from the latest DocumentVersion ------- //
+      const currentVersion = doc.versions[0] ?? null;
+      const storageKey: string = currentVersion?.storageKey ?? '';
+      const mimeType: string = currentVersion?.mimeType ?? '';
+
+      this.logger.log(
+        `extractDocument ${documentId}: storageKey="${storageKey}" mimeType="${mimeType}"`,
+      );
 
       let fileBuffer: Buffer | null = null;
       if (storageKey) {
-        const filePath = path.join(process.cwd(), 'uploads', storageKey);
+        // Resolve path the same way LocalStorageService does (strips traversal segments)
+        const segments = storageKey
+          .split('/')
+          .filter((s) => s.length > 0 && s !== '..' && s !== '.');
+        const filePath = path.join(process.cwd(), 'uploads', ...segments);
         try {
           fileBuffer = fs.readFileSync(filePath);
+          this.logger.log(
+            `extractDocument ${documentId}: read ${fileBuffer.length} bytes from ${filePath}`,
+          );
         } catch {
-          this.logger.warn(`extractDocument ${documentId}: could not read file ${storageKey}`);
+          this.logger.warn(
+            `extractDocument ${documentId}: could not read file at "${filePath}" — file may not exist yet`,
+          );
         }
+      } else {
+        this.logger.warn(
+          `extractDocument ${documentId}: no storageKey found (document has ${doc.versions.length} version(s))`,
+        );
       }
 
       // ---- 4. OCR --------------------------------------------------- //
