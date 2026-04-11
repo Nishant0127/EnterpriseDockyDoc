@@ -28,12 +28,12 @@ export default function DashboardPage() {
     Promise.all([
       fetchWorkspaceSummary(activeWorkspace.workspaceId),
       fetchExpiringDocuments(activeWorkspace.workspaceId),
-      fetchWorkspaceActivity({ workspaceId: activeWorkspace.workspaceId, limit: 6 }),
+      fetchWorkspaceActivity({ workspaceId: activeWorkspace.workspaceId, limit: 10 }),
     ])
       .then(([s, exp, act]) => {
         if (cancelled) return;
         setSummary(s);
-        setExpiring(exp.slice(0, 5));
+        setExpiring(exp.slice(0, 8));
         setActivity(act);
       })
       .catch(() => {
@@ -46,23 +46,32 @@ export default function DashboardPage() {
 
   if (loading) return <DashboardSkeleton />;
 
+  const hasExpired   = (summary?.expiredCount  ?? 0) > 0;
+  const hasExpiring  = (summary?.expiringCount ?? 0) > 0;
+
   return (
-    <div className="max-w-6xl">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-6">
+    <div className="max-w-6xl space-y-5">
+
+      {/* ── Header ─────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">
-            {activeWorkspace?.workspaceName ?? 'Dashboard'}
-          </h1>
-          <p className="mt-0.5 text-sm text-gray-500">
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold text-gray-900">
+              {activeWorkspace?.workspaceName ?? 'Dashboard'}
+            </h1>
+            {activeWorkspace?.workspaceType && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-gray-100 text-gray-500">
+                {activeWorkspace.workspaceType}
+              </span>
+            )}
+          </div>
+          <p className="mt-0.5 text-xs text-gray-400">
             Welcome back{user ? `, ${user.firstName}` : ''}. Here&apos;s your workspace at a glance.
           </p>
         </div>
-        {/* Quick Actions — top right */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <Link
             href="/documents?upload=1"
-            title="Upload document"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 transition-colors"
           >
             <UploadIcon className="text-white" />
@@ -70,7 +79,6 @@ export default function DashboardPage() {
           </Link>
           <Link
             href="/documents"
-            title="Browse documents"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
           >
             <FolderIcon className="text-gray-500" />
@@ -78,7 +86,6 @@ export default function DashboardPage() {
           </Link>
           <Link
             href="/members"
-            title="Manage members"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
           >
             <UsersIcon className="text-gray-500" />
@@ -87,22 +94,30 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      {/* ── 6-stat KPI grid (2 → 3 → 6 columns) ────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard
-          label="Total documents"
+          label="Documents"
           value={summary?.totalDocuments ?? 0}
-          sub={summary ? `${summary.activeDocuments} active · ${summary.archivedDocuments} archived` : ''}
+          sub={summary ? `${summary.activeDocuments} active` : '—'}
           icon={<DocIcon />}
           color="brand"
           href="/documents"
         />
         <KpiCard
-          label="Expiring soon"
+          label="Archived"
+          value={summary?.archivedDocuments ?? 0}
+          sub="documents"
+          icon={<ArchiveIcon />}
+          color="gray"
+          href="/documents?status=archived"
+        />
+        <KpiCard
+          label="Expiring"
           value={summary?.expiringCount ?? 0}
           sub="within 90 days"
           icon={<ClockIcon />}
-          color={summary && summary.expiringCount > 0 ? 'orange' : 'gray'}
+          color={hasExpiring ? 'orange' : 'gray'}
           href="/reminders?tab=expiring"
         />
         <KpiCard
@@ -110,57 +125,47 @@ export default function DashboardPage() {
           value={summary?.expiredCount ?? 0}
           sub="need attention"
           icon={<AlertIcon />}
-          color={summary && summary.expiredCount > 0 ? 'red' : 'gray'}
+          color={hasExpired ? 'red' : 'gray'}
           href="/reminders?tab=expired"
         />
         <KpiCard
-          label="Active shares"
+          label="Members"
+          value={summary?.memberCount ?? 0}
+          sub="in workspace"
+          icon={<UsersIcon />}
+          color="teal"
+          href="/members"
+        />
+        <KpiCard
+          label="Shares"
           value={summary?.activeShares ?? 0}
-          sub="internal + external"
+          sub="active links"
           icon={<ShareIcon />}
           color="purple"
         />
       </div>
 
-      {/* Secondary stats row */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-gray-200 px-5 py-4 flex items-center gap-4">
-          <div className="w-10 h-10 rounded-lg bg-teal-50 flex items-center justify-center flex-shrink-0">
-            <UsersIcon className="text-teal-600" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-gray-900">{summary?.memberCount ?? 0}</p>
-            <p className="text-xs text-gray-500">Team members</p>
-          </div>
-          <Link href="/members" className="ml-auto text-xs text-brand-600 hover:underline">
-            Manage →
-          </Link>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 px-5 py-4 flex items-center gap-4">
-          <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
-            <UploadIcon className="text-green-600" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-gray-900">{summary?.recentUploads ?? 0}</p>
-            <p className="text-xs text-gray-500">Uploads this week</p>
-          </div>
-          <Link href="/documents" className="ml-auto text-xs text-brand-600 hover:underline">
-            View →
-          </Link>
-        </div>
-      </div>
+      {/* ── Uploads-this-week banner + bottom panels ─────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Activity */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-900">Recent Activity</h2>
-            <Link href="/activity" className="text-xs text-brand-600 hover:underline">
+        {/* Recent Activity — 3 of 5 cols */}
+        <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <ActivityIcon className="text-gray-400" />
+              <h2 className="text-sm font-semibold text-gray-900">Recent Activity</h2>
+              {summary?.recentUploads !== undefined && summary.recentUploads > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 text-[10px] font-semibold">
+                  {summary.recentUploads} upload{summary.recentUploads !== 1 ? 's' : ''} this week
+                </span>
+              )}
+            </div>
+            <Link href="/activity" className="text-xs text-brand-600 hover:underline flex-shrink-0">
               View all →
             </Link>
           </div>
           {activity.length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-gray-400">No activity yet.</div>
+            <div className="px-4 py-10 text-center text-sm text-gray-400">No activity yet.</div>
           ) : (
             <div className="divide-y divide-gray-50">
               {activity.map((log) => {
@@ -172,18 +177,18 @@ export default function DashboardPage() {
                 const m = Math.floor(diff / 60000);
                 const ago =
                   m < 1 ? 'just now'
-                  : m < 60 ? `${m}m ago`
-                  : m < 1440 ? `${Math.floor(m / 60)}h ago`
+                  : m < 60 ? `${m}m`
+                  : m < 1440 ? `${Math.floor(m / 60)}h`
                   : new Date(log.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
                 return (
-                  <div key={log.id} className="flex items-start gap-3 px-5 py-3">
-                    <span className={cn('w-2 h-2 rounded-full mt-1.5 flex-shrink-0', DOT_COLORS[category])} />
+                  <div key={log.id} className="flex items-center gap-3 px-4 py-2">
+                    <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', DOT_COLORS[category])} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-800 truncate">{describeAuditLog(log)}</p>
-                      <p className="text-xs text-gray-400">{actor}</p>
+                      <p className="text-xs text-gray-800 truncate">{describeAuditLog(log)}</p>
+                      <p className="text-[10px] text-gray-400">{actor}</p>
                     </div>
-                    <span className="text-xs text-gray-400 whitespace-nowrap">{ago}</span>
+                    <span className="text-[10px] text-gray-400 whitespace-nowrap tabular-nums">{ago}</span>
                   </div>
                 );
               })}
@@ -191,50 +196,69 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Expiring Documents */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-900">Expiring Documents</h2>
-            <Link href="/reminders" className="text-xs text-brand-600 hover:underline">
+        {/* Expiring Documents — 2 of 5 cols */}
+        <div className={cn(
+          'lg:col-span-2 bg-white rounded-xl border overflow-hidden',
+          hasExpired ? 'border-red-200' : hasExpiring ? 'border-orange-200' : 'border-gray-200',
+        )}>
+          <div className={cn(
+            'flex items-center justify-between px-4 py-3 border-b',
+            hasExpired ? 'border-red-100 bg-red-50' : hasExpiring ? 'border-orange-100 bg-orange-50' : 'border-gray-100',
+          )}>
+            <div className="flex items-center gap-2">
+              <ClockIcon className={cn(hasExpired ? 'text-red-500' : hasExpiring ? 'text-orange-500' : 'text-gray-400')} />
+              <h2 className={cn(
+                'text-sm font-semibold',
+                hasExpired ? 'text-red-700' : hasExpiring ? 'text-orange-700' : 'text-gray-900',
+              )}>
+                Expiring
+              </h2>
+              {hasExpired && (
+                <span className="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-bold">
+                  {summary!.expiredCount} expired
+                </span>
+              )}
+            </div>
+            <Link
+              href="/reminders"
+              className={cn('text-xs hover:underline flex-shrink-0', hasExpired ? 'text-red-600' : 'text-brand-600')}
+            >
               View all →
             </Link>
           </div>
           {expiring.length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-gray-400">
+            <div className="px-4 py-10 text-center text-sm text-gray-400">
               No documents expiring soon.
             </div>
           ) : (
             <div className="divide-y divide-gray-50">
               {expiring.map((doc) => {
-                const isExpired = doc.daysUntilExpiry < 0;
-                const isToday = doc.daysUntilExpiry === 0;
+                const isExpired  = doc.daysUntilExpiry < 0;
+                const isToday    = doc.daysUntilExpiry === 0;
                 const isCritical = doc.daysUntilExpiry <= 7;
                 return (
-                  <div key={doc.id} className="flex items-center gap-3 px-5 py-3">
+                  <div key={doc.id} className="flex items-center gap-2 px-4 py-2">
                     <div className="flex-1 min-w-0">
                       <Link
                         href={`/documents/${doc.id}`}
-                        className="text-sm font-medium text-gray-900 hover:text-brand-600 truncate block"
+                        className="text-xs font-medium text-gray-900 hover:text-brand-600 truncate block"
                       >
                         {doc.name}
                       </Link>
                       {doc.folderName && (
-                        <p className="text-xs text-gray-400 truncate">{doc.folderName}</p>
+                        <p className="text-[10px] text-gray-400 truncate">{doc.folderName}</p>
                       )}
                     </div>
-                    <span
-                      className={cn(
-                        'text-xs font-semibold whitespace-nowrap',
-                        isExpired || isToday ? 'text-red-600'
-                        : isCritical ? 'text-orange-600'
-                        : 'text-yellow-700',
-                      )}
-                    >
+                    <span className={cn(
+                      'text-[10px] font-bold whitespace-nowrap tabular-nums',
+                      isExpired || isToday ? 'text-red-600'
+                      : isCritical ? 'text-orange-600'
+                      : 'text-yellow-700',
+                    )}>
                       {isExpired
-                        ? `${Math.abs(doc.daysUntilExpiry)}d overdue`
-                        : isToday
-                        ? 'Today'
-                        : `${doc.daysUntilExpiry}d left`}
+                        ? `${Math.abs(doc.daysUntilExpiry)}d over`
+                        : isToday ? 'Today'
+                        : `${doc.daysUntilExpiry}d`}
                     </span>
                   </div>
                 );
@@ -242,8 +266,8 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
-      </div>
 
+      </div>
     </div>
   );
 }
@@ -257,6 +281,7 @@ const COLOR_ICON: Record<string, string> = {
   orange: 'bg-orange-50',
   red:    'bg-red-50',
   purple: 'bg-purple-50',
+  teal:   'bg-teal-50',
   gray:   'bg-gray-50',
 };
 
@@ -265,6 +290,7 @@ const COLOR_VALUE: Record<string, string> = {
   orange: 'text-orange-600',
   red:    'text-red-600',
   purple: 'text-purple-600',
+  teal:   'text-teal-600',
   gray:   'text-gray-700',
 };
 
@@ -294,24 +320,17 @@ function KpiCard({
 }) {
   const content = (
     <div className={cn(
-      'bg-white rounded-xl border border-gray-200 p-5 transition-all duration-150',
+      'bg-white rounded-xl border border-gray-200 p-4 transition-all duration-150',
       href && 'group-hover:shadow-md group-hover:-translate-y-0.5 group-hover:border-gray-300',
     )}>
-      <div className="flex items-start justify-between mb-3">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
-        <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center transition-transform duration-150', COLOR_ICON[color], href && 'group-hover:scale-110')}>
-          <span className={COLOR_VALUE[color]}>{icon}</span>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">{label}</p>
+        <div className={cn('w-6 h-6 rounded-md flex items-center justify-center transition-transform duration-150', COLOR_ICON[color], href && 'group-hover:scale-110')}>
+          <span className={cn(COLOR_VALUE[color], '[&_svg]:w-3 [&_svg]:h-3')}>{icon}</span>
         </div>
       </div>
-      <p className={cn('text-3xl font-bold', COLOR_VALUE[color])}>{value}</p>
-      <div className="mt-1 flex items-center justify-between">
-        <p className="text-xs text-gray-400">{sub}</p>
-        {href && (
-          <span className="text-[10px] text-gray-300 group-hover:text-brand-400 transition-colors font-medium">
-            View →
-          </span>
-        )}
-      </div>
+      <p className={cn('text-2xl font-bold leading-none', COLOR_VALUE[color])}>{value}</p>
+      <p className="mt-1.5 text-[10px] text-gray-400 truncate">{sub}</p>
     </div>
   );
 
@@ -331,22 +350,26 @@ function KpiCard({
 
 function DashboardSkeleton() {
   return (
-    <div className="max-w-6xl animate-pulse">
-      <div className="h-7 w-48 bg-gray-200 rounded mb-2" />
-      <div className="h-4 w-72 bg-gray-100 rounded mb-6" />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="bg-white rounded-xl border border-gray-200 p-5 h-28" />
+    <div className="max-w-6xl animate-pulse space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="h-6 w-44 bg-gray-200 rounded mb-1.5" />
+          <div className="h-3 w-64 bg-gray-100 rounded" />
+        </div>
+        <div className="flex gap-2">
+          <div className="h-8 w-20 bg-gray-200 rounded-lg" />
+          <div className="h-8 w-24 bg-gray-100 rounded-lg" />
+          <div className="h-8 w-20 bg-gray-100 rounded-lg" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="bg-white rounded-xl border border-gray-200 p-4 h-24" />
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        {Array.from({ length: 2 }).map((_, i) => (
-          <div key={i} className="bg-white rounded-xl border border-gray-200 h-20" />
-        ))}
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border border-gray-200 h-64" />
-        <div className="bg-white rounded-xl border border-gray-200 h-64" />
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 h-72" />
+        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 h-72" />
       </div>
     </div>
   );
@@ -365,9 +388,19 @@ function DocIcon() {
   );
 }
 
-function ClockIcon() {
+function ArchiveIcon() {
   return (
     <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <polyline points="21 8 21 21 3 21 3 8" />
+      <rect x="1" y="3" width="22" height="5" />
+      <line x1="10" y1="12" x2="14" y2="12" />
+    </svg>
+  );
+}
+
+function ClockIcon({ className }: { className?: string } = {}) {
+  return (
+    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className={className}>
       <circle cx="12" cy="12" r="10" />
       <path d="M12 6v6l4 2" strokeLinecap="round" />
     </svg>
@@ -396,7 +429,7 @@ function ShareIcon() {
   );
 }
 
-function UsersIcon({ className }: { className?: string }) {
+function UsersIcon({ className }: { className?: string } = {}) {
   return (
     <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className={className}>
       <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -407,7 +440,7 @@ function UsersIcon({ className }: { className?: string }) {
   );
 }
 
-function UploadIcon({ className }: { className?: string }) {
+function UploadIcon({ className }: { className?: string } = {}) {
   return (
     <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className={className}>
       <path d="M4 16.004V17a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1M16 8l-4-4-4 4M12 4v12" strokeLinecap="round" strokeLinejoin="round" />
@@ -415,7 +448,7 @@ function UploadIcon({ className }: { className?: string }) {
   );
 }
 
-function FolderIcon({ className }: { className?: string }) {
+function FolderIcon({ className }: { className?: string } = {}) {
   return (
     <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className={className}>
       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
@@ -423,9 +456,9 @@ function FolderIcon({ className }: { className?: string }) {
   );
 }
 
-function ActivityIcon({ className }: { className?: string }) {
+function ActivityIcon({ className }: { className?: string } = {}) {
   return (
-    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className={className}>
+    <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className={className}>
       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
