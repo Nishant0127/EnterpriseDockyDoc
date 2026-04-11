@@ -14,16 +14,16 @@ import type { WorkspaceSummary, ExpiringDocument, AuditLog } from '@/types';
 // ------------------------------------------------------------------ //
 
 export default function DashboardPage() {
-  const { activeWorkspace, user } = useUser();
+  const { activeWorkspace, user, isLoading: userLoading } = useUser();
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
   const [expiring, setExpiring] = useState<ExpiringDocument[]>([]);
   const [activity, setActivity] = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(false);
 
   useEffect(() => {
     if (!activeWorkspace) return;
     let cancelled = false;
-    setLoading(true);
+    setDataLoading(true);
 
     Promise.all([
       fetchWorkspaceSummary(activeWorkspace.workspaceId),
@@ -39,12 +39,37 @@ export default function DashboardPage() {
       .catch(() => {
         if (!cancelled) setSummary(null);
       })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .finally(() => { if (!cancelled) setDataLoading(false); });
 
     return () => { cancelled = true; };
   }, [activeWorkspace?.workspaceId]);
 
+  const loading = userLoading || dataLoading;
   if (loading) return <DashboardSkeleton />;
+
+  // User has no accessible workspaces (new user, or removed from all workspaces)
+  if (!activeWorkspace) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-gray-100 flex items-center justify-center">
+          <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" className="text-gray-400">
+            <rect x="2" y="7" width="20" height="14" rx="2" />
+            <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+          </svg>
+        </div>
+        <h2 className="text-sm font-semibold text-gray-700">No workspace selected</h2>
+        <p className="mt-1 text-xs text-gray-400 max-w-xs">
+          You don&apos;t belong to any workspace yet. Accept an invitation or create one to get started.
+        </p>
+        <a
+          href="/workspaces"
+          className="mt-4 inline-flex items-center gap-1 text-sm text-brand-600 hover:underline"
+        >
+          Go to Workspaces →
+        </a>
+      </div>
+    );
+  }
 
   const hasExpired   = (summary?.expiredCount  ?? 0) > 0;
   const hasExpiring  = (summary?.expiringCount ?? 0) > 0;

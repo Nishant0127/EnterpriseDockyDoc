@@ -29,8 +29,10 @@ interface UserContextValue {
   /**
    * Re-fetch the current user (refreshes workspace names, roles, etc.).
    * Call after renaming a workspace or after a role change that affects the current user.
+   * Pass workspaceId to atomically switch to a specific workspace after the refresh
+   * (used by the invite-accept flow to land the user in the correct workspace).
    */
-  refreshUser: () => Promise<void>;
+  refreshUser: (workspaceId?: string) => Promise<void>;
   /**
    * Clear the stored JWT, reset user state, and redirect to /login.
    */
@@ -95,16 +97,27 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const refreshUser = useCallback(async () => {
+  const refreshUser = useCallback(async (workspaceId?: string) => {
     try {
       const data = await fetchCurrentUser();
       setUser(data);
-      // Refresh activeWorkspace if it's still in the updated membership list
-      setActiveWorkspace((prev) => {
-        if (!prev) return data.defaultWorkspace;
-        const refreshed = data.workspaces.find((w) => w.workspaceId === prev.workspaceId);
-        return refreshed ?? prev;
-      });
+
+      if (workspaceId) {
+        // Caller wants to explicitly switch to a specific workspace after refresh
+        // (e.g., post invite-accept — land in the newly joined workspace)
+        const target = data.workspaces.find((w) => w.workspaceId === workspaceId);
+        setActiveWorkspace(target ?? data.defaultWorkspace);
+        if (target) localStorage.setItem(STORAGE_KEY, workspaceId);
+      } else {
+        // Re-validate the current active workspace against the fresh membership list.
+        // If it's no longer present (e.g., removed from workspace) fall back to the
+        // server-computed default instead of keeping a stale reference.
+        setActiveWorkspace((prev) => {
+          if (!prev) return data.defaultWorkspace;
+          const refreshed = data.workspaces.find((w) => w.workspaceId === prev.workspaceId);
+          return refreshed ?? data.defaultWorkspace;
+        });
+      }
     } catch {
       // Ignore errors on background refresh
     }

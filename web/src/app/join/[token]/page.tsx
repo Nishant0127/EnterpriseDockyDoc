@@ -57,12 +57,13 @@ export default function JoinPage() {
     setAcceptError(null);
     try {
       const result = await acceptInvitation(params.token);
+      // Refresh memberships AND switch active workspace to the one just joined.
+      // This ensures both new users (no prior workspace) and existing multi-workspace
+      // users land in the correct workspace after redirect.
+      if (refreshUser) await refreshUser(result.workspaceId);
       setAccepted(true);
-      // Refresh user context so new workspace membership appears
-      if (refreshUser) await refreshUser();
       // Navigate to dashboard after a short delay so user can read the success message
       setTimeout(() => router.push('/dashboard'), 1500);
-      void result; // result.workspaceName available if needed
     } catch (err: unknown) {
       setAcceptError(err instanceof Error ? err.message : 'Failed to accept invitation.');
     } finally {
