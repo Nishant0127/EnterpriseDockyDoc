@@ -96,6 +96,10 @@ export class ClerkAuthGuard implements CanActivate {
       user = await this.linkClerkUser(clerkUserId, secretKey);
     }
 
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is deactivated');
+    }
+
     (request as Request & { devUser: DevUserPayload }).devUser = user;
     return true;
   }

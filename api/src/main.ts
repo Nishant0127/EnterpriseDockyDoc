@@ -19,15 +19,17 @@ async function bootstrap() {
   // ------------------------------------------------------------------ //
   // CORS
   // ------------------------------------------------------------------ //
+  const isProduction = process.env.NODE_ENV === 'production';
+  const allowedHeaders = ['Content-Type', 'Authorization'];
+  // x-dev-user-email is only needed when Clerk is not configured (local dev)
+  if (!isProduction) {
+    allowedHeaders.push('x-dev-user-email');
+  }
   app.enableCors({
     origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'x-dev-user-email', // DEV ONLY — remove when real JWT auth is implemented
-    ],
+    allowedHeaders,
   });
 
   // ------------------------------------------------------------------ //
@@ -51,29 +53,31 @@ async function bootstrap() {
   app.useGlobalInterceptors(new LoggingInterceptor());
 
   // ------------------------------------------------------------------ //
-  // Swagger — available at /api/docs
+  // Swagger — available at /api/docs (dev only; gated in production)
   // ------------------------------------------------------------------ //
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('DockyDoc API')
-    .setDescription('DockyDoc document management platform API')
-    .setVersion('1.0')
-    .addBearerAuth(
-      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
-      'access-token',
-    )
-    .build();
+  if (!isProduction) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('DockyDoc API')
+      .setDescription('DockyDoc document management platform API')
+      .setVersion('1.0')
+      .addBearerAuth(
+        { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+        'access-token',
+      )
+      .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document, {
-    swaggerOptions: { persistAuthorization: true },
-  });
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document, {
+      swaggerOptions: { persistAuthorization: true },
+    });
+    console.log(`Swagger docs  → http://localhost:${port}/api/docs`);
+  }
 
   // ------------------------------------------------------------------ //
   // Start
   // ------------------------------------------------------------------ //
   await app.listen(port);
   console.log(`DockyDoc API  → http://localhost:${port}`);
-  console.log(`Swagger docs  → http://localhost:${port}/api/docs`);
   console.log(`Health check  → http://localhost:${port}/api/v1/health`);
 }
 

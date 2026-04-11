@@ -152,6 +152,9 @@ export default function DocumentDetailPage() {
   const aiPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Track previous AI status to detect running→done transition for live autofill (Part D)
   const prevAiStatusRef = useRef<string | null>(null);
+  // Stable ref to toast so loadAiExtraction doesn't need toast in its deps
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   function stopAiPolling() {
     if (aiPollRef.current !== null) {
@@ -172,6 +175,17 @@ export default function DocumentDetailPage() {
         // Reload document when extraction just finished so auto-applied expiry dates appear live
         if (wasRunning && result.status === 'done') {
           fetchDocument(params.id).then(setDoc).catch(() => {});
+          // Notify the user about any fields the backend auto-applied at high confidence
+          if (result.appliedFields.length > 0) {
+            const labels: Record<string, string> = {
+              expiryDate: 'Expiry date',
+              renewalDueDate: 'Renewal date',
+            };
+            const applied = result.appliedFields
+              .map((f) => labels[f] ?? f)
+              .join(', ');
+            toastRef.current.success(`Auto-applied: ${applied}`);
+          }
         }
       }
     } catch {

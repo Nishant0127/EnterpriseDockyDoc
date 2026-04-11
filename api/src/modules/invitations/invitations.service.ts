@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -67,6 +68,7 @@ export class InvitationsService {
         workspaceId,
         email,
         role,
+        token: crypto.randomBytes(32).toString('hex'),
         expiresAt: new Date(Date.now() + INVITE_TTL_MS),
         createdById: actor.id,
       },
