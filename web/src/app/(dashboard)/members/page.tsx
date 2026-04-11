@@ -4,14 +4,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import {
   addWorkspaceMember,
+  createInvitation,
   fetchWorkspaceDetail,
+  listInvitations,
   removeWorkspaceMember,
+  revokeInvitation,
   updateWorkspaceMember,
 } from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
 import ConfirmModal from '@/components/ui/ConfirmModal';
-import type { WorkspaceDetail, WorkspaceMember, WorkspaceUserRole } from '@/types';
+import type { WorkspaceDetail, WorkspaceMember, WorkspaceInvitation, WorkspaceUserRole } from '@/types';
 
 const ROLE_ORDER: WorkspaceUserRole[] = ['OWNER', 'ADMIN', 'EDITOR', 'VIEWER'];
 
@@ -33,9 +36,12 @@ export default function MembersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [editingMember, setEditingMember] = useState<WorkspaceMember | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [pendingRemove, setPendingRemove] = useState<WorkspaceMember | null>(null);
+  const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([]);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const canManage =
     activeWorkspace?.role === 'OWNER' || activeWorkspace?.role === 'ADMIN';
@@ -47,11 +53,18 @@ export default function MembersPage() {
       .then(setDetail)
       .catch(() => setError('Failed to load members.'))
       .finally(() => setLoading(false));
+    // Also refresh pending invitations if admin/owner
+    if (canManage) {
+      listInvitations(workspaceId)
+        .then(setInvitations)
+        .catch(() => {});
+    }
   }
 
   useEffect(() => {
     if (!activeWorkspace) return;
     load(activeWorkspace.workspaceId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspace?.workspaceId]);
 
   async function confirmRemove() {
@@ -97,13 +110,26 @@ export default function MembersPage() {
           </p>
         </div>
         {canManage && (
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
-          >
-            <span className="text-lg leading-none">+</span>
-            Add Member
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowInviteModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+            >
+              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+                <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
+              </svg>
+              Invite
+            </button>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <span className="text-lg leading-none">+</span>
+              Add
+            </button>
+          </div>
         )}
       </div>
 
@@ -181,6 +207,84 @@ export default function MembersPage() {
           })}
         </div>
       </div>
+
+      {/* Pending Invitations */}
+      {canManage && invitations.length > 0 && (
+        <div className="mt-6">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">
+            Pending Invitations
+            <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+              {invitations.length}
+            </span>
+          </h2>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="divide-y divide-gray-100">
+              {invitations.map((inv) => {
+                const expiresLabel = new Date(inv.expiresAt).toLocaleDateString('en-US', {
+                  month: 'short', day: 'numeric',
+                });
+                const isRevoking = revokingId === inv.id;
+                return (
+                  <div key={inv.id} className="flex items-center gap-4 px-5 py-3 bg-amber-50/40">
+                    <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-xs font-semibold text-amber-700 flex-shrink-0">
+                      {inv.email[0]?.toUpperCase() ?? '?'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{inv.email}</p>
+                      <p className="text-xs text-gray-400">
+                        Invited by {inv.createdBy.firstName} {inv.createdBy.lastName}
+                        {' · '}expires {expiresLabel}
+                      </p>
+                    </div>
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-600 flex-shrink-0">
+                      {inv.role}
+                    </span>
+                    <button
+                      onClick={async () => {
+                        if (!activeWorkspace) return;
+                        setRevokingId(inv.id);
+                        try {
+                          await revokeInvitation(activeWorkspace.workspaceId, inv.id);
+                          setInvitations((prev) => prev.filter((i) => i.id !== inv.id));
+                          toast.success(`Invitation to ${inv.email} revoked.`);
+                        } catch {
+                          toast.error('Failed to revoke invitation.');
+                        } finally {
+                          setRevokingId(null);
+                        }
+                      }}
+                      disabled={isRevoking}
+                      title="Revoke invitation"
+                      className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
+                    >
+                      {isRevoking ? (
+                        <svg className="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      ) : (
+                        <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showInviteModal && (
+        <InviteModal
+          workspaceId={activeWorkspace.workspaceId}
+          onClose={() => setShowInviteModal(false)}
+          onInvited={(inv) => {
+            setInvitations((prev) => [inv, ...prev.filter((i) => i.id !== inv.id)]);
+          }}
+        />
+      )}
 
       {showAddModal && (
         <AddMemberModal
@@ -518,5 +622,148 @@ function TrashIcon() {
       <path d="M10 11v6M14 11v6" />
       <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
     </svg>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Invite Modal
+// ------------------------------------------------------------------ //
+
+function InviteModal({
+  workspaceId,
+  onClose,
+  onInvited,
+}: {
+  workspaceId: string;
+  onClose: () => void;
+  onInvited: (inv: WorkspaceInvitation) => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<WorkspaceUserRole>('VIEWER');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<WorkspaceInvitation | null>(null);
+
+  const inviteLink = created
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/join/${created.token}`
+    : null;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const inv = await createInvitation(workspaceId, { email: email.trim(), role });
+      setCreated(inv);
+      onInvited(inv);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create invitation.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-semibold text-gray-900">
+            {created ? 'Invitation Created' : 'Invite to Workspace'}
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+
+        {created && inviteLink ? (
+          /* Success — show the invite link */
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm">
+              <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Invitation sent to <span className="font-medium">{created.email}</span>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Share this link</label>
+              <div className="flex gap-2">
+                <input
+                  readOnly
+                  value={inviteLink}
+                  className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-gray-700 focus:outline-none"
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(inviteLink)}
+                  className="px-3 py-2 text-xs font-medium text-brand-600 border border-brand-200 rounded-lg hover:bg-brand-50 transition-colors"
+                >
+                  Copy
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1">
+                This link expires{' '}
+                {new Date(created.expiresAt).toLocaleDateString('en-US', {
+                  month: 'short', day: 'numeric', year: 'numeric',
+                })}.
+              </p>
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Form */
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Email address</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoFocus
+                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                placeholder="colleague@example.com"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Role</label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as WorkspaceUserRole)}
+                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                <option value="VIEWER">Viewer — can view and download documents</option>
+                <option value="EDITOR">Editor — can upload and edit documents</option>
+                <option value="ADMIN">Admin — can manage members and settings</option>
+              </select>
+            </div>
+
+            {error && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4 py-2 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors"
+              >
+                {submitting ? 'Sending…' : 'Send Invite'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
   );
 }

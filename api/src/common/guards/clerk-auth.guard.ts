@@ -124,12 +124,25 @@ export class ClerkAuthGuard implements CanActivate {
     }
 
     const existing = await this.prisma.user.findUnique({ where: { email } });
+
     if (!existing) {
-      throw new UnauthorizedException(
-        `User "${email}" has not been provisioned in this workspace. Ask an admin to add you first.`,
-      );
+      // New user authenticating via Clerk for the first time.
+      // Create their DB record so they can accept workspace invitations.
+      const firstName = clerkUser.firstName?.trim() || email.split('@')[0];
+      const lastName = clerkUser.lastName?.trim() || '';
+      return this.prisma.user.create({
+        data: { email, clerkId: clerkUserId, firstName, lastName, isActive: true },
+        include: {
+          workspaces: {
+            where: { status: 'ACTIVE' },
+            include: { workspace: true },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
     }
 
+    // Existing user — write clerkId for fast lookup on subsequent requests
     return this.prisma.user.update({
       where: { id: existing.id },
       data: { clerkId: clerkUserId },

@@ -116,6 +116,17 @@ enum AiProviderType {
 }
 
 // ================================================================== //
+// Invitations
+// ================================================================== //
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+// ================================================================== //
 // Core models
 // ================================================================== //
 
@@ -138,6 +149,8 @@ model User {
   receivedInternalShares InternalDocumentShare[] @relation("InternalShareRecipient")
   shareAccessLogs        ShareAccessLog[]        @relation("ShareAccessor")
   auditLogs              AuditLog[]
+  invitationsCreated     WorkspaceInvitation[]   @relation("InvitationsCreated")
+  invitationsAccepted    WorkspaceInvitation[]   @relation("InvitationsAccepted")
 
   @@map("users")
 }
@@ -162,6 +175,7 @@ model Workspace {
   documents    Document[]
   documentTags DocumentTag[]
   auditLogs    AuditLog[]
+  invitations  WorkspaceInvitation[]
 
   @@map("workspaces")
 }
@@ -415,4 +429,30 @@ model AuditLog {
   @@index([createdAt])
   @@index([workspaceId, createdAt])
   @@map("audit_logs")
+}
+
+// ================================================================== //
+// Workspace Invitations
+// ================================================================== //
+
+model WorkspaceInvitation {
+  id           String            @id @default(cuid())
+  workspaceId  String
+  email        String
+  role         WorkspaceUserRole @default(VIEWER)
+  token        String            @unique @default(cuid())
+  expiresAt    DateTime
+  status       InvitationStatus  @default(PENDING)
+  createdById  String
+  acceptedById String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy    User      @relation("InvitationsCreated", fields: [createdById], references: [id])
+  acceptedBy   User?     @relation("InvitationsAccepted", fields: [acceptedById], references: [id])
+
+  @@index([workspaceId])
+  @@index([email])
+  @@map("workspace_invitations")
 }

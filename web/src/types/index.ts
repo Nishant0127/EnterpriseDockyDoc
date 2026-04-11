@@ -173,6 +173,34 @@ export interface WorkspaceDetail extends WorkspaceListItem {
   members: WorkspaceMember[];
 }
 
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
+
+export interface WorkspaceInvitation {
+  id: string;
+  email: string;
+  role: WorkspaceUserRole;
+  token: string;
+  expiresAt: string;
+  status: InvitationStatus;
+  createdBy: { firstName: string; lastName: string };
+  createdAt: string;
+}
+
+export interface PublicInvitation {
+  id: string;
+  email: string;
+  role: WorkspaceUserRole;
+  expiresAt: string;
+  workspace: { id: string; name: string; type: string };
+  invitedBy: { firstName: string; lastName: string };
+}
+
+export interface AcceptInvitationResponse {
+  workspaceId: string;
+  workspaceName: string;
+  role: WorkspaceUserRole;
+}
+
 export interface WorkspaceSummary {
   totalDocuments: number;
   activeDocuments: number;

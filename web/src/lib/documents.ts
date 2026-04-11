@@ -4,20 +4,24 @@
  */
 import { apiFetch, apiUpload, apiDownload } from './api';
 import type {
+  AcceptInvitationResponse,
   DocumentDetail,
   DocumentListItem,
   DocumentReminder,
   DocumentStatus,
   ExpiringDocument,
   FolderListItem,
+  PublicInvitation,
   SearchResult,
   SetRemindersPayload,
   Tag,
   UpcomingReminder,
   WorkspaceDetail,
+  WorkspaceInvitation,
   WorkspaceListItem,
   WorkspaceMember,
   WorkspaceSummary,
+  WorkspaceUserRole,
 } from '@/types';
 
 // ------------------------------------------------------------------ //
@@ -313,6 +317,40 @@ export function renameWorkspace(workspaceId: string, name: string): Promise<Work
     method: 'PATCH',
     body: JSON.stringify({ name }),
   });
+}
+
+// ------------------------------------------------------------------ //
+// Invitations
+// ------------------------------------------------------------------ //
+
+export function createInvitation(
+  workspaceId: string,
+  params: { email: string; role?: WorkspaceUserRole },
+): Promise<WorkspaceInvitation> {
+  return apiFetch<WorkspaceInvitation>(`/api/v1/workspaces/${workspaceId}/invitations`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+export function listInvitations(workspaceId: string): Promise<WorkspaceInvitation[]> {
+  return apiFetch<WorkspaceInvitation[]>(`/api/v1/workspaces/${workspaceId}/invitations`);
+}
+
+export function revokeInvitation(workspaceId: string, inviteId: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/workspaces/${workspaceId}/invitations/${inviteId}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Public — fetches invite details without authentication */
+export function getPublicInvitation(token: string): Promise<PublicInvitation> {
+  return apiFetch<PublicInvitation>(`/api/v1/join/${token}`);
+}
+
+/** Requires auth — accepts the invitation and joins the workspace */
+export function acceptInvitation(token: string): Promise<AcceptInvitationResponse> {
+  return apiFetch<AcceptInvitationResponse>(`/api/v1/join/${token}`, { method: 'POST' });
 }
 
 // ------------------------------------------------------------------ //

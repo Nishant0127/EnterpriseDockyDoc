@@ -21,6 +21,7 @@ const isPublicRoute = createRouteMatcher([
   '/register(.*)',
   '/forgot-password(.*)',
   '/s/(.*)',            // public share links
+  '/join/(.*)',         // workspace invitation acceptance
   '/api/health(.*)',   // health-check endpoint
 ]);
 

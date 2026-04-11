@@ -16,6 +16,7 @@ import { SharesModule } from './modules/shares/shares.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AiModule } from './modules/ai/ai.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { InvitationsModule } from './modules/invitations/invitations.module';
 
 /**
  * Root application module.
@@ -43,6 +44,7 @@ import { ReportsModule } from './modules/reports/reports.module';
     AuditModule,
     AiModule,
     ReportsModule,
+    InvitationsModule,
   ],
 })
 export class AppModule {}
