@@ -29,6 +29,19 @@ function initials(firstName: string, lastName: string) {
   return `${firstName[0]}${lastName[0]}`.toUpperCase();
 }
 
+/** Returns a color-coded expiry label: red if ≤2 days, amber if ≤7 days, gray otherwise. */
+function expiryBadge(expiresAt: string): { label: string; class: string } {
+  const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
+  if (days <= 0)  return { label: 'Expired',        class: 'bg-red-100 text-red-700' };
+  if (days === 1) return { label: 'Expires tomorrow', class: 'bg-red-100 text-red-700' };
+  if (days <= 3)  return { label: `${days} days left`, class: 'bg-red-100 text-red-700' };
+  if (days <= 7)  return { label: `${days} days left`, class: 'bg-amber-100 text-amber-700' };
+  return {
+    label: new Date(expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    class: 'bg-gray-100 text-gray-500',
+  };
+}
+
 export default function MembersPage() {
   const { activeWorkspace, user, isLoading: userLoading } = useUser();
   const toast = useToast();
@@ -192,34 +205,36 @@ export default function MembersPage() {
                 </span>
 
                 {/* Actions */}
-                {/* Admins can manage non-owner members; only Owners can manage other Owners */}
-                {canManage && !isYou && (activeWorkspace?.role === 'OWNER' || !isOwner) && (
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                {canManage && !isYou && (activeWorkspace?.role === 'OWNER' || !isOwner) ? (
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
                     <button
                       onClick={() => setEditingMember(member)}
-                      title="Edit member"
-                      className="p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
+                      className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-brand-300 hover:text-brand-700 hover:bg-brand-50 transition-colors"
                     >
                       <PencilIcon />
+                      Edit
                     </button>
                     {!isOwner && (
                       <button
                         onClick={() => setPendingRemove(member)}
-                        disabled={removingId === member.id}
-                        title="Remove member"
-                        className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                        disabled={!!removingId}
+                        className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-red-300 hover:text-red-700 hover:bg-red-50 transition-colors disabled:opacity-40"
                       >
                         {removingId === member.id ? (
-                          <svg className="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
+                          <svg className="animate-spin" width="11" height="11" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                           </svg>
                         ) : (
                           <TrashIcon />
                         )}
+                        {removingId === member.id ? 'Removing…' : 'Remove'}
                       </button>
                     )}
                   </div>
+                ) : (
+                  /* Viewer or self — no actions, keep column consistent */
+                  <div className="w-24 flex-shrink-0 hidden sm:block" />
                 )}
               </div>
             );
@@ -227,102 +242,137 @@ export default function MembersPage() {
         </div>
       </div>
 
-      {/* Pending Invitations */}
-      {canManage && invitations.length > 0 && (
-        <div className="mt-6">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">
-            Pending Invitations
-            <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
-              {invitations.length}
-            </span>
-          </h2>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="divide-y divide-gray-100">
-              {invitations.map((inv) => {
-                const expiresLabel = new Date(inv.expiresAt).toLocaleDateString('en-US', {
-                  month: 'short', day: 'numeric',
-                });
-                const isRevoking = revokingId === inv.id;
-                const isCopied = copiedInviteId === inv.id;
-                const invBadge = ROLE_BADGE[inv.role];
+      {/* Pending Invitations — always visible to admins so they know the section exists */}
+      {canManage && (
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-700">
+              Pending Invitations
+              {invitations.length > 0 && (
+                <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                  {invitations.length}
+                </span>
+              )}
+            </h2>
+            <button
+              onClick={() => setShowInviteModal(true)}
+              className="text-xs text-brand-600 hover:text-brand-700 font-medium hover:underline"
+            >
+              + Send invite
+            </button>
+          </div>
 
-                return (
-                  <div key={inv.id} className="flex items-center gap-4 px-5 py-3 bg-amber-50/40">
-                    <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-xs font-semibold text-amber-700 flex-shrink-0">
-                      {inv.email[0]?.toUpperCase() ?? '?'}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {invitations.length === 0 ? (
+              <div className="px-5 py-8 text-center">
+                <div className="w-10 h-10 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center mx-auto mb-3">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" className="text-gray-400">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                    <line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" />
+                  </svg>
+                </div>
+                <p className="text-sm text-gray-500 font-medium">No pending invitations</p>
+                <p className="text-xs text-gray-400 mt-1">Invited users will appear here until they accept</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {invitations.map((inv) => {
+                  const isRevoking = revokingId === inv.id;
+                  const isCopied = copiedInviteId === inv.id;
+                  const invBadge = ROLE_BADGE[inv.role];
+                  const expiry = expiryBadge(inv.expiresAt);
+
+                  return (
+                    <div key={inv.id} className="flex items-center gap-3 px-5 py-4 hover:bg-gray-50 transition-colors">
+                      {/* Avatar */}
+                      <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-700 flex-shrink-0">
+                        {inv.email[0]?.toUpperCase() ?? '?'}
+                      </div>
+
+                      {/* Email + meta */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{inv.email}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Invited by {inv.createdBy.firstName} {inv.createdBy.lastName}
+                        </p>
+                      </div>
+
+                      {/* Role badge */}
+                      <span className={cn('text-xs font-semibold px-2 py-0.5 rounded flex-shrink-0', invBadge.class)}>
+                        {invBadge.label}
+                      </span>
+
+                      {/* Expiry badge — color-coded urgency */}
+                      <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded flex-shrink-0 hidden sm:inline', expiry.class)}>
+                        {expiry.label}
+                      </span>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          onClick={() => copyInviteLink(inv.id, inv.token)}
+                          disabled={isRevoking}
+                          className={cn(
+                            'flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors disabled:opacity-40',
+                            isCopied
+                              ? 'border-green-200 text-green-700 bg-green-50'
+                              : 'border-gray-200 text-gray-600 hover:border-brand-300 hover:text-brand-700 hover:bg-brand-50',
+                          )}
+                        >
+                          {isCopied ? (
+                            <>
+                              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                              Copied!
+                            </>
+                          ) : (
+                            <>
+                              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                                <rect x="9" y="9" width="13" height="13" rx="2" />
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                              </svg>
+                              Copy link
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            if (!activeWorkspace) return;
+                            setRevokingId(inv.id);
+                            try {
+                              await revokeInvitation(activeWorkspace.workspaceId, inv.id);
+                              setInvitations((prev) => prev.filter((i) => i.id !== inv.id));
+                              toast.success(`Invitation to ${inv.email} revoked.`);
+                            } catch {
+                              toast.error('Failed to revoke invitation.');
+                            } finally {
+                              setRevokingId(null);
+                            }
+                          }}
+                          disabled={isRevoking}
+                          className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-red-300 hover:text-red-700 hover:bg-red-50 transition-colors disabled:opacity-40"
+                        >
+                          {isRevoking ? (
+                            <svg className="animate-spin" width="11" height="11" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                          ) : (
+                            <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                          )}
+                          {isRevoking ? 'Revoking…' : 'Revoke'}
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{inv.email}</p>
-                      <p className="text-xs text-gray-400">
-                        Invited by {inv.createdBy.firstName} {inv.createdBy.lastName}
-                        {' · '}expires {expiresLabel}
-                      </p>
-                    </div>
-                    <span className={cn('text-xs font-semibold px-2 py-0.5 rounded flex-shrink-0', invBadge.class)}>
-                      {invBadge.label}
-                    </span>
-                    {/* Copy invite link — explicit text label removes icon-only ambiguity */}
-                    <button
-                      onClick={() => copyInviteLink(inv.id, inv.token)}
-                      disabled={isRevoking}
-                      className={cn(
-                        'flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md transition-colors disabled:opacity-50 flex-shrink-0',
-                        isCopied
-                          ? 'text-green-600 bg-green-50'
-                          : 'text-gray-500 hover:text-brand-600 hover:bg-brand-50',
-                      )}
-                    >
-                      {isCopied ? (
-                        <>
-                          <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                          Copied!
-                        </>
-                      ) : (
-                        <>
-                          <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                            <rect x="9" y="9" width="13" height="13" rx="2" />
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                          </svg>
-                          Copy link
-                        </>
-                      )}
-                    </button>
-                    {/* Revoke */}
-                    <button
-                      onClick={async () => {
-                        if (!activeWorkspace) return;
-                        setRevokingId(inv.id);
-                        try {
-                          await revokeInvitation(activeWorkspace.workspaceId, inv.id);
-                          setInvitations((prev) => prev.filter((i) => i.id !== inv.id));
-                          toast.success(`Invitation to ${inv.email} revoked.`);
-                        } catch {
-                          toast.error('Failed to revoke invitation.');
-                        } finally {
-                          setRevokingId(null);
-                        }
-                      }}
-                      disabled={isRevoking}
-                      title="Revoke invitation"
-                      className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
-                    >
-                      {isRevoking ? (
-                        <svg className="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                      ) : (
-                        <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
