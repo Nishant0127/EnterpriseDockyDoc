@@ -692,6 +692,7 @@ export default function DocumentDetailPage() {
               <DocumentPreviewCard
                 documentId={doc.id}
                 versionNumber={previewVersion}
+                fileName={doc.fileName}
                 mimeHint={doc.versions.find((v: DocumentVersion) => v.versionNumber === previewVersion)?.mimeType}
               />
             ) : (

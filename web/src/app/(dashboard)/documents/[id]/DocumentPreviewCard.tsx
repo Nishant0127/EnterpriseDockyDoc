@@ -1,18 +1,57 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { getStoredToken } from '@/lib/api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081';
 const DEV_EMAIL = process.env.NEXT_PUBLIC_DEV_USER_EMAIL ?? 'alice@acmecorp.com';
 
+/** Mirror of getClerkToken() in api.ts — avoids importing that module here. */
+async function getClerkToken(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    type ClerkGlobal = { session?: { getToken: () => Promise<string | null> } | null };
+    const clerk = (window as typeof window & { Clerk?: ClerkGlobal }).Clerk;
+    return (await clerk?.session?.getToken()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the effective MIME type for preview rendering.
+ * Priority: blob.type > Content-Type header > mimeHint > filename extension.
+ * Falls back to extension so a PDF uploaded with mimeType=application/octet-stream
+ * still renders correctly.
+ */
+function resolveMime(blobType: string, headerType: string | null, hint: string | undefined, fileName: string): string {
+  const candidates = [blobType, headerType ?? '', hint ?? ''];
+  for (const c of candidates) {
+    const t = c.split(';')[0].trim().toLowerCase();
+    if (t && t !== 'application/octet-stream') return t;
+  }
+  // Extension fallback
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  const extMap: Record<string, string> = {
+    pdf: 'application/pdf',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    svg: 'image/svg+xml',
+    bmp: 'image/bmp',
+  };
+  return extMap[ext] ?? (hint ?? blobType ?? '');
+}
+
 interface Props {
   documentId: string;
   versionNumber: number;
+  fileName: string;
   mimeHint?: string;
 }
 
-export default function DocumentPreviewCard({ documentId, versionNumber, mimeHint }: Props) {
+export default function DocumentPreviewCard({ documentId, versionNumber, fileName, mimeHint }: Props) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [mime, setMime] = useState<string>(mimeHint ?? '');
   const [loading, setLoading] = useState(true);
@@ -28,34 +67,54 @@ export default function DocumentPreviewCard({ documentId, versionNumber, mimeHin
     setError(null);
     setLoading(true);
 
-    const headers = new Headers();
-    const token = getStoredToken();
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-    else headers.set('x-dev-user-email', DEV_EMAIL);
+    let cancelled = false;
 
-    fetch(
-      `${API_URL}/api/v1/documents/${documentId}/versions/${versionNumber}/download`,
-      { headers },
-    )
-      .then(async (res) => {
+    (async () => {
+      try {
+        const headers = new Headers();
+        const token = await getClerkToken();
+        if (token) {
+          headers.set('Authorization', `Bearer ${token}`);
+        } else {
+          headers.set('x-dev-user-email', DEV_EMAIL);
+        }
+
+        const res = await fetch(
+          `${API_URL}/api/v1/documents/${documentId}/versions/${versionNumber}/download`,
+          { headers },
+        );
+
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
         const blob = await res.blob();
+        if (cancelled) return;
+
         const url = URL.createObjectURL(blob);
-        const detected = blob.type || res.headers.get('content-type') || mimeHint || '';
+        const effectiveMime = resolveMime(
+          blob.type,
+          res.headers.get('content-type'),
+          mimeHint,
+          fileName,
+        );
+
         setBlobUrl(url);
-        setMime(detected);
+        setMime(effectiveMime);
         prevUrl.current = url;
-      })
-      .catch((err: Error) => setError(err.message ?? 'Failed to load'))
-      .finally(() => setLoading(false));
+      } catch (err) {
+        if (!cancelled) setError((err as Error).message ?? 'Failed to load');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
 
     return () => {
+      cancelled = true;
       if (prevUrl.current) {
         URL.revokeObjectURL(prevUrl.current);
         prevUrl.current = null;
       }
     };
-  }, [documentId, versionNumber]);
+  }, [documentId, versionNumber, fileName, mimeHint]);
 
   const isPdf = mime.includes('pdf');
   const isImage = mime.startsWith('image/');
@@ -83,13 +142,17 @@ export default function DocumentPreviewCard({ documentId, versionNumber, mimeHin
       )}
 
       {!loading && !error && blobUrl && isPdf && (
-        <iframe src={blobUrl} className="w-full h-full border-0" title={`v${versionNumber} preview`} />
+        <iframe
+          src={blobUrl}
+          className="w-full h-full border-0"
+          title={`${fileName} — v${versionNumber} preview`}
+        />
       )}
 
       {!loading && !error && blobUrl && isImage && (
         <img
           src={blobUrl}
-          alt={`v${versionNumber} preview`}
+          alt={`${fileName} — v${versionNumber} preview`}
           className="max-w-full max-h-full object-contain p-4"
         />
       )}
@@ -98,7 +161,7 @@ export default function DocumentPreviewCard({ documentId, versionNumber, mimeHin
         <div className="text-center px-8">
           <div className="w-16 h-20 bg-white rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center mx-auto mb-3">
             <span className="text-xs font-bold text-gray-400 uppercase">
-              {mime.split('/')[1]?.slice(0, 4) || 'FILE'}
+              {mime.split('/')[1]?.slice(0, 4) || fileName.split('.').pop()?.toUpperCase() || 'FILE'}
             </span>
           </div>
           <p className="text-sm font-medium text-gray-600 mb-1">No preview available</p>
