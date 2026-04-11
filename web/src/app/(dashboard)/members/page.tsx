@@ -47,13 +47,15 @@ export default function MembersPage() {
   const canManage =
     activeWorkspace?.role === 'OWNER' || activeWorkspace?.role === 'ADMIN';
 
-  function load(workspaceId: string) {
-    setLoading(true);
-    setError(null);
+  function load(workspaceId: string, silent = false) {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     fetchWorkspaceDetail(workspaceId)
       .then(setDetail)
-      .catch(() => setError('Failed to load members.'))
-      .finally(() => setLoading(false));
+      .catch((e) => { if (!silent) setError('Failed to load members.'); void e; })
+      .finally(() => { if (!silent) setLoading(false); });
     // Also refresh pending invitations if admin/owner
     if (canManage) {
       listInvitations(workspaceId)
@@ -75,7 +77,7 @@ export default function MembersPage() {
     try {
       await removeWorkspaceMember(activeWorkspace.workspaceId, pendingRemove.id);
       toast.success(`${pendingRemove.firstName} ${pendingRemove.lastName} removed.`);
-      load(activeWorkspace.workspaceId);
+      load(activeWorkspace.workspaceId, true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to remove member.');
     } finally {
@@ -100,6 +102,14 @@ export default function MembersPage() {
   const sortedMembers = [...detail.members].sort(
     (a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role),
   );
+
+  function copyInviteLink(invId: string, token: string) {
+    const link = `${window.location.origin}/join/${token}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopiedInviteId(invId);
+      setTimeout(() => setCopiedInviteId(null), 2000);
+    }).catch(() => {});
+  }
 
   return (
     <div className="max-w-3xl">
@@ -133,6 +143,13 @@ export default function MembersPage() {
           </div>
         )}
       </div>
+
+      <h2 className="text-sm font-semibold text-gray-700 mb-3">
+        Active Members
+        <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-brand-100 text-brand-700">
+          {sortedMembers.length}
+        </span>
+      </h2>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="divide-y divide-gray-100">
@@ -229,13 +246,6 @@ export default function MembersPage() {
                 const isCopied = copiedInviteId === inv.id;
                 const invBadge = ROLE_BADGE[inv.role];
 
-                async function handleCopyLink() {
-                  const link = `${window.location.origin}/join/${inv.token}`;
-                  await navigator.clipboard.writeText(link);
-                  setCopiedInviteId(inv.id);
-                  setTimeout(() => setCopiedInviteId(null), 2000);
-                }
-
                 return (
                   <div key={inv.id} className="flex items-center gap-4 px-5 py-3 bg-amber-50/40">
                     <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-xs font-semibold text-amber-700 flex-shrink-0">
@@ -251,22 +261,32 @@ export default function MembersPage() {
                     <span className={cn('text-xs font-semibold px-2 py-0.5 rounded flex-shrink-0', invBadge.class)}>
                       {invBadge.label}
                     </span>
-                    {/* Copy invite link — lets admin share/resend the same link */}
+                    {/* Copy invite link — explicit text label removes icon-only ambiguity */}
                     <button
-                      onClick={handleCopyLink}
+                      onClick={() => copyInviteLink(inv.id, inv.token)}
                       disabled={isRevoking}
-                      title={isCopied ? 'Copied!' : 'Copy invite link'}
-                      className="p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors disabled:opacity-50 flex-shrink-0"
+                      className={cn(
+                        'flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md transition-colors disabled:opacity-50 flex-shrink-0',
+                        isCopied
+                          ? 'text-green-600 bg-green-50'
+                          : 'text-gray-500 hover:text-brand-600 hover:bg-brand-50',
+                      )}
                     >
                       {isCopied ? (
-                        <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" className="text-green-500">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
+                        <>
+                          <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          Copied!
+                        </>
                       ) : (
-                        <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                          <rect x="9" y="9" width="13" height="13" rx="2" />
-                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                        </svg>
+                        <>
+                          <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                            <rect x="9" y="9" width="13" height="13" rx="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                          </svg>
+                          Copy link
+                        </>
                       )}
                     </button>
                     {/* Revoke */}
@@ -320,10 +340,11 @@ export default function MembersPage() {
       {showAddModal && (
         <AddMemberModal
           workspaceId={activeWorkspace.workspaceId}
+          currentUserRole={activeWorkspace.role}
           onClose={() => setShowAddModal(false)}
           onAdded={() => {
             setShowAddModal(false);
-            load(activeWorkspace.workspaceId);
+            load(activeWorkspace.workspaceId, true);
             toast.success('Member added to workspace.');
           }}
         />
@@ -337,7 +358,7 @@ export default function MembersPage() {
           onClose={() => setEditingMember(null)}
           onSaved={() => {
             setEditingMember(null);
-            load(activeWorkspace.workspaceId);
+            load(activeWorkspace.workspaceId, true);
             toast.success('Member updated.');
           }}
         />
@@ -512,10 +533,12 @@ function EditRoleModal({
 
 function AddMemberModal({
   workspaceId,
+  currentUserRole,
   onClose,
   onAdded,
 }: {
   workspaceId: string;
+  currentUserRole: WorkspaceUserRole;
   onClose: () => void;
   onAdded: () => void;
 }) {
@@ -593,10 +616,13 @@ function AddMemberModal({
               onChange={(e) => setRole(e.target.value as WorkspaceUserRole)}
               className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
-              <option value="VIEWER">Viewer</option>
-              <option value="EDITOR">Editor</option>
-              <option value="ADMIN">Admin</option>
-              <option value="OWNER">Owner</option>
+              <option value="VIEWER">Viewer — can view and download documents</option>
+              <option value="EDITOR">Editor — can upload and edit documents</option>
+              <option value="ADMIN">Admin — can manage members and settings</option>
+              {/* Only Owners can assign the Owner role */}
+              {currentUserRole === 'OWNER' && (
+                <option value="OWNER">Owner — full control</option>
+              )}
             </select>
           </div>
 
