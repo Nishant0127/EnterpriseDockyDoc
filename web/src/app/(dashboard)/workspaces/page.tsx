@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
 import { apiFetch } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -16,6 +17,7 @@ const TYPE_BADGE: Record<WorkspaceType, { label: string; class: string }> = {
 export default function WorkspacesPage() {
   const { user, activeWorkspace, switchWorkspace, isLoading: userLoading } = useUser();
   const toast = useToast();
+  const router = useRouter();
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState<string | null>(null);
@@ -35,9 +37,9 @@ export default function WorkspacesPage() {
       await switchWorkspace(id);
       const ws = workspaces.find((w) => w.id === id);
       toast.success(ws ? `Switched to "${ws.name}".` : 'Workspace switched.');
+      router.push('/dashboard');
     } catch {
       toast.error('Failed to switch workspace. Please try again.');
-    } finally {
       setSwitching(null);
     }
   }
