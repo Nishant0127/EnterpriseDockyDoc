@@ -2011,7 +2011,7 @@ function urgencyClass(days: number): string {
 }
 
 // ------------------------------------------------------------------ //
-// Folder name scoring — fuzzy match for AI suggestion pre-selection
+// Folder name scoring — multi-signal fuzzy match for AI suggestion
 // ------------------------------------------------------------------ //
 
 function scoreFolderMatch(folderName: string, suggestion: string): number {
@@ -2019,31 +2019,70 @@ function scoreFolderMatch(folderName: string, suggestion: string): number {
     s.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
   const f = canon(folderName);
   const s = canon(suggestion);
+
   if (f === s) return 100;
-  if (f.includes(s) || s.includes(f)) return 80;
-  const fToks = new Set(f.split(' ').filter(Boolean));
+  if (f.includes(s) || s.includes(f)) return 88;
+
+  const fToks = f.split(' ').filter(Boolean);
   const sToks = s.split(' ').filter(Boolean);
-  const overlap = sToks.filter((t) => fToks.has(t)).length;
-  if (overlap > 0) return 50 + overlap * 10;
+  const fSet = new Set(fToks);
+
+  // Exact token overlap
+  const exactOverlap = sToks.filter((t) => fSet.has(t)).length;
+  if (exactOverlap > 0) return 65 + exactOverlap * 8;
+
+  // Stem/plural overlap — one token starts with the other (e.g. "passports" ↔ "passport")
+  const stemOverlap = sToks.filter((t) =>
+    fToks.some((ft) => (ft.startsWith(t) && t.length >= 4) || (t.startsWith(ft) && ft.length >= 4)),
+  ).length;
+  if (stemOverlap > 0) return 60 + stemOverlap * 6;
+
+  // Semantic keyword groups — handles cross-term mapping like "Passport" ↔ "ID's"
   const groups: string[][] = [
-    ['passport', 'id', 'ids', 'identity', 'identification'],
-    ['insurance', 'policy', 'policies'],
-    ['contract', 'agreement', 'contracts'],
-    ['invoice', 'receipt', 'finance', 'financial'],
-    ['certificate', 'certification', 'certificates'],
-    ['license', 'licence', 'licenses'],
-    ['legal', 'law', 'court'],
-    ['medical', 'health', 'clinical'],
-    ['hr', 'human', 'resources', 'employee'],
+    ['passport', 'id', 'ids', 'identity', 'identification', 'document', 'government'],
+    ['insurance', 'policy', 'policies', 'coverage', 'premium'],
+    ['contract', 'agreement', 'agreements', 'contracts', 'deal', 'terms'],
+    ['invoice', 'receipt', 'receipts', 'billing', 'payment', 'finance', 'financial'],
+    ['certificate', 'certification', 'certifications', 'certificates', 'accreditation'],
+    ['license', 'licence', 'licenses', 'licences', 'permit', 'permits'],
+    ['legal', 'law', 'court', 'litigation', 'compliance'],
+    ['medical', 'health', 'healthcare', 'clinical', 'hospital', 'prescription'],
+    ['hr', 'human', 'resources', 'employee', 'employment', 'payroll', 'hiring', 'staff'],
+    ['tax', 'taxes', 'taxation', 'irs', 'vat', 'fiscal'],
+    ['property', 'real estate', 'mortgage', 'deed', 'lease', 'rental', 'tenancy'],
+    ['vehicle', 'car', 'auto', 'automobile', 'registration', 'mot', 'driving'],
+    ['education', 'school', 'university', 'college', 'diploma', 'degree', 'academic', 'transcript'],
+    ['travel', 'visa', 'immigration', 'itinerary', 'ticket', 'flight', 'hotel'],
+    ['bank', 'banking', 'account', 'statement', 'savings', 'loan', 'credit', 'mortgage'],
+    ['utility', 'utilities', 'electric', 'electricity', 'gas', 'water', 'internet', 'phone', 'broadband'],
+    ['company', 'business', 'corporate', 'incorporation', 'shareholder', 'director'],
   ];
   for (const group of groups) {
-    if (group.some((k) => f.includes(k)) && group.some((k) => s.includes(k))) return 60;
+    const fHit = group.some((k) => f.includes(k));
+    const sHit = group.some((k) => s.includes(k));
+    if (fHit && sHit) return 55;
   }
   return 0;
 }
 
+/**
+ * Compute top-N best folder matches for an AI suggestion.
+ * Returns at most `limit` folders with score > 0, sorted by score desc.
+ */
+function topFolderSuggestions(
+  folders: FolderListItem[],
+  aiSuggestion: string,
+  limit = 3,
+): Array<{ folder: FolderListItem; score: number }> {
+  return folders
+    .map((f) => ({ folder: f, score: scoreFolderMatch(f.name, aiSuggestion) }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
 // ------------------------------------------------------------------ //
-// FolderCombobox — searchable, creatable folder picker
+// FolderCombobox — searchable, creatable folder picker with top-3 suggestions
 // ------------------------------------------------------------------ //
 
 function FolderCombobox({
@@ -2072,18 +2111,31 @@ function FolderCombobox({
 
   const currentFolder = folders.find((f) => f.id === currentFolderId) ?? null;
 
-  // Filtered + sorted folders based on query and AI suggestion
-  const displayFolders = React.useMemo(() => {
+  // Top 3 AI-ranked folder suggestions
+  const suggestions = React.useMemo(
+    () => (aiSuggestion ? topFolderSuggestions(folders, aiSuggestion, 3) : []),
+    [folders, aiSuggestion],
+  );
+  const suggestionIds = React.useMemo(() => new Set(suggestions.map(({ folder: f }) => f.id)), [suggestions]);
+
+  // In-dropdown list: when searching → filtered sorted by score; when idle → all except suggestions (to avoid duplication)
+  const dropdownFolders = React.useMemo(() => {
+    const lq = query.toLowerCase();
     const scored = folders.map((f) => ({
       folder: f,
       aiScore: aiSuggestion ? scoreFolderMatch(f.name, aiSuggestion) : 0,
     }));
-    const lq = query.toLowerCase();
-    const filtered = lq ? scored.filter(({ folder: f }) => f.name.toLowerCase().includes(lq)) : scored;
-    return filtered.sort((a, b) => b.aiScore - a.aiScore);
-  }, [folders, query, aiSuggestion]);
+    if (lq) {
+      return scored
+        .filter(({ folder: f }) => f.name.toLowerCase().includes(lq))
+        .sort((a, b) => b.aiScore - a.aiScore);
+    }
+    // Idle: show remaining folders (not in top suggestions) sorted by score then alpha
+    return scored
+      .filter(({ folder: f }) => !suggestionIds.has(f.id))
+      .sort((a, b) => b.aiScore - a.aiScore || a.folder.name.localeCompare(b.folder.name));
+  }, [folders, query, aiSuggestion, suggestionIds]);
 
-  // Show "Create" option when query doesn't match any existing folder exactly
   const showCreate =
     query.trim().length > 0 &&
     !folders.some((f) => f.name.toLowerCase() === query.trim().toLowerCase());
@@ -2115,7 +2167,6 @@ function FolderCombobox({
   }
 
   function handleBlur(e: React.FocusEvent) {
-    // Don't close if focus moves within the combobox
     if (listRef.current?.contains(e.relatedTarget as Node)) return;
     if (inputRef.current?.contains(e.relatedTarget as Node)) return;
     setOpen(false);
@@ -2131,44 +2182,116 @@ function FolderCombobox({
 
   return (
     <div className="relative" onBlur={handleBlur}>
-      <div className="flex items-center gap-1.5">
-        <div className="relative flex-1">
-          <input
-            ref={inputRef}
-            type="text"
-            value={displayValue}
-            placeholder={placeholder}
-            disabled={disabled || saving || creating}
-            onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-            onFocus={() => { setOpen(true); setQuery(''); }}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') { setOpen(false); setQuery(''); inputRef.current?.blur(); }
-              if (e.key === 'Enter' && showCreate) { void handleCreate(); }
-            }}
-            className={cn(
-              'w-full text-xs border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-brand-400 pr-7 transition-colors placeholder-gray-400',
-              open ? 'border-brand-300' : 'border-gray-200 text-gray-700',
-              (disabled || saving || creating) && 'opacity-60 cursor-not-allowed',
-            )}
-          />
-          {/* Chevron or spinner */}
-          <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-            {saving || creating ? (
-              <SpinnerIcon size={11} />
-            ) : (
-              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
-          </span>
+
+      {/* ── Top-3 suggestion pills — quick-pick row (visible when not busy) ── */}
+      {suggestions.length > 0 && !saving && !creating && (
+        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+          <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide flex-shrink-0">Best matches</span>
+          {suggestions.map(({ folder: f, score }) => {
+            const isCurrent = f.id === currentFolderId;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); void select(f.id); }}
+                className={cn(
+                  'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors cursor-pointer',
+                  isCurrent
+                    ? 'border-brand-400 bg-brand-50 text-brand-700'
+                    : score >= 88
+                    ? 'border-brand-200 bg-brand-50 text-brand-700 hover:border-brand-400 hover:bg-brand-100'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700',
+                )}
+              >
+                <svg width="8" height="8" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className="flex-shrink-0">
+                  <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+                </svg>
+                {f.name}
+                {isCurrent && (
+                  <svg width="8" height="8" fill="currentColor" viewBox="0 0 20 20" className="flex-shrink-0">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
         </div>
+      )}
+
+      {/* ── Input ── */}
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          value={displayValue}
+          placeholder={placeholder}
+          disabled={disabled || saving || creating}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => { setOpen(true); setQuery(''); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') { setOpen(false); setQuery(''); inputRef.current?.blur(); }
+            if (e.key === 'Enter' && showCreate) { void handleCreate(); }
+          }}
+          className={cn(
+            'w-full text-xs border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-brand-400 pr-7 transition-colors placeholder-gray-400',
+            open ? 'border-brand-300' : 'border-gray-200 text-gray-700',
+            (disabled || saving || creating) && 'opacity-60 cursor-not-allowed',
+          )}
+        />
+        <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+          {saving || creating ? (
+            <SpinnerIcon size={11} />
+          ) : (
+            <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </span>
       </div>
 
+      {/* ── Dropdown ── */}
       {open && (
         <div
           ref={listRef}
-          className="absolute top-full mt-1 left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden max-h-52 overflow-y-auto"
+          className="absolute top-full mt-1 left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden max-h-56 overflow-y-auto"
         >
+          {/* Suggested section — pinned at top when not searching */}
+          {!query && suggestions.length > 0 && (
+            <>
+              <div className="px-3 pt-2 pb-0.5 flex items-center gap-1.5">
+                <svg width="8" height="8" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" className="text-brand-500">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+                <span className="text-[9px] font-bold text-brand-600 uppercase tracking-wide">Suggested</span>
+              </div>
+              {suggestions.map(({ folder: f }) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  tabIndex={0}
+                  onMouseDown={(e) => { e.preventDefault(); void select(f.id); }}
+                  className={cn(
+                    'w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors',
+                    f.id === currentFolderId
+                      ? 'bg-brand-50 text-brand-700 font-semibold'
+                      : 'text-brand-800 hover:bg-brand-50',
+                  )}
+                >
+                  <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" className="flex-shrink-0 text-brand-400">
+                    <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+                  </svg>
+                  <span className="flex-1 truncate">{f.name}</span>
+                  {f.id === currentFolderId && (
+                    <svg width="10" height="10" fill="currentColor" viewBox="0 0 20 20" className="flex-shrink-0 text-brand-600">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </button>
+              ))}
+              <div className="border-t border-gray-100 mx-0 my-0.5" />
+            </>
+          )}
+
           {/* No folder option */}
           <button
             type="button"
@@ -2185,9 +2308,10 @@ function FolderCombobox({
             No folder
           </button>
 
-          {displayFolders.length > 0 && <div className="border-t border-gray-100" />}
+          {dropdownFolders.length > 0 && <div className="border-t border-gray-100" />}
 
-          {displayFolders.map(({ folder: f, aiScore }) => (
+          {/* Remaining / search-filtered folders */}
+          {dropdownFolders.map(({ folder: f, aiScore }) => (
             <button
               key={f.id}
               type="button"
@@ -2202,7 +2326,7 @@ function FolderCombobox({
                 <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
               </svg>
               <span className="flex-1 truncate">{f.name}</span>
-              {aiScore >= 60 && (
+              {aiScore >= 55 && (
                 <span className="flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-brand-100 text-brand-700">AI</span>
               )}
               {f.id === currentFolderId && (
@@ -2213,13 +2337,16 @@ function FolderCombobox({
             </button>
           ))}
 
-          {displayFolders.length === 0 && !showCreate && (
+          {dropdownFolders.length === 0 && !showCreate && !query && folders.length === 0 && (
+            <p className="px-3 py-2 text-xs text-gray-400 italic">No folders in this workspace</p>
+          )}
+          {dropdownFolders.length === 0 && !showCreate && query && (
             <p className="px-3 py-2 text-xs text-gray-400 italic">No matching folders</p>
           )}
 
           {showCreate && (
             <>
-              {displayFolders.length > 0 && <div className="border-t border-gray-100" />}
+              {dropdownFolders.length > 0 && <div className="border-t border-gray-100" />}
               <button
                 type="button"
                 tabIndex={0}
