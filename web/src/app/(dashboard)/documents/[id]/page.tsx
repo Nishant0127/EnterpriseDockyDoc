@@ -2010,6 +2010,236 @@ function urgencyClass(days: number): string {
   return 'text-gray-600';
 }
 
+// ------------------------------------------------------------------ //
+// Folder name scoring — fuzzy match for AI suggestion pre-selection
+// ------------------------------------------------------------------ //
+
+function scoreFolderMatch(folderName: string, suggestion: string): number {
+  const canon = (s: string) =>
+    s.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  const f = canon(folderName);
+  const s = canon(suggestion);
+  if (f === s) return 100;
+  if (f.includes(s) || s.includes(f)) return 80;
+  const fToks = new Set(f.split(' ').filter(Boolean));
+  const sToks = s.split(' ').filter(Boolean);
+  const overlap = sToks.filter((t) => fToks.has(t)).length;
+  if (overlap > 0) return 50 + overlap * 10;
+  const groups: string[][] = [
+    ['passport', 'id', 'ids', 'identity', 'identification'],
+    ['insurance', 'policy', 'policies'],
+    ['contract', 'agreement', 'contracts'],
+    ['invoice', 'receipt', 'finance', 'financial'],
+    ['certificate', 'certification', 'certificates'],
+    ['license', 'licence', 'licenses'],
+    ['legal', 'law', 'court'],
+    ['medical', 'health', 'clinical'],
+    ['hr', 'human', 'resources', 'employee'],
+  ];
+  for (const group of groups) {
+    if (group.some((k) => f.includes(k)) && group.some((k) => s.includes(k))) return 60;
+  }
+  return 0;
+}
+
+// ------------------------------------------------------------------ //
+// FolderCombobox — searchable, creatable folder picker
+// ------------------------------------------------------------------ //
+
+function FolderCombobox({
+  folders,
+  currentFolderId,
+  aiSuggestion,
+  workspaceId,
+  onMove,
+  onFolderCreated,
+  disabled,
+}: {
+  folders: FolderListItem[];
+  currentFolderId: string | null;
+  aiSuggestion: string | null;
+  workspaceId: string;
+  onMove: (folderId: string | null) => Promise<void>;
+  onFolderCreated: (folder: FolderListItem) => void;
+  disabled?: boolean;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const listRef = React.useRef<HTMLDivElement>(null);
+
+  const currentFolder = folders.find((f) => f.id === currentFolderId) ?? null;
+
+  // Filtered + sorted folders based on query and AI suggestion
+  const displayFolders = React.useMemo(() => {
+    const scored = folders.map((f) => ({
+      folder: f,
+      aiScore: aiSuggestion ? scoreFolderMatch(f.name, aiSuggestion) : 0,
+    }));
+    const lq = query.toLowerCase();
+    const filtered = lq ? scored.filter(({ folder: f }) => f.name.toLowerCase().includes(lq)) : scored;
+    return filtered.sort((a, b) => b.aiScore - a.aiScore);
+  }, [folders, query, aiSuggestion]);
+
+  // Show "Create" option when query doesn't match any existing folder exactly
+  const showCreate =
+    query.trim().length > 0 &&
+    !folders.some((f) => f.name.toLowerCase() === query.trim().toLowerCase());
+
+  async function select(folderId: string | null) {
+    setSaving(true);
+    try {
+      await onMove(folderId);
+      setOpen(false);
+      setQuery('');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCreate() {
+    const name = query.trim();
+    if (!name) return;
+    setCreating(true);
+    try {
+      const created = await createFolder({ workspaceId, name });
+      onFolderCreated(created);
+      await select(created.id);
+    } catch {
+      // stay open on failure
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function handleBlur(e: React.FocusEvent) {
+    // Don't close if focus moves within the combobox
+    if (listRef.current?.contains(e.relatedTarget as Node)) return;
+    if (inputRef.current?.contains(e.relatedTarget as Node)) return;
+    setOpen(false);
+    setQuery('');
+  }
+
+  const displayValue = open ? query : (currentFolder?.name ?? '');
+  const placeholder = open
+    ? 'Search or type new folder name…'
+    : aiSuggestion
+    ? `AI suggests: "${aiSuggestion}"`
+    : 'No folder assigned';
+
+  return (
+    <div className="relative" onBlur={handleBlur}>
+      <div className="flex items-center gap-1.5">
+        <div className="relative flex-1">
+          <input
+            ref={inputRef}
+            type="text"
+            value={displayValue}
+            placeholder={placeholder}
+            disabled={disabled || saving || creating}
+            onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+            onFocus={() => { setOpen(true); setQuery(''); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') { setOpen(false); setQuery(''); inputRef.current?.blur(); }
+              if (e.key === 'Enter' && showCreate) { void handleCreate(); }
+            }}
+            className={cn(
+              'w-full text-xs border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-brand-400 pr-7 transition-colors placeholder-gray-400',
+              open ? 'border-brand-300' : 'border-gray-200 text-gray-700',
+              (disabled || saving || creating) && 'opacity-60 cursor-not-allowed',
+            )}
+          />
+          {/* Chevron or spinner */}
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+            {saving || creating ? (
+              <SpinnerIcon size={11} />
+            ) : (
+              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </span>
+        </div>
+      </div>
+
+      {open && (
+        <div
+          ref={listRef}
+          className="absolute top-full mt-1 left-0 right-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden max-h-52 overflow-y-auto"
+        >
+          {/* No folder option */}
+          <button
+            type="button"
+            tabIndex={0}
+            onMouseDown={(e) => { e.preventDefault(); void select(null); }}
+            className={cn(
+              'w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-gray-50 transition-colors',
+              currentFolderId === null ? 'font-semibold text-brand-700 bg-brand-50' : 'text-gray-500',
+            )}
+          >
+            <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className="flex-shrink-0 opacity-50">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+            No folder
+          </button>
+
+          {displayFolders.length > 0 && <div className="border-t border-gray-100" />}
+
+          {displayFolders.map(({ folder: f, aiScore }) => (
+            <button
+              key={f.id}
+              type="button"
+              tabIndex={0}
+              onMouseDown={(e) => { e.preventDefault(); void select(f.id); }}
+              className={cn(
+                'w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-gray-50 transition-colors',
+                f.id === currentFolderId ? 'font-semibold text-brand-700 bg-brand-50' : 'text-gray-700',
+              )}
+            >
+              <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" className="flex-shrink-0 text-gray-400">
+                <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+              </svg>
+              <span className="flex-1 truncate">{f.name}</span>
+              {aiScore >= 60 && (
+                <span className="flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-brand-100 text-brand-700">AI</span>
+              )}
+              {f.id === currentFolderId && (
+                <svg width="10" height="10" fill="currentColor" viewBox="0 0 20 20" className="flex-shrink-0 text-brand-600">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+              )}
+            </button>
+          ))}
+
+          {displayFolders.length === 0 && !showCreate && (
+            <p className="px-3 py-2 text-xs text-gray-400 italic">No matching folders</p>
+          )}
+
+          {showCreate && (
+            <>
+              {displayFolders.length > 0 && <div className="border-t border-gray-100" />}
+              <button
+                type="button"
+                tabIndex={0}
+                disabled={creating}
+                onMouseDown={(e) => { e.preventDefault(); void handleCreate(); }}
+                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-brand-700 hover:bg-brand-50 transition-colors font-medium disabled:opacity-50"
+              >
+                <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" className="flex-shrink-0">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                {creating ? 'Creating…' : `Create "${query.trim()}"`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AiExtractionSection({
   documentId,
   extraction,
@@ -2034,65 +2264,14 @@ function AiExtractionSection({
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [confirmApplyAll, setConfirmApplyAll] = useState(false);
   const [folders, setFolders] = useState<FolderListItem[]>([]);
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined); // undefined = not yet initialized
-  const [movingFolder, setMovingFolder] = useState(false);
-  // New-folder inline creation state
-  const [newFolderMode, setNewFolderMode] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [creatingFolder, setCreatingFolder] = useState(false);
 
-  // Fetch workspace folders once on mount (for the folder suggestion dropdown)
+  // Fetch workspace folders once on mount
   useEffect(() => {
     fetchFolders(workspaceId)
-      .then((fs) => {
-        setFolders(fs);
-      })
+      .then(setFolders)
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
-
-  // Fuzzy folder scoring — surfaces closest existing folder for AI suggestion (Part B)
-  function scoreFolderMatch(folderName: string, suggestion: string): number {
-    const canon = (s: string) =>
-      s.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-    const f = canon(folderName);
-    const s = canon(suggestion);
-    if (f === s) return 100;
-    if (f.includes(s) || s.includes(f)) return 80;
-    const fToks = new Set(f.split(' ').filter(Boolean));
-    const sToks = s.split(' ').filter(Boolean);
-    const overlap = sToks.filter((t) => fToks.has(t)).length;
-    if (overlap > 0) return 50 + overlap * 10;
-    // Semantic keyword groups — handles cases like "ID's" ↔ "Passports & IDs"
-    const groups: string[][] = [
-      ['passport', 'id', 'ids', 'identity', 'identification'],
-      ['insurance', 'policy', 'policies'],
-      ['contract', 'agreement', 'contracts'],
-      ['invoice', 'receipt', 'finance', 'financial'],
-      ['certificate', 'certification', 'certificates'],
-      ['license', 'licence', 'licenses'],
-      ['legal', 'law', 'court'],
-      ['medical', 'health', 'clinical'],
-      ['hr', 'human', 'resources', 'employee'],
-    ];
-    for (const group of groups) {
-      if (group.some((k) => f.includes(k)) && group.some((k) => s.includes(k))) return 60;
-    }
-    return 0;
-  }
-
-  // When extraction arrives, pre-select the folder that best fuzzy-matches the suggestion
-  useEffect(() => {
-    if (!extraction?.suggestedFolder || folders.length === 0 || selectedFolderId !== undefined) return;
-    const best = folders
-      .map((f) => ({ folder: f, score: scoreFolderMatch(f.name, extraction.suggestedFolder!) }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)[0];
-    setSelectedFolderId(best?.folder.id ?? null);
-    // Pre-fill new-folder input with the AI suggestion so user can create it as-is
-    if (!best) setNewFolderName(extraction.suggestedFolder ?? '');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [extraction?.suggestedFolder, folders]);
 
   const status = extraction?.status ?? 'none';
 
@@ -2290,128 +2469,36 @@ function AiExtractionSection({
             );
           })()}
 
-          {/* ④ Suggested folder — dropdown with fuzzy pre-select + inline create (Parts A/B/C) */}
-          {extraction.suggestedFolder && (
-            <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5 space-y-2">
-              {/* Header */}
-              <div className="flex items-center gap-1.5">
-                <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" className="text-gray-400 flex-shrink-0">
-                  <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
-                </svg>
-                <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Folder</span>
-                <ConfidenceBadge confidence={(extraction.confidenceByField ?? {}).suggestedFolder ?? 0} />
-                <span className="text-[10px] text-gray-400 italic truncate ml-auto">
-                  AI: &ldquo;{extraction.suggestedFolder}&rdquo;
+          {/* ④ Folder assignment — smart combobox (always visible when extraction is done) */}
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5 space-y-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" className="text-gray-400 flex-shrink-0">
+                <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+              </svg>
+              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Folder</span>
+              {extraction.suggestedFolder && (
+                <>
+                  <ConfidenceBadge confidence={(extraction.confidenceByField ?? {}).suggestedFolder ?? 0} />
+                  <span className="text-[10px] text-gray-400 italic truncate ml-auto">
+                    AI: &ldquo;{extraction.suggestedFolder}&rdquo;
+                  </span>
+                </>
+              )}
+              {isAppliedByAnyone('suggestedFolder') && (
+                <span className={cn('ml-auto text-[10px] font-semibold', userApplied.includes('suggestedFolder') ? 'text-blue-600' : 'text-green-600')}>
+                  ✓ applied
                 </span>
-              </div>
-
-              {isAppliedByAnyone('suggestedFolder') ? (
-                /* Already applied */
-                <div className="flex items-center gap-1.5">
-                  <span className={cn('text-[10px] font-bold', userApplied.includes('suggestedFolder') ? 'text-blue-600' : 'text-green-600')}>✓</span>
-                  <span className="text-xs text-gray-500">Folder applied</span>
-                </div>
-              ) : newFolderMode ? (
-                /* ── Inline new-folder creation (Part C) ── */
-                <div className="space-y-1.5">
-                  <input
-                    type="text"
-                    value={newFolderName}
-                    onChange={(e) => setNewFolderName(e.target.value)}
-                    placeholder="New folder name…"
-                    autoFocus
-                    className="w-full text-xs border border-brand-300 rounded-md px-2 py-1 bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-brand-400 placeholder-gray-400"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') e.currentTarget.form?.requestSubmit();
-                      if (e.key === 'Escape') { setNewFolderMode(false); }
-                    }}
-                  />
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={creatingFolder || !newFolderName.trim()}
-                      onClick={async () => {
-                        const name = newFolderName.trim();
-                        if (!name) return;
-                        setCreatingFolder(true);
-                        try {
-                          const created = await createFolder({ workspaceId, name });
-                          setFolders((prev) => [...prev, created]);
-                          setSelectedFolderId(created.id);
-                          setNewFolderMode(false);
-                          // Immediately move the document to the new folder
-                          setMovingFolder(true);
-                          try { await onMoveToFolder(created.id); } finally { setMovingFolder(false); }
-                        } catch {
-                          // folder creation failed — stay in create mode
-                        } finally {
-                          setCreatingFolder(false);
-                        }
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
-                    >
-                      {creatingFolder ? <><SpinnerIcon size={9} /> Creating…</> : 'Create & Move'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNewFolderMode(false)}
-                      className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                /* ── Existing folder dropdown (Parts A/B) ── */
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={selectedFolderId ?? ''}
-                      onChange={(e) => setSelectedFolderId(e.target.value || null)}
-                      className="flex-1 min-w-0 text-xs border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-brand-400"
-                    >
-                      <option value="">— No folder —</option>
-                      {[...folders]
-                        .map((f) => ({ folder: f, score: scoreFolderMatch(f.name, extraction.suggestedFolder!) }))
-                        .sort((a, b) => b.score - a.score)
-                        .map(({ folder: f, score }) => (
-                          <option key={f.id} value={f.id}>
-                            {f.name}{score >= 60 ? ' ★' : ''}
-                          </option>
-                        ))}
-                    </select>
-                    <button
-                      type="button"
-                      disabled={movingFolder || selectedFolderId === currentFolderId}
-                      onClick={async () => {
-                        setMovingFolder(true);
-                        try { await onMoveToFolder(selectedFolderId ?? null); }
-                        finally { setMovingFolder(false); }
-                      }}
-                      title={selectedFolderId === currentFolderId ? 'Document is already in this folder' : 'Move to selected folder'}
-                      className="flex-shrink-0 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
-                    >
-                      {movingFolder ? <SpinnerIcon size={9} /> : 'Move'}
-                    </button>
-                  </div>
-                  {/* New folder link (Part C) */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewFolderName(extraction.suggestedFolder ?? '');
-                      setNewFolderMode(true);
-                    }}
-                    className="flex items-center gap-1 text-[10px] text-brand-600 hover:text-brand-700 hover:underline transition-colors"
-                  >
-                    <svg width="9" height="9" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                    </svg>
-                    New folder
-                  </button>
-                </div>
               )}
             </div>
-          )}
+            <FolderCombobox
+              folders={folders}
+              currentFolderId={currentFolderId}
+              aiSuggestion={extraction.suggestedFolder}
+              workspaceId={workspaceId}
+              onMove={onMoveToFolder}
+              onFolderCreated={(f) => setFolders((prev) => [...prev, f])}
+            />
+          </div>
 
           {/* ⑤ Risk flags */}
           {extraction.riskFlags.length > 0 && (
