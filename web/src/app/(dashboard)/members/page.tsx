@@ -42,6 +42,7 @@ export default function MembersPage() {
   const [pendingRemove, setPendingRemove] = useState<WorkspaceMember | null>(null);
   const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([]);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
 
   const canManage =
     activeWorkspace?.role === 'OWNER' || activeWorkspace?.role === 'ADMIN';
@@ -174,11 +175,12 @@ export default function MembersPage() {
                 </span>
 
                 {/* Actions */}
-                {canManage && !isYou && (
+                {/* Admins can manage non-owner members; only Owners can manage other Owners */}
+                {canManage && !isYou && (activeWorkspace?.role === 'OWNER' || !isOwner) && (
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button
                       onClick={() => setEditingMember(member)}
-                      title="Edit role"
+                      title="Edit member"
                       className="p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
                     >
                       <PencilIcon />
@@ -224,6 +226,16 @@ export default function MembersPage() {
                   month: 'short', day: 'numeric',
                 });
                 const isRevoking = revokingId === inv.id;
+                const isCopied = copiedInviteId === inv.id;
+                const invBadge = ROLE_BADGE[inv.role];
+
+                async function handleCopyLink() {
+                  const link = `${window.location.origin}/join/${inv.token}`;
+                  await navigator.clipboard.writeText(link);
+                  setCopiedInviteId(inv.id);
+                  setTimeout(() => setCopiedInviteId(null), 2000);
+                }
+
                 return (
                   <div key={inv.id} className="flex items-center gap-4 px-5 py-3 bg-amber-50/40">
                     <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-xs font-semibold text-amber-700 flex-shrink-0">
@@ -236,9 +248,28 @@ export default function MembersPage() {
                         {' · '}expires {expiresLabel}
                       </p>
                     </div>
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-600 flex-shrink-0">
-                      {inv.role}
+                    <span className={cn('text-xs font-semibold px-2 py-0.5 rounded flex-shrink-0', invBadge.class)}>
+                      {invBadge.label}
                     </span>
+                    {/* Copy invite link — lets admin share/resend the same link */}
+                    <button
+                      onClick={handleCopyLink}
+                      disabled={isRevoking}
+                      title={isCopied ? 'Copied!' : 'Copy invite link'}
+                      className="p-1.5 rounded-md text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors disabled:opacity-50 flex-shrink-0"
+                    >
+                      {isCopied ? (
+                        <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" className="text-green-500">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : (
+                        <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <rect x="9" y="9" width="13" height="13" rx="2" />
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                      )}
+                    </button>
+                    {/* Revoke */}
                     <button
                       onClick={async () => {
                         if (!activeWorkspace) return;
@@ -302,6 +333,7 @@ export default function MembersPage() {
         <EditRoleModal
           workspaceId={activeWorkspace.workspaceId}
           member={editingMember}
+          currentUserRole={activeWorkspace.role}
           onClose={() => setEditingMember(null)}
           onSaved={() => {
             setEditingMember(null);
@@ -333,11 +365,14 @@ export default function MembersPage() {
 function EditRoleModal({
   workspaceId,
   member,
+  currentUserRole,
   onClose,
   onSaved,
 }: {
   workspaceId: string;
   member: WorkspaceMember;
+  /** Role of the admin performing the edit — controls which roles can be assigned */
+  currentUserRole: WorkspaceUserRole;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -441,7 +476,10 @@ function EditRoleModal({
               <option value="VIEWER">Viewer — can view and download shared documents</option>
               <option value="EDITOR">Editor — can upload and edit documents</option>
               <option value="ADMIN">Admin — can manage members and settings</option>
-              <option value="OWNER">Owner — full control</option>
+              {/* Only workspace Owners can assign or transfer the Owner role */}
+              {currentUserRole === 'OWNER' && (
+                <option value="OWNER">Owner — full control</option>
+              )}
             </select>
           </div>
 
@@ -644,6 +682,13 @@ function InviteModal({
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<WorkspaceInvitation | null>(null);
 
+  function resetForm() {
+    setCreated(null);
+    setEmail('');
+    setRole('VIEWER');
+    setError(null);
+  }
+
   const inviteLink = created
     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/join/${created.token}`
     : null;
@@ -706,7 +751,14 @@ function InviteModal({
                 })}.
               </p>
             </div>
-            <div className="flex justify-end">
+            <div className="flex justify-between gap-2">
+              <button
+                type="button"
+                onClick={resetForm}
+                className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Invite another
+              </button>
               <button
                 type="button"
                 onClick={onClose}
