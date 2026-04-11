@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { fetchDocument, downloadDocument, downloadDocumentVersion, deleteDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders, fetchTags, createTag, setDocumentTags, setDocumentMetadata } from '@/lib/documents';
+import { fetchDocument, downloadDocument, downloadDocumentVersion, deleteDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders, createFolder, fetchTags, createTag, setDocumentTags, setDocumentMetadata } from '@/lib/documents';
 import { apiFetch } from '@/lib/api';
 import { fetchDocumentActivity, describeAuditLog, auditActionCategory, formatAuditAction } from '@/lib/audit';
 import { cn } from '@/lib/utils';
@@ -150,6 +150,8 @@ export default function DocumentDetailPage() {
   const [aiApplying, setAiApplying] = useState(false);
   const [previewVersion, setPreviewVersion] = useState<number | null>(null);
   const aiPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Track previous AI status to detect running→done transition for live autofill (Part D)
+  const prevAiStatusRef = useRef<string | null>(null);
 
   function stopAiPolling() {
     if (aiPollRef.current !== null) {
@@ -162,10 +164,15 @@ export default function DocumentDetailPage() {
     if (!params.id) return;
     try {
       const result = await apiFetch<AiExtractionResult>(`/api/v1/ai/documents/${params.id}/extraction`);
+      const wasRunning = prevAiStatusRef.current === 'running';
+      prevAiStatusRef.current = result.status;
       setAiExtraction(result);
-      // Stop polling once extraction is no longer running
       if (result.status !== 'running') {
         stopAiPolling();
+        // Reload document when extraction just finished so auto-applied expiry dates appear live
+        if (wasRunning && result.status === 'done') {
+          fetchDocument(params.id).then(setDoc).catch(() => {});
+        }
       }
     } catch {
       // silently ignore — extraction may not exist yet
@@ -189,6 +196,7 @@ export default function DocumentDetailPage() {
     setAiExtracting(true);
     try {
       const result = await apiFetch<AiExtractionResult>(`/api/v1/ai/documents/${params.id}/extract`, { method: 'POST' });
+      prevAiStatusRef.current = result.status;
       setAiExtraction(result);
       // If extraction kicked off async processing, start polling until done
       if (result.status === 'running') {
@@ -242,6 +250,7 @@ export default function DocumentDetailPage() {
         // Load extraction and auto-poll if already running
         apiFetch<AiExtractionResult>(`/api/v1/ai/documents/${params.id}/extraction`)
           .then((result) => {
+            prevAiStatusRef.current = result.status;
             setAiExtraction(result);
             if (result.status === 'running') {
               startAiPolling();
@@ -2027,6 +2036,10 @@ function AiExtractionSection({
   const [folders, setFolders] = useState<FolderListItem[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null | undefined>(undefined); // undefined = not yet initialized
   const [movingFolder, setMovingFolder] = useState(false);
+  // New-folder inline creation state
+  const [newFolderMode, setNewFolderMode] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [creatingFolder, setCreatingFolder] = useState(false);
 
   // Fetch workspace folders once on mount (for the folder suggestion dropdown)
   useEffect(() => {
@@ -2038,13 +2051,48 @@ function AiExtractionSection({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
-  // When extraction arrives, pre-select the folder that best matches the suggestion
+  // Fuzzy folder scoring — surfaces closest existing folder for AI suggestion (Part B)
+  function scoreFolderMatch(folderName: string, suggestion: string): number {
+    const canon = (s: string) =>
+      s.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+    const f = canon(folderName);
+    const s = canon(suggestion);
+    if (f === s) return 100;
+    if (f.includes(s) || s.includes(f)) return 80;
+    const fToks = new Set(f.split(' ').filter(Boolean));
+    const sToks = s.split(' ').filter(Boolean);
+    const overlap = sToks.filter((t) => fToks.has(t)).length;
+    if (overlap > 0) return 50 + overlap * 10;
+    // Semantic keyword groups — handles cases like "ID's" ↔ "Passports & IDs"
+    const groups: string[][] = [
+      ['passport', 'id', 'ids', 'identity', 'identification'],
+      ['insurance', 'policy', 'policies'],
+      ['contract', 'agreement', 'contracts'],
+      ['invoice', 'receipt', 'finance', 'financial'],
+      ['certificate', 'certification', 'certificates'],
+      ['license', 'licence', 'licenses'],
+      ['legal', 'law', 'court'],
+      ['medical', 'health', 'clinical'],
+      ['hr', 'human', 'resources', 'employee'],
+    ];
+    for (const group of groups) {
+      if (group.some((k) => f.includes(k)) && group.some((k) => s.includes(k))) return 60;
+    }
+    return 0;
+  }
+
+  // When extraction arrives, pre-select the folder that best fuzzy-matches the suggestion
   useEffect(() => {
     if (!extraction?.suggestedFolder || folders.length === 0 || selectedFolderId !== undefined) return;
-    const lower = extraction.suggestedFolder.toLowerCase();
-    const match = folders.find((f) => f.name.toLowerCase() === lower);
-    setSelectedFolderId(match?.id ?? null);
-  }, [extraction?.suggestedFolder, folders, selectedFolderId]);
+    const best = folders
+      .map((f) => ({ folder: f, score: scoreFolderMatch(f.name, extraction.suggestedFolder!) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)[0];
+    setSelectedFolderId(best?.folder.id ?? null);
+    // Pre-fill new-folder input with the AI suggestion so user can create it as-is
+    if (!best) setNewFolderName(extraction.suggestedFolder ?? '');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraction?.suggestedFolder, folders]);
 
   const status = extraction?.status ?? 'none';
 
@@ -2242,59 +2290,125 @@ function AiExtractionSection({
             );
           })()}
 
-          {/* ④ Suggested folder — interactive dropdown */}
+          {/* ④ Suggested folder — dropdown with fuzzy pre-select + inline create (Parts A/B/C) */}
           {extraction.suggestedFolder && (
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-2.5 space-y-2">
+              {/* Header */}
               <div className="flex items-center gap-1.5">
                 <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" className="text-gray-400 flex-shrink-0">
                   <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
                 </svg>
-                <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">AI Folder Suggestion</span>
+                <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Folder</span>
                 <ConfidenceBadge confidence={(extraction.confidenceByField ?? {}).suggestedFolder ?? 0} />
+                <span className="text-[10px] text-gray-400 italic truncate ml-auto">
+                  AI: &ldquo;{extraction.suggestedFolder}&rdquo;
+                </span>
               </div>
+
               {isAppliedByAnyone('suggestedFolder') ? (
+                /* Already applied */
                 <div className="flex items-center gap-1.5">
                   <span className={cn('text-[10px] font-bold', userApplied.includes('suggestedFolder') ? 'text-blue-600' : 'text-green-600')}>✓</span>
                   <span className="text-xs text-gray-500">Folder applied</span>
                 </div>
+              ) : newFolderMode ? (
+                /* ── Inline new-folder creation (Part C) ── */
+                <div className="space-y-1.5">
+                  <input
+                    type="text"
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    placeholder="New folder name…"
+                    autoFocus
+                    className="w-full text-xs border border-brand-300 rounded-md px-2 py-1 bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-brand-400 placeholder-gray-400"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.form?.requestSubmit();
+                      if (e.key === 'Escape') { setNewFolderMode(false); }
+                    }}
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={creatingFolder || !newFolderName.trim()}
+                      onClick={async () => {
+                        const name = newFolderName.trim();
+                        if (!name) return;
+                        setCreatingFolder(true);
+                        try {
+                          const created = await createFolder({ workspaceId, name });
+                          setFolders((prev) => [...prev, created]);
+                          setSelectedFolderId(created.id);
+                          setNewFolderMode(false);
+                          // Immediately move the document to the new folder
+                          setMovingFolder(true);
+                          try { await onMoveToFolder(created.id); } finally { setMovingFolder(false); }
+                        } catch {
+                          // folder creation failed — stay in create mode
+                        } finally {
+                          setCreatingFolder(false);
+                        }
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
+                    >
+                      {creatingFolder ? <><SpinnerIcon size={9} /> Creating…</> : 'Create & Move'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewFolderMode(false)}
+                      className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <select
-                    value={selectedFolderId ?? ''}
-                    onChange={(e) => setSelectedFolderId(e.target.value || null)}
-                    className="flex-1 min-w-0 text-xs border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-brand-400"
-                  >
-                    <option value="">— No folder —</option>
-                    {folders.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name}
-                        {f.name.toLowerCase() === extraction.suggestedFolder?.toLowerCase() ? ' ★' : ''}
-                      </option>
-                    ))}
-                  </select>
+                /* ── Existing folder dropdown (Parts A/B) ── */
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedFolderId ?? ''}
+                      onChange={(e) => setSelectedFolderId(e.target.value || null)}
+                      className="flex-1 min-w-0 text-xs border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-brand-400"
+                    >
+                      <option value="">— No folder —</option>
+                      {[...folders]
+                        .map((f) => ({ folder: f, score: scoreFolderMatch(f.name, extraction.suggestedFolder!) }))
+                        .sort((a, b) => b.score - a.score)
+                        .map(({ folder: f, score }) => (
+                          <option key={f.id} value={f.id}>
+                            {f.name}{score >= 60 ? ' ★' : ''}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={movingFolder || selectedFolderId === currentFolderId}
+                      onClick={async () => {
+                        setMovingFolder(true);
+                        try { await onMoveToFolder(selectedFolderId ?? null); }
+                        finally { setMovingFolder(false); }
+                      }}
+                      title={selectedFolderId === currentFolderId ? 'Document is already in this folder' : 'Move to selected folder'}
+                      className="flex-shrink-0 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
+                    >
+                      {movingFolder ? <SpinnerIcon size={9} /> : 'Move'}
+                    </button>
+                  </div>
+                  {/* New folder link (Part C) */}
                   <button
                     type="button"
-                    disabled={movingFolder || selectedFolderId === currentFolderId}
-                    onClick={async () => {
-                      setMovingFolder(true);
-                      try {
-                        await onMoveToFolder(selectedFolderId ?? null);
-                      } finally {
-                        setMovingFolder(false);
-                      }
+                    onClick={() => {
+                      setNewFolderName(extraction.suggestedFolder ?? '');
+                      setNewFolderMode(true);
                     }}
-                    title={selectedFolderId === currentFolderId ? 'Document is already in this folder' : 'Move document to selected folder'}
-                    className="flex-shrink-0 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
+                    className="flex items-center gap-1 text-[10px] text-brand-600 hover:text-brand-700 hover:underline transition-colors"
                   >
-                    {movingFolder ? <SpinnerIcon size={9} /> : 'Move'}
+                    <svg width="9" height="9" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    New folder
                   </button>
                 </div>
-              )}
-              {!isAppliedByAnyone('suggestedFolder') && extraction.suggestedFolder && (
-                <p className="text-[10px] text-gray-400 italic">
-                  AI suggested: &ldquo;{extraction.suggestedFolder}&rdquo;
-                  {folders.find((f) => f.name.toLowerCase() === extraction.suggestedFolder?.toLowerCase()) ? '' : ' (no exact match in workspace)'}
-                </p>
               )}
             </div>
           )}
