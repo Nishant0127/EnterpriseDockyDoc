@@ -158,7 +158,7 @@ export default function SettingsPage() {
                   i < NAV_ITEMS.length - 1 && 'border-b border-gray-50',
                   activeSection === item.id
                     ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-400 font-semibold'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
+                    : 'text-gray-600 dark:text-ink-2 hover:bg-gray-50 dark:hover:bg-surface-high hover:text-gray-900 dark:hover:text-ink',
                 )}
               >
                 <NavIcon sectionId={item.id} active={activeSection === item.id} />
