@@ -128,8 +128,8 @@ export default function MembersPage() {
     <div className="max-w-3xl">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Members</h1>
-          <p className="mt-0.5 text-sm text-gray-500">
+          <h1 className="page-title">Members</h1>
+          <p className="page-subtitle">
             {detail.name} &middot; {detail.memberCount} member{detail.memberCount !== 1 ? 's' : ''}
           </p>
         </div>

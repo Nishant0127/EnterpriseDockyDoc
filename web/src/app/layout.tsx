@@ -1,6 +1,13 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import { ClerkProvider } from '@clerk/nextjs';
 import './globals.css';
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-sans',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: {
@@ -12,34 +19,29 @@ export const metadata: Metadata = {
 
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
-/**
- * Root layout — applies to every route.
- *
- * When NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is set, the entire app is wrapped in
- * <ClerkProvider> which powers SSO login, session tokens, and useAuth().
- *
- * When the key is absent (local dev without Clerk), the provider is omitted and
- * the app falls back to the x-dev-user-email header flow — zero friction for
- * developers running the open-source stack.
- */
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  if (clerkPublishableKey) {
-    return (
-      <ClerkProvider>
-        <html lang="en">
-          <body>{children}</body>
-        </html>
-      </ClerkProvider>
-    );
-  }
+/** Inline script — runs before first paint to prevent flash of wrong theme. */
+const themeScript = `
+try {
+  var t = localStorage.getItem('dd-theme');
+  if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  if (t === 'dark') document.documentElement.classList.add('dark');
+} catch(e) {}
+`;
 
-  return (
-    <html lang="en">
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const html = (
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      {/* suppressHydrationWarning needed because theme script mutates className before hydration */}
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>{children}</body>
     </html>
   );
+
+  if (clerkPublishableKey) {
+    return <ClerkProvider>{html}</ClerkProvider>;
+  }
+
+  return html;
 }

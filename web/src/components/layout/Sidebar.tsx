@@ -1,184 +1,241 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useUser } from '@/context/UserContext';
-import WorkspaceSwitcher from '@/components/workspace/WorkspaceSwitcher';
+import { useSidebar } from '@/context/SidebarContext';
+
+// ------------------------------------------------------------------ //
+// Navigation definition
+// ------------------------------------------------------------------ //
 
 interface NavItem {
   label: string;
   href: string;
-  icon: React.ReactNode;
+  Icon: (props: { active: boolean }) => React.ReactElement;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: <GridIcon /> },
-  { label: 'Documents', href: '/documents', icon: <DocumentIcon /> },
-  { label: 'Workspaces', href: '/workspaces', icon: <FolderIcon /> },
-  { label: 'Members', href: '/members', icon: <UsersIcon /> },
-  { label: 'Reminders', href: '/reminders', icon: <BellIcon /> },
-  { label: 'Reports', href: '/reports', icon: <ReportsIcon /> },
-  { label: 'Activity', href: '/activity', icon: <ActivityIcon /> },
-  { label: 'Settings', href: '/settings', icon: <SettingsIcon /> },
+const NAV: NavItem[] = [
+  { label: 'Dashboard',  href: '/dashboard',  Icon: GridIcon },
+  { label: 'Documents',  href: '/documents',  Icon: DocIcon },
+  { label: 'Workspaces', href: '/workspaces', Icon: LayersIcon },
+  { label: 'Members',    href: '/members',    Icon: UsersIcon },
+  { label: 'Reminders',  href: '/reminders',  Icon: BellIcon },
+  { label: 'Reports',    href: '/reports',    Icon: BarChartIcon },
+  { label: 'Activity',   href: '/activity',   Icon: ActivityIcon },
+  { label: 'Settings',   href: '/settings',   Icon: GearIcon },
 ];
+
+// ------------------------------------------------------------------ //
+// Sidebar
+// ------------------------------------------------------------------ //
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { user, isLoading } = useUser();
+  const { user, activeWorkspace, isLoading } = useUser();
+  const { isOpen, close } = useSidebar();
 
-  // Derive initials from name, fall back to email first char
+  // Auto-close on navigation (mobile)
+  useEffect(() => {
+    close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
   const initials = user
     ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
-    : '…';
+    : '?';
 
   return (
-    <aside className="w-60 flex flex-col bg-white border-r border-gray-200 flex-shrink-0">
-      {/* Logo */}
-      <div className="flex items-center gap-2 px-5 h-16 border-b border-gray-200 flex-shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center">
-          <span className="text-white font-bold text-sm">D</span>
+    <>
+      {/* Mobile backdrop */}
+      {isOpen && (
+        <div
+          aria-hidden
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+          onClick={close}
+        />
+      )}
+
+      {/* Sidebar panel */}
+      <aside
+        className={cn(
+          // Always dark, regardless of light/dark mode
+          'fixed inset-y-0 left-0 z-50 flex flex-col w-[220px] flex-shrink-0',
+          'bg-[#0f1117] border-r border-white/[0.07]',
+          // Slide in/out on mobile; always visible on desktop
+          'transition-transform duration-200 ease-out',
+          'lg:static lg:translate-x-0 lg:z-auto',
+          isOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
+        {/* ── Logo bar ─────────────────────────────────────────────── */}
+        <div className="flex items-center gap-2.5 px-4 h-[52px] border-b border-white/[0.07] flex-shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center flex-shrink-0">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" className="text-white">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" strokeWidth={2.5} />
+              <polyline points="14 2 14 8 20 8" stroke="currentColor" strokeWidth={2.5} strokeLinejoin="round" />
+            </svg>
+          </div>
+          <span className="text-sm font-semibold text-white tracking-tight">DockyDoc</span>
         </div>
-        <span className="font-semibold text-gray-900">DockyDoc</span>
-      </div>
 
-      {/* Workspace switcher */}
-      <div className="px-2 pt-3 pb-1 border-b border-gray-100 flex-shrink-0">
-        <WorkspaceSwitcher />
-      </div>
+        {/* ── Active workspace ─────────────────────────────────────── */}
+        <div className="px-3 pt-3 pb-2.5 border-b border-white/[0.07] flex-shrink-0">
+          {isLoading || !activeWorkspace ? (
+            <div className="px-2 py-2 space-y-1.5">
+              <div className="h-3.5 w-28 bg-white/[0.08] rounded animate-pulse" />
+              <div className="h-3 w-20 bg-white/[0.05] rounded animate-pulse" />
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg">
+              <div className="w-7 h-7 rounded-md bg-brand-600/70 flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-xs font-bold">
+                  {activeWorkspace.workspaceName[0].toUpperCase()}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-white/90 truncate leading-tight">
+                  {activeWorkspace.workspaceName}
+                </p>
+                <p className="text-[10px] text-white/40 truncate leading-tight mt-0.5 capitalize">
+                  {activeWorkspace.workspaceType.toLowerCase()} · {activeWorkspace.role}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
-        {NAV_ITEMS.map((item) => {
-          const isActive =
-            pathname === item.href || pathname.startsWith(item.href + '/');
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-brand-50 text-brand-700'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
-              )}
-            >
-              <span
+        {/* ── Navigation ───────────────────────────────────────────── */}
+        <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
+          {NAV.map(({ label, href, Icon }) => {
+            const active = pathname === href || pathname.startsWith(href + '/');
+            return (
+              <Link
+                key={href}
+                href={href}
                 className={cn(
-                  'flex-shrink-0',
-                  isActive ? 'text-brand-600' : 'text-gray-400',
+                  'group flex items-center gap-2.5 px-3 h-9 rounded-lg text-sm font-medium transition-all duration-100',
+                  active
+                    ? 'bg-white/[0.09] text-white'
+                    : 'text-white/50 hover:bg-white/[0.05] hover:text-white/80',
                 )}
               >
-                {item.icon}
-              </span>
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
+                <span className="flex-shrink-0">
+                  <Icon active={active} />
+                </span>
+                {label}
+              </Link>
+            );
+          })}
+        </nav>
 
-      {/* User card at bottom */}
-      <div className="px-4 py-4 border-t border-gray-200 flex-shrink-0">
-        {isLoading ? (
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-gray-200 animate-pulse" />
-            <div className="flex-1 space-y-1.5">
-              <div className="h-3 w-24 bg-gray-200 rounded animate-pulse" />
-              <div className="h-2.5 w-32 bg-gray-100 rounded animate-pulse" />
+        {/* ── User footer ──────────────────────────────────────────── */}
+        <div className="px-4 py-3.5 border-t border-white/[0.07] flex-shrink-0">
+          {isLoading ? (
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-full bg-white/[0.08] animate-pulse" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3 w-24 bg-white/[0.08] rounded animate-pulse" />
+                <div className="h-2.5 w-32 bg-white/[0.05] rounded animate-pulse" />
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-xs font-semibold text-brand-700 flex-shrink-0">
-              {initials}
+          ) : (
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-full bg-brand-600/25 border border-brand-500/25 flex items-center justify-center flex-shrink-0">
+                <span className="text-brand-300 text-[10px] font-bold">{initials}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-white/80 truncate">
+                  {user ? `${user.firstName} ${user.lastName}` : '—'}
+                </p>
+                <p className="text-[10px] text-white/35 truncate">{user?.email ?? '—'}</p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-gray-900 truncate">
-                {user ? `${user.firstName} ${user.lastName}` : '—'}
-              </p>
-              <p className="text-xs text-gray-400 truncate">
-                {user?.email ?? '—'}
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-    </aside>
+          )}
+        </div>
+      </aside>
+    </>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Icons                                                                */
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------ //
+// Nav icons — slightly filled stroke for a premium feel
+// ------------------------------------------------------------------ //
 
-function GridIcon() {
+function GridIcon({ active }: { active: boolean }) {
   return (
-    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-      <rect x="3" y="3" width="7" height="7" rx="1" />
-      <rect x="14" y="3" width="7" height="7" rx="1" />
-      <rect x="14" y="14" width="7" height="7" rx="1" />
-      <rect x="3" y="14" width="7" height="7" rx="1" />
+    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} viewBox="0 0 24 24">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
     </svg>
   );
 }
 
-function DocumentIcon() {
+function DocIcon({ active }: { active: boolean }) {
   return (
-    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} viewBox="0 0 24 24">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
+      <polyline points="14 2 14 8 20 8" strokeLinejoin="round" />
+      <line x1="8" y1="13" x2="16" y2="13" strokeLinecap="round" />
+      <line x1="8" y1="17" x2="12" y2="17" strokeLinecap="round" />
     </svg>
   );
 }
 
-function FolderIcon() {
+function LayersIcon({ active }: { active: boolean }) {
   return (
-    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} viewBox="0 0 24 24">
+      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+      <polyline points="2 17 12 22 22 17" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points="2 12 12 17 22 12" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
-function UsersIcon() {
+function UsersIcon({ active }: { active: boolean }) {
   return (
-    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} viewBox="0 0 24 24">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" strokeLinecap="round" />
       <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" strokeLinecap="round" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" strokeLinecap="round" />
     </svg>
   );
 }
 
-function BellIcon() {
+function BellIcon({ active }: { active: boolean }) {
   return (
-    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} viewBox="0 0 24 24">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </svg>
   );
 }
 
-function ReportsIcon() {
+function BarChartIcon({ active }: { active: boolean }) {
   return (
-    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} viewBox="0 0 24 24">
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <path d="M8 17V11M12 17V7M16 17v-5" strokeLinecap="round" />
     </svg>
   );
 }
 
-function ActivityIcon() {
+function ActivityIcon({ active }: { active: boolean }) {
   return (
-    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} viewBox="0 0 24 24">
       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
-function SettingsIcon() {
+function GearIcon({ active }: { active: boolean }) {
   return (
-    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>

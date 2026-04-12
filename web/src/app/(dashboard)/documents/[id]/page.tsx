@@ -393,7 +393,7 @@ export default function DocumentDetailPage() {
       {/* Document header */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold text-gray-900 leading-tight">
+          <h1 className="page-title leading-tight">
             {doc.name}
           </h1>
           <p className="mt-1 text-sm text-gray-400">{doc.fileName}</p>

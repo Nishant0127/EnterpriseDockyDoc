@@ -2,19 +2,113 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ------------------------------------------------------------------ */
+/* Design tokens — light & dark                                         */
+/* ------------------------------------------------------------------ */
+
 @layer base {
+  :root {
+    --bg-canvas:         #f4f3f1;
+    --bg-surface:        #ffffff;
+    --bg-surface-raised: #fafaf8;
+    --border-default:    #e6e2dd;
+    --border-muted:      #ede9e4;
+    --text-primary:      #1a1917;
+    --text-secondary:    #6c6560;
+    --text-tertiary:     #a09b93;
+  }
+
+  .dark {
+    --bg-canvas:         #111110;
+    --bg-surface:        #1d1c1a;
+    --bg-surface-raised: #252420;
+    --border-default:    #323028;
+    --border-muted:      #282620;
+    --text-primary:      #f0ece6;
+    --text-secondary:    #9c9890;
+    --text-tertiary:     #5c5850;
+  }
+
   html {
-    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    @apply antialiased;
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Component utilities                                                  */
+/* ------------------------------------------------------------------ */
+
 @layer components {
-  /* Reusable focus ring for accessibility */
   .focus-ring {
     @apply focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2;
   }
+  .page-title {
+    @apply text-lg font-semibold text-gray-900 dark:text-ink;
+  }
+  .page-subtitle {
+    @apply mt-0.5 text-sm text-gray-500 dark:text-ink-2;
+  }
+  .card-base {
+    @apply bg-white dark:bg-surface rounded-xl border border-gray-200 dark:border-stroke overflow-hidden;
+  }
 }
+
+/* ------------------------------------------------------------------ */
+/* Dark mode compatibility layer                                        */
+/*                                                                      */
+/* Maps the most common Tailwind gray utility classes to dark tokens   */
+/* so existing components automatically adopt dark colors without       */
+/* requiring per-element dark: variants on every class.                 */
+/* ------------------------------------------------------------------ */
+
+.dark .bg-white                  { background-color: var(--bg-surface); }
+.dark .bg-gray-50                { background-color: var(--bg-canvas); }
+.dark .bg-gray-100               { background-color: var(--bg-surface-raised); }
+
+.dark .border-gray-100,
+.dark .border-gray-200,
+.dark .border-gray-300           { border-color: var(--border-default); }
+
+.dark .divide-gray-50  > * + *,
+.dark .divide-gray-100 > * + *,
+.dark .divide-gray-200 > * + *   { border-color: var(--border-default); }
+
+.dark .text-gray-900,
+.dark .text-gray-800             { color: var(--text-primary); }
+.dark .text-gray-700,
+.dark .text-gray-600             { color: var(--text-secondary); }
+.dark .text-gray-500,
+.dark .text-gray-400             { color: var(--text-tertiary); }
+
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-gray-100:hover  { background-color: var(--bg-surface-raised) !important; }
+
+/* Brand accent backgrounds — map light tints to dark-safe equivalents */
+.dark .bg-brand-50,
+.dark .bg-brand-50\/80         { background-color: rgba(30, 58, 138, 0.15) !important; }
+.dark .bg-brand-100            { background-color: rgba(30, 58, 138, 0.25) !important; }
+.dark .border-brand-200,
+.dark .border-brand-300        { border-color: rgba(37, 99, 235, 0.35) !important; }
+.dark .text-brand-700          { color: #93c5fd !important; }
+.dark .text-brand-600          { color: #60a5fa !important; }
+.dark .hover\:bg-brand-50:hover,
+.dark .hover\:bg-brand-100:hover { background-color: rgba(30, 58, 138, 0.2) !important; }
+
+/* Inputs */
+.dark input:not([type=checkbox]):not([type=radio]),
+.dark textarea,
+.dark select {
+  background-color: var(--bg-surface-raised);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+.dark input::placeholder,
+.dark textarea::placeholder      { color: var(--text-tertiary); }

@@ -6,25 +6,15 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
 import type { WorkspaceType } from '@/types';
 
-// ------------------------------------------------------------------ //
-// Badge colours per workspace type
-// ------------------------------------------------------------------ //
-
 const TYPE_BADGE: Record<WorkspaceType, string> = {
-  ENTERPRISE: 'bg-purple-100 text-purple-700',
-  PERSONAL: 'bg-blue-100 text-blue-700',
-  FAMILY: 'bg-green-100 text-green-700',
+  ENTERPRISE: 'bg-purple-500/20 text-purple-300',
+  PERSONAL:   'bg-blue-500/20 text-blue-300',
+  FAMILY:     'bg-emerald-500/20 text-emerald-300',
 };
 
-// ------------------------------------------------------------------ //
-// Component
-// ------------------------------------------------------------------ //
-
 /**
- * WorkspaceSwitcher — dropdown in the Sidebar that lets the user
- * switch between their workspace memberships.
- *
- * Active workspace is stored in UserContext and persisted to localStorage.
+ * WorkspaceSwitcher — workspace selector in the sidebar.
+ * Styled for the dark sidebar context.
  */
 export default function WorkspaceSwitcher() {
   const { user, activeWorkspace, switchWorkspace } = useUser();
@@ -33,36 +23,32 @@ export default function WorkspaceSwitcher() {
   const [switching, setSwitching] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
     if (open) document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, [open]);
 
   if (!user || !activeWorkspace) {
-    // Skeleton placeholder while loading
     return (
-      <div className="px-3 py-2">
-        <div className="h-4 w-32 bg-gray-200 rounded animate-pulse mb-1" />
-        <div className="h-3 w-20 bg-gray-100 rounded animate-pulse" />
+      <div className="px-2 py-2 space-y-1.5">
+        <div className="h-3.5 w-28 bg-white/[0.08] rounded animate-pulse" />
+        <div className="h-3 w-20 bg-white/[0.05] rounded animate-pulse" />
       </div>
     );
   }
 
-  async function handleSwitch(workspaceId: string) {
-    if (workspaceId === activeWorkspace?.workspaceId || switching) return;
-    setSwitching(workspaceId);
+  async function handleSwitch(id: string) {
+    if (id === activeWorkspace?.workspaceId || switching) return;
+    setSwitching(id);
     try {
-      await switchWorkspace(workspaceId);
-      const ws = user?.workspaces.find((w) => w.workspaceId === workspaceId);
+      await switchWorkspace(id);
+      const ws = user?.workspaces.find((w) => w.workspaceId === id);
       toast.success(ws ? `Switched to "${ws.workspaceName}".` : 'Workspace switched.');
     } catch {
-      toast.error('Failed to switch workspace. Please try again.');
+      toast.error('Failed to switch workspace.');
     } finally {
       setSwitching(null);
       setOpen(false);
@@ -75,60 +61,53 @@ export default function WorkspaceSwitcher() {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={cn(
-          'w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left',
-          open ? 'bg-gray-100' : 'hover:bg-gray-100',
-        )}
         aria-expanded={open}
         aria-haspopup="listbox"
+        className={cn(
+          'w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-colors text-left',
+          open ? 'bg-white/[0.08]' : 'hover:bg-white/[0.05]',
+        )}
       >
-        {/* Workspace avatar */}
-        <div className="w-7 h-7 rounded-md bg-brand-600 flex items-center justify-center flex-shrink-0">
+        <div className="w-7 h-7 rounded-md bg-brand-600/70 flex items-center justify-center flex-shrink-0">
           <span className="text-white text-xs font-bold">
             {activeWorkspace.workspaceName[0].toUpperCase()}
           </span>
         </div>
-
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-gray-900 truncate leading-tight">
+          <p className="text-xs font-semibold text-white/90 truncate leading-tight">
             {activeWorkspace.workspaceName}
           </p>
-          <span
-            className={cn(
-              'inline-block text-[10px] font-medium px-1.5 py-px rounded-sm leading-tight',
-              TYPE_BADGE[activeWorkspace.workspaceType],
-            )}
-          >
+          <span className={cn(
+            'inline-block text-[10px] font-medium px-1.5 py-px rounded-sm leading-tight mt-0.5',
+            TYPE_BADGE[activeWorkspace.workspaceType],
+          )}>
             {activeWorkspace.workspaceType}
           </span>
         </div>
-
-        <ChevronIcon
-          className={cn(
-            'flex-shrink-0 text-gray-400 transition-transform duration-150',
-            open && 'rotate-180',
-          )}
-        />
+        <svg
+          className={cn('flex-shrink-0 text-white/30 transition-transform duration-150', open && 'rotate-180')}
+          width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
       </button>
 
-      {/* Dropdown */}
+      {/* Dropdown — renders at document level via portal-like absolute positioning */}
       {open && (
         <div
           role="listbox"
           aria-label="Switch workspace"
-          className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-50"
+          className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-surface border border-gray-200 dark:border-stroke rounded-xl shadow-lg overflow-hidden z-[60]"
         >
-          <div className="px-3 py-2 border-b border-gray-100">
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
-              Your workspaces
+          <div className="px-3 py-2 border-b border-gray-100 dark:border-stroke">
+            <p className="text-[10px] font-semibold text-gray-400 dark:text-ink-3 uppercase tracking-widest">
+              Workspaces
             </p>
           </div>
-
           <ul className="py-1 max-h-56 overflow-y-auto">
             {user.workspaces.map((ws) => {
               const isActive = ws.workspaceId === activeWorkspace.workspaceId;
               const isLoading = switching === ws.workspaceId;
-
               return (
                 <li key={ws.workspaceId}>
                   <button
@@ -139,41 +118,35 @@ export default function WorkspaceSwitcher() {
                     disabled={isLoading}
                     className={cn(
                       'w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors',
-                      isActive
-                        ? 'bg-brand-50'
-                        : 'hover:bg-gray-50',
+                      isActive ? 'bg-brand-50 dark:bg-brand-900/20' : 'hover:bg-gray-50 dark:hover:bg-surface-high',
                       isLoading && 'opacity-60 cursor-wait',
                     )}
                   >
-                    {/* Mini avatar */}
-                    <div
-                      className={cn(
-                        'w-6 h-6 rounded flex items-center justify-center flex-shrink-0 text-[10px] font-bold',
-                        isActive
-                          ? 'bg-brand-600 text-white'
-                          : 'bg-gray-200 text-gray-600',
-                      )}
-                    >
+                    <div className={cn(
+                      'w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 text-[10px] font-bold',
+                      isActive ? 'bg-brand-600 text-white' : 'bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-ink-2',
+                    )}>
                       {ws.workspaceName[0].toUpperCase()}
                     </div>
-
                     <div className="flex-1 min-w-0">
-                      <p
-                        className={cn(
-                          'text-sm font-medium truncate',
-                          isActive ? 'text-brand-700' : 'text-gray-900',
-                        )}
-                      >
+                      <p className={cn(
+                        'text-sm font-medium truncate',
+                        isActive ? 'text-brand-700 dark:text-brand-400' : 'text-gray-900 dark:text-ink',
+                      )}>
                         {ws.workspaceName}
                       </p>
-                      <p className="text-xs text-gray-400">{ws.role}</p>
+                      <p className="text-xs text-gray-400 dark:text-ink-3">{ws.role}</p>
                     </div>
-
                     {isActive && (
-                      <CheckIcon className="flex-shrink-0 text-brand-600" />
+                      <svg className="flex-shrink-0 text-brand-600" width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
                     )}
                     {isLoading && (
-                      <SpinnerIcon className="flex-shrink-0 text-gray-400" />
+                      <svg className="flex-shrink-0 text-gray-400 animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                      </svg>
                     )}
                   </button>
                 </li>
@@ -183,67 +156,5 @@ export default function WorkspaceSwitcher() {
         </div>
       )}
     </div>
-  );
-}
-
-// ------------------------------------------------------------------ //
-// Inline icons
-// ------------------------------------------------------------------ //
-
-function ChevronIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      width="14"
-      height="14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      viewBox="0 0 24 24"
-    >
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  );
-}
-
-function CheckIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      width="14"
-      height="14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.5}
-      viewBox="0 0 24 24"
-    >
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  );
-}
-
-function SpinnerIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cn('animate-spin', className)}
-      width="14"
-      height="14"
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-      />
-    </svg>
   );
 }

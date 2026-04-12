@@ -199,8 +199,8 @@ export default function ActivityPage() {
     <div className="max-w-3xl">
       {/* Header */}
       <div className="mb-5">
-        <h1 className="text-2xl font-semibold text-gray-900">Activity</h1>
-        <p className="mt-0.5 text-sm text-gray-500">
+        <h1 className="page-title">Activity</h1>
+        <p className="page-subtitle">
           Workspace audit log — all critical actions in one place.
         </p>
       </div>

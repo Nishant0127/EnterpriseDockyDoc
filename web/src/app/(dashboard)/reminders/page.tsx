@@ -118,8 +118,8 @@ export default function RemindersPage() {
   return (
     <div className="max-w-4xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Reminders</h1>
-        <p className="mt-0.5 text-sm text-gray-500">
+        <h1 className="page-title">Reminders</h1>
+        <p className="page-subtitle">
           {activeWorkspace.workspaceName} &middot; expiring documents and upcoming reminders
         </p>
       </div>

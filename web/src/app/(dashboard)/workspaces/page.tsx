@@ -58,8 +58,8 @@ export default function WorkspacesPage() {
     <div className="max-w-3xl">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Workspaces</h1>
-        <p className="mt-0.5 text-sm text-gray-500">
+        <h1 className="page-title">Workspaces</h1>
+        <p className="page-subtitle">
           {user?.firstName} {user?.lastName} &middot; {workspaces.length} workspace
           {workspaces.length !== 1 ? 's' : ''}
         </p>
@@ -94,9 +94,9 @@ export default function WorkspacesPage() {
                 // Left accent bar for active — strong visual anchor
                 'border-l-4',
                 isActive && !isNew
-                  ? 'border-l-brand-600 border-t-brand-300 border-r-brand-300 border-b-brand-300 bg-brand-50 shadow-sm'
+                  ? 'border-l-brand-600 border-t-brand-300 border-r-brand-300 border-b-brand-300 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-700/40 shadow-sm'
                   : isNew
-                  ? 'border-l-green-500 border-t-green-200 border-r-green-200 border-b-green-200 bg-green-50 shadow-sm'
+                  ? 'border-l-green-500 border-t-green-200 border-r-green-200 border-b-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-700/40 shadow-sm'
                   : 'border-l-gray-200 border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm',
               )}
             >

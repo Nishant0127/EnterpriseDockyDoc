@@ -139,8 +139,8 @@ export default function SettingsPage() {
     <div>
       {/* Page header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
-        <p className="mt-0.5 text-sm text-gray-500">{wsName}</p>
+        <h1 className="page-title">Settings</h1>
+        <p className="page-subtitle">{wsName}</p>
       </div>
 
       {/* Two-column layout */}
@@ -157,7 +157,7 @@ export default function SettingsPage() {
                   'w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-left transition-colors',
                   i < NAV_ITEMS.length - 1 && 'border-b border-gray-50',
                   activeSection === item.id
-                    ? 'bg-brand-50 text-brand-700 font-semibold'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-400 font-semibold'
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
                 )}
               >

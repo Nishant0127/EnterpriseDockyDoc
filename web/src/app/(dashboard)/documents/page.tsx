@@ -403,10 +403,10 @@ export default function DocumentsPage() {
       {/* Page header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">
+          <h1 className="page-title">
             {showTrash ? 'Trash' : 'Documents'}
           </h1>
-          <p className="mt-0.5 text-sm text-gray-500">
+          <p className="page-subtitle">
             {activeWorkspace.workspaceName} &middot;{' '}
             {isSearching
               ? `${searchResults.length} result${searchResults.length !== 1 ? 's' : ''} for "${searchQuery}"`

@@ -75,23 +75,16 @@ export default function DashboardPage() {
   const hasExpiring  = (summary?.expiringCount ?? 0) > 0;
 
   return (
-    <div className="max-w-6xl space-y-5">
+    <div className="space-y-5">
 
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold text-gray-900">
-              {activeWorkspace?.workspaceName ?? 'Dashboard'}
-            </h1>
-            {activeWorkspace?.workspaceType && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-gray-100 text-gray-500">
-                {activeWorkspace.workspaceType}
-              </span>
-            )}
-          </div>
-          <p className="mt-0.5 text-xs text-gray-400">
-            Welcome back{user ? `, ${user.firstName}` : ''}. Here&apos;s your workspace at a glance.
+          <h1 className="page-title">
+            Welcome back{user ? `, ${user.firstName}` : ''}
+          </h1>
+          <p className="page-subtitle">
+            {activeWorkspace.workspaceName} — here&apos;s your workspace at a glance.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -104,14 +97,14 @@ export default function DashboardPage() {
           </Link>
           <Link
             href="/documents"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-stroke text-xs font-medium text-gray-700 dark:text-ink-2 hover:bg-gray-50 dark:hover:bg-surface-high transition-colors"
           >
             <FolderIcon className="text-gray-500" />
             Documents
           </Link>
           <Link
             href="/members"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-stroke text-xs font-medium text-gray-700 dark:text-ink-2 hover:bg-gray-50 dark:hover:bg-surface-high transition-colors"
           >
             <UsersIcon className="text-gray-500" />
             Members
@@ -174,8 +167,8 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
 
         {/* Recent Activity — 3 of 5 cols */}
-        <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <div className="lg:col-span-3 bg-white dark:bg-surface rounded-xl border border-gray-200 dark:border-stroke overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-stroke">
             <div className="flex items-center gap-2">
               <ActivityIcon className="text-gray-400" />
               <h2 className="text-sm font-semibold text-gray-900">Recent Activity</h2>
@@ -223,8 +216,8 @@ export default function DashboardPage() {
 
         {/* Expiring Documents — 2 of 5 cols */}
         <div className={cn(
-          'lg:col-span-2 bg-white rounded-xl border overflow-hidden',
-          hasExpired ? 'border-red-200' : hasExpiring ? 'border-orange-200' : 'border-gray-200',
+          'lg:col-span-2 bg-white dark:bg-surface rounded-xl border overflow-hidden',
+          hasExpired ? 'border-red-200 dark:border-red-900/50' : hasExpiring ? 'border-orange-200 dark:border-orange-900/50' : 'border-gray-200 dark:border-stroke',
         )}>
           <div className={cn(
             'flex items-center justify-between px-4 py-3 border-b',
@@ -345,8 +338,8 @@ function KpiCard({
 }) {
   const content = (
     <div className={cn(
-      'bg-white rounded-xl border border-gray-200 p-4 transition-all duration-150',
-      href && 'group-hover:shadow-md group-hover:-translate-y-0.5 group-hover:border-gray-300',
+      'bg-white dark:bg-surface rounded-xl border border-gray-200 dark:border-stroke p-4 transition-all duration-150',
+      href && 'group-hover:shadow-card-md group-hover:-translate-y-0.5',
     )}>
       <div className="flex items-center justify-between mb-2">
         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">{label}</p>
@@ -375,7 +368,7 @@ function KpiCard({
 
 function DashboardSkeleton() {
   return (
-    <div className="max-w-6xl animate-pulse space-y-5">
+    <div className="animate-pulse space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <div className="h-6 w-44 bg-gray-200 rounded mb-1.5" />
