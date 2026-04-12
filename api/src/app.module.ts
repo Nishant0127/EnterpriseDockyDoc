@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import configuration from './config/configuration';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
@@ -29,6 +31,17 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
       load: [configuration],
       envFilePath: '.env',
     }),
+    // ------------------------------------------------------------------ //
+    // Rate limiting — 100 req / 60 s per IP (global default).
+    // Override per-route with @Throttle({ default: { limit, ttl } }).
+    // ------------------------------------------------------------------ //
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60_000,  // window in ms
+        limit: 100,   // max requests per window per IP
+      },
+    ]),
     PrismaModule,
     HealthModule,
     StorageModule,
@@ -45,6 +58,11 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
     AiModule,
     ReportsModule,
     InvitationsModule,
+  ],
+  providers: [
+    // Apply ThrottlerGuard to every route in the application.
+    // Uses the client IP from the incoming request as the throttle key.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}
