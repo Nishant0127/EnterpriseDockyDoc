@@ -194,9 +194,9 @@ export default function MembersPage() {
                   Joined {joined}
                 </span>
 
-                {/* Actions */}
+                {/* Actions — fixed width so role badge + joined date stay aligned across all rows */}
                 {canManage && !isYou && (activeWorkspace?.role === 'OWNER' || !isOwner) ? (
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className="flex items-center justify-end gap-1.5 flex-shrink-0 w-[152px]">
                     <button
                       onClick={() => setEditingMember(member)}
                       className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-brand-300 hover:text-brand-700 hover:bg-brand-50 transition-colors"
@@ -223,8 +223,8 @@ export default function MembersPage() {
                     )}
                   </div>
                 ) : (
-                  /* Viewer or self — no actions, keep column consistent */
-                  <div className="w-24 flex-shrink-0 hidden sm:block" />
+                  /* No actions — same fixed width keeps preceding columns aligned */
+                  <div className="w-[152px] flex-shrink-0" />
                 )}
               </div>
             );

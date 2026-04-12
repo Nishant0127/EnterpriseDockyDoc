@@ -665,60 +665,32 @@ export default function DocumentsPage() {
                 )}
               </>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100/80">
-                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400">
-                      Name
-                    </th>
-                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400 hidden md:table-cell">
-                      Folder
-                    </th>
-                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400 hidden lg:table-cell">
-                      Owner
-                    </th>
-                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400">
-                      Status
-                    </th>
-                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400 hidden sm:table-cell">
-                      Version
-                    </th>
-                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400 hidden xl:table-cell">
-                      Tags
-                    </th>
-                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400 hidden lg:table-cell">
-                      Created
-                    </th>
-                    <th className="px-4 pt-3 pb-2.5 w-10" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100/60">
-                  {displayDocs.map((doc) => (
-                    <DocumentRow
-                      key={doc.id}
-                      doc={doc as DocumentListItem}
-                      snippet={(doc as SearchResult).snippet}
-                      deleting={deletingDocId === doc.id}
-                      canEdit={canEdit}
-                      onDelete={() => handleDeleteDoc(doc as DocumentListItem)}
-                      onRestore={showTrash ? () => { void handleRestoreDoc(doc as DocumentListItem); } : undefined}
-                      dragging={dragDocId === doc.id}
-                      onDragStart={!showTrash && !isSearching && canEdit ? setDragDocId : undefined}
-                      onDragEnd={!showTrash && !isSearching && canEdit ? () => {
-                        setDragDocId(null);
-                        setDragOverFolderId(null);
-                      } : undefined}
-                      fromParam={
-                        showTrash
-                          ? 'trash'
-                          : selectedFolderId
-                          ? `folder:${selectedFolderId}`
-                          : 'all'
-                      }
-                    />
-                  ))}
-                </tbody>
-              </table>
+              <div className="divide-y divide-gray-100/60">
+                {displayDocs.map((doc) => (
+                  <DocumentRow
+                    key={doc.id}
+                    doc={doc as DocumentListItem}
+                    snippet={(doc as SearchResult).snippet}
+                    deleting={deletingDocId === doc.id}
+                    canEdit={canEdit}
+                    onDelete={() => handleDeleteDoc(doc as DocumentListItem)}
+                    onRestore={showTrash ? () => { void handleRestoreDoc(doc as DocumentListItem); } : undefined}
+                    dragging={dragDocId === doc.id}
+                    onDragStart={!showTrash && !isSearching && canEdit ? setDragDocId : undefined}
+                    onDragEnd={!showTrash && !isSearching && canEdit ? () => {
+                      setDragDocId(null);
+                      setDragOverFolderId(null);
+                    } : undefined}
+                    fromParam={
+                      showTrash
+                        ? 'trash'
+                        : selectedFolderId
+                        ? `folder:${selectedFolderId}`
+                        : 'all'
+                    }
+                  />
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -1360,8 +1332,12 @@ function DocumentRow({
   });
 
   return (
-    <tr
-      className={cn('hover:bg-gray-50/60 transition-colors duration-100 group cursor-default', dragging && 'opacity-40 bg-gray-50/40')}
+    <div
+      className={cn(
+        'group flex items-center gap-3 px-4 py-3.5',
+        'hover:bg-gray-50/70 transition-colors duration-100 cursor-default',
+        dragging && 'opacity-40 bg-gray-50/40',
+      )}
       draggable={!!onDragStart}
       onDragStart={onDragStart ? (e) => {
         e.dataTransfer.setData('application/dockydoc-docid', doc.id);
@@ -1370,84 +1346,48 @@ function DocumentRow({
       } : undefined}
       onDragEnd={onDragEnd}
     >
-      {/* Name */}
-      <td className="px-4 py-4">
+      {/* File type icon */}
+      <div className="flex-shrink-0">
+        <FileTypeIcon fileType={doc.fileType} />
+      </div>
+
+      {/* Primary block — name + compact metadata subtitle */}
+      <div className="flex-1 min-w-0">
         <Link
           href={`/documents/${doc.id}${fromParam ? `?from=${fromParam}` : ''}`}
-          className="flex items-center gap-3 group"
+          className="block"
         >
-          <FileTypeIcon fileType={doc.fileType} />
-          <div className="min-w-0">
-            <p className="font-medium text-gray-900 group-hover:text-brand-600 transition-colors truncate leading-snug">
-              {doc.name}
-            </p>
-            <p className="text-xs text-gray-400 truncate mt-0.5">{doc.fileName}</p>
-            {snippet && (
-              <p className="text-xs text-gray-500 mt-0.5 italic truncate max-w-xs">
-                {snippet}
-              </p>
-            )}
-          </div>
+          <span className="text-sm font-medium text-gray-900 group-hover:text-brand-600 transition-colors truncate block leading-snug">
+            {doc.name}
+          </span>
         </Link>
-      </td>
-
-      {/* Folder */}
-      <td className="px-4 py-4 hidden md:table-cell">
-        <span className="text-gray-500 text-xs">
-          {doc.folder ? doc.folder.name : <span className="text-gray-300">—</span>}
-        </span>
-      </td>
-
-      {/* Owner */}
-      <td className="px-4 py-4 hidden lg:table-cell">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center text-[10px] font-semibold text-brand-700 flex-shrink-0">
-            {initials(doc.owner.firstName, doc.owner.lastName)}
-          </div>
-          <span className="text-xs text-gray-600 truncate">
-            {doc.owner.firstName} {doc.owner.lastName}
-          </span>
-        </div>
-      </td>
-
-      {/* Status */}
-      <td className="px-4 py-4">
-        <div className="flex flex-wrap items-center gap-1">
-          <span
-            className={cn(
-              'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-              badge.class,
-            )}
-          >
-            {badge.label}
-          </span>
-          {expiry && (
-            <span
-              className={cn(
-                'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-                expiry.class,
-              )}
-            >
-              {expiry.label}
-            </span>
+        <div className="flex items-center gap-1.5 mt-0.5 text-xs text-gray-400 flex-wrap">
+          {doc.folder && (
+            <span className="truncate max-w-[80px]">{doc.folder.name}</span>
+          )}
+          {doc.folder && <span className="text-gray-200 flex-shrink-0">·</span>}
+          <span className="flex-shrink-0">{doc.owner.firstName} {doc.owner.lastName}</span>
+          <span className="text-gray-200 flex-shrink-0">·</span>
+          <span className="flex-shrink-0 whitespace-nowrap">{date}</span>
+          {doc.currentVersionNumber > 1 && (
+            <>
+              <span className="text-gray-200 flex-shrink-0">·</span>
+              <span className="flex-shrink-0 tabular-nums">v{doc.currentVersionNumber}</span>
+            </>
+          )}
+          {snippet && (
+            <>
+              <span className="text-gray-200 flex-shrink-0">·</span>
+              <span className="italic truncate text-gray-500 max-w-[160px]">{snippet}</span>
+            </>
           )}
         </div>
-      </td>
+      </div>
 
-      {/* Versions */}
-      <td className="px-4 py-4 hidden sm:table-cell">
-        <span className="text-xs text-gray-500 tabular-nums">
-          v{doc.currentVersionNumber}
-          {doc.versionCount > 1 && (
-            <span className="text-gray-400"> ({doc.versionCount})</span>
-          )}
-        </span>
-      </td>
-
-      {/* Tags */}
-      <td className="px-4 py-4 hidden xl:table-cell">
-        <div className="flex flex-wrap gap-1">
-          {doc.tags.slice(0, 3).map((tag) => (
+      {/* Tags — sm+ only */}
+      {doc.tags.length > 0 && (
+        <div className="hidden sm:flex items-center gap-1 flex-shrink-0">
+          {doc.tags.slice(0, 2).map((tag) => (
             <span
               key={tag.id}
               className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium"
@@ -1460,56 +1400,61 @@ function DocumentRow({
               {tag.name}
             </span>
           ))}
-          {doc.tags.length > 3 && (
-            <span className="text-[10px] text-gray-400">+{doc.tags.length - 3}</span>
+          {doc.tags.length > 2 && (
+            <span className="text-[10px] text-gray-400">+{doc.tags.length - 2}</span>
           )}
         </div>
-      </td>
+      )}
 
-      {/* Created */}
-      <td className="px-4 py-4 hidden lg:table-cell">
-        <span className="text-xs text-gray-400 whitespace-nowrap">{date}</span>
-      </td>
+      {/* Status + expiry chips */}
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium', badge.class)}>
+          {badge.label}
+        </span>
+        {expiry && (
+          <span className={cn('hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium', expiry.class)}>
+            {expiry.label}
+          </span>
+        )}
+      </div>
 
-      {/* Row actions */}
-      <td className="px-2 py-4 w-16">
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
-          {onRestore && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onRestore(); }}
-              title="Restore document"
-              className="p-1.5 rounded text-gray-300 hover:text-green-600 hover:bg-green-50 transition-colors"
-            >
-              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path d="M1 4v6h6" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M3.51 15a9 9 0 1 0 .49-5.1L1 10" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Row actions — fixed width so status chip stays aligned across all rows */}
+      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-100 flex-shrink-0 w-[60px] justify-end">
+        {onRestore && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onRestore(); }}
+            title="Restore document"
+            className="p-1.5 rounded text-gray-300 hover:text-green-600 hover:bg-green-50 transition-colors"
+          >
+            <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path d="M1 4v6h6" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M3.51 15a9 9 0 1 0 .49-5.1L1 10" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
+        {canEdit && doc.status !== 'DELETED' && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            disabled={deleting}
+            title="Delete document"
+            className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+          >
+            {deleting ? (
+              <svg className="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-            </button>
-          )}
-          {canEdit && doc.status !== 'DELETED' && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              disabled={deleting}
-              title="Delete document"
-              className="p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
-            >
-              {deleting ? (
-                <svg className="animate-spin" width="13" height="13" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              ) : (
-                <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <polyline points="3 6 5 6 21 6" />
-                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                  <path d="M10 11v6M14 11v6" />
-                </svg>
-              )}
-            </button>
-          )}
-        </div>
-      </td>
-    </tr>
+            ) : (
+              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6M14 11v6" />
+              </svg>
+            )}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1532,13 +1477,20 @@ function PageSkeleton() {
 
 function TableSkeleton() {
   return (
-    <div className="p-4 space-y-3">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex gap-4 animate-pulse">
-          <div className="h-8 w-8 bg-gray-100 rounded" />
-          <div className="flex-1 h-8 bg-gray-100 rounded" />
-          <div className="w-20 h-8 bg-gray-100 rounded" />
-          <div className="w-16 h-8 bg-gray-100 rounded" />
+    <div className="divide-y divide-gray-100/60">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 px-4 py-3.5 animate-pulse">
+          {/* File icon placeholder */}
+          <div className="w-[18px] h-[22px] bg-gray-100 rounded flex-shrink-0" />
+          {/* Name + metadata */}
+          <div className="flex-1 min-w-0 space-y-2">
+            <div className="h-3.5 bg-gray-200 rounded w-48" />
+            <div className="h-3 bg-gray-100 rounded w-64" />
+          </div>
+          {/* Status chip */}
+          <div className="w-14 h-5 bg-gray-100 rounded-full flex-shrink-0" />
+          {/* Actions placeholder */}
+          <div className="w-[60px] flex-shrink-0" />
         </div>
       ))}
     </div>
