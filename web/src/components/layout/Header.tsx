@@ -92,9 +92,10 @@ export default function Header() {
           onClick={toggleTheme}
           aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
           className={cn(
-            'w-8 h-8 flex items-center justify-center rounded-md transition-colors',
+            'w-8 h-8 flex items-center justify-center rounded-md transition-all duration-150',
             'text-gray-400 dark:text-ink-3',
             'hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-600 dark:hover:text-ink',
+            'active:scale-90',
           )}
         >
           {isDark ? <SunIcon /> : <MoonIcon />}
@@ -117,9 +118,10 @@ export default function Header() {
           title="Sign out"
           aria-label="Sign out"
           className={cn(
-            'w-8 h-8 flex items-center justify-center rounded-md transition-colors',
+            'w-8 h-8 flex items-center justify-center rounded-md transition-all duration-150',
             'text-gray-400 dark:text-ink-3',
             'hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-600 dark:hover:text-ink',
+            'active:scale-90',
           )}
         >
           <LogoutIcon />

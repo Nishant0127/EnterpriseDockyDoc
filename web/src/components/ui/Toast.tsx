@@ -13,6 +13,7 @@ interface ToastItem {
   id: number;
   message: string;
   variant: ToastVariant;
+  leaving?: boolean;
 }
 
 interface ToastAPI {
@@ -28,6 +29,9 @@ interface ToastAPI {
 const ToastContext = createContext<ToastAPI | null>(null);
 let _nextId = 1;
 
+const DURATION = 4500;     // ms until auto-dismiss
+const EXIT_DURATION = 200; // ms for exit animation
+
 // ------------------------------------------------------------------ //
 // Provider
 // ------------------------------------------------------------------ //
@@ -40,17 +44,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     const id = _nextId++;
     setToasts((prev) => [...prev, { id, message, variant }]);
 
-    const timer = setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-      timersRef.current.delete(id);
-    }, 4500);
+    const timer = setTimeout(() => startLeave(id), DURATION);
     timersRef.current.set(id, timer);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function dismiss(id: number) {
+  function startLeave(id: number) {
     const timer = timersRef.current.get(id);
     if (timer) { clearTimeout(timer); timersRef.current.delete(id); }
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    // Mark as leaving — triggers exit animation
+    setToasts((prev) => prev.map((t) => t.id === id ? { ...t, leaving: true } : t));
+    // Remove from DOM after animation completes
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, EXIT_DURATION);
   }
 
   const api: ToastAPI = {
@@ -68,7 +74,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         className="fixed top-4 right-4 z-[200] flex flex-col gap-2 pointer-events-none"
       >
         {toasts.map((t) => (
-          <ToastBanner key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
+          <ToastBanner key={t.id} toast={t} onDismiss={() => startLeave(t.id)} />
         ))}
       </div>
     </ToastContext.Provider>
@@ -76,20 +82,30 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 }
 
 // ------------------------------------------------------------------ //
-// Individual toast banner
+// Variant styles
 // ------------------------------------------------------------------ //
 
-const VARIANT_STYLES: Record<ToastVariant, string> = {
-  success: 'bg-white border-green-200 text-gray-900 shadow-green-100',
-  error:   'bg-white border-red-200   text-gray-900 shadow-red-100',
-  info:    'bg-white border-blue-200  text-gray-900 shadow-blue-100',
+const VARIANT_STYLES: Record<ToastVariant, { wrap: string; iconBg: string; bar: string }> = {
+  success: {
+    wrap:   'bg-white dark:bg-surface border-green-200 dark:border-green-800/50 shadow-green-100 dark:shadow-none',
+    iconBg: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400',
+    bar:    'bg-green-400',
+  },
+  error: {
+    wrap:   'bg-white dark:bg-surface border-red-200 dark:border-red-800/50 shadow-red-100 dark:shadow-none',
+    iconBg: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400',
+    bar:    'bg-red-400',
+  },
+  info: {
+    wrap:   'bg-white dark:bg-surface border-blue-200 dark:border-blue-800/50 shadow-blue-100 dark:shadow-none',
+    iconBg: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
+    bar:    'bg-blue-400',
+  },
 };
 
-const ICON_BG: Record<ToastVariant, string> = {
-  success: 'bg-green-100 text-green-600',
-  error:   'bg-red-100   text-red-600',
-  info:    'bg-blue-100  text-blue-600',
-};
+// ------------------------------------------------------------------ //
+// Individual toast banner
+// ------------------------------------------------------------------ //
 
 function ToastIcon({ variant }: { variant: ToastVariant }) {
   if (variant === 'success') {
@@ -115,38 +131,74 @@ function ToastIcon({ variant }: { variant: ToastVariant }) {
 }
 
 function ToastBanner({ toast, onDismiss }: { toast: ToastItem; onDismiss: () => void }) {
-  const [visible, setVisible] = useState(false);
+  const [entered, setEntered] = useState(false);
+  const styles = VARIANT_STYLES[toast.variant];
 
+  // Trigger enter animation on next frame
   useEffect(() => {
-    const raf = requestAnimationFrame(() => setVisible(true));
+    const raf = requestAnimationFrame(() => setEntered(true));
     return () => cancelAnimationFrame(raf);
   }, []);
+
+  const isLeaving = toast.leaving ?? false;
 
   return (
     <div
       className={cn(
-        'pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3 shadow-lg',
-        'w-80 max-w-sm transition-all duration-250 ease-out',
-        VARIANT_STYLES[toast.variant],
-        visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2',
+        'pointer-events-auto flex flex-col rounded-xl border shadow-lg overflow-hidden',
+        'w-80 max-w-sm',
+        styles.wrap,
+        // Enter/exit transitions — slide from right
+        'transition-all duration-200 ease-out',
+        entered && !isLeaving
+          ? 'opacity-100 translate-x-0'
+          : 'opacity-0 translate-x-4',
       )}
       role="alert"
     >
-      <div className={cn('mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0', ICON_BG[toast.variant])}>
-        <ToastIcon variant={toast.variant} />
+      {/* Main content row */}
+      <div className="flex items-start gap-3 px-4 py-3">
+        {/* Icon */}
+        <div className={cn('mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0', styles.iconBg)}>
+          <ToastIcon variant={toast.variant} />
+        </div>
+
+        {/* Message */}
+        <p className="flex-1 text-sm font-medium leading-snug text-gray-900 dark:text-ink">
+          {toast.message}
+        </p>
+
+        {/* Dismiss */}
+        <button
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="flex-shrink-0 text-gray-300 dark:text-ink-3 hover:text-gray-500 dark:hover:text-ink-2 active:scale-90 transition-all duration-100 mt-0.5 rounded"
+        >
+          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+            <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
+          </svg>
+        </button>
       </div>
-      <p className="flex-1 text-sm font-medium leading-snug">{toast.message}</p>
-      <button
-        onClick={onDismiss}
-        aria-label="Dismiss"
-        className="flex-shrink-0 text-gray-300 hover:text-gray-500 transition-colors mt-0.5"
-      >
-        <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-          <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
-        </svg>
-      </button>
+
+      {/* Progress bar — animates from 100% → 0% over DURATION */}
+      <div
+        className={cn('h-[2px] w-full', styles.bar, 'origin-left opacity-50')}
+        style={{
+          animation: `toast-shrink ${DURATION}ms linear forwards`,
+        }}
+      />
     </div>
   );
+}
+
+// Inject the toast-shrink keyframe once (scoped by data-toast-style)
+if (typeof document !== 'undefined') {
+  if (!document.getElementById('toast-keyframes')) {
+    const style = document.createElement('style');
+    style.id = 'toast-keyframes';
+    style.textContent = `@keyframes toast-shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }`;
+    document.head.appendChild(style);
+  }
 }
 
 // ------------------------------------------------------------------ //

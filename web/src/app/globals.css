@@ -16,6 +16,12 @@
     --text-primary:      #1a1917;
     --text-secondary:    #6c6560;
     --text-tertiary:     #a09b93;
+
+    /* Transition presets */
+    --t-fast:   100ms;
+    --t-base:   150ms;
+    --t-slow:   250ms;
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dark {
@@ -40,6 +46,123 @@
     color: var(--text-primary);
     @apply antialiased;
   }
+
+  /* ── Global button interaction polish ─────────────────────────── */
+  /* Applies a micro press-down to all non-disabled buttons/links that
+     have padding — avoids flickering on icon-only or borderless elements */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active {
+    transform: scale(0.975);
+  }
+
+  /* Smooth base transitions for all interactive elements */
+  a, button, [role="button"], [role="option"], [role="tab"] {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-timing-function: ease;
+    transition-duration: var(--t-base);
+  }
+
+  /* ── Input focus quality ──────────────────────────────────────── */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]),
+  textarea,
+  select {
+    transition: border-color var(--t-base) ease, box-shadow var(--t-base) ease, background-color var(--t-base) ease;
+  }
+
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):focus,
+  textarea:focus,
+  select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  }
+
+  .dark input:not([type=checkbox]):not([type=radio]):not([type=range]):focus,
+  .dark textarea:focus,
+  .dark select:focus {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.15);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Keyframe animations                                                  */
+/* ------------------------------------------------------------------ */
+
+@keyframes dd-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes dd-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes dd-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dd-dropdown-up {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dd-slide-right-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes dd-slide-right-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+@keyframes dd-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes dd-skeleton-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
 }
 
 /* ------------------------------------------------------------------ */
@@ -47,26 +170,116 @@
 /* ------------------------------------------------------------------ */
 
 @layer components {
+  /* ── Focus ring ───────────────────────────────────────────────── */
   .focus-ring {
     @apply focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2;
   }
+
+  /* ── Page typography ──────────────────────────────────────────── */
   .page-title {
     @apply text-lg font-semibold text-gray-900 dark:text-ink;
   }
   .page-subtitle {
     @apply mt-0.5 text-sm text-gray-500 dark:text-ink-2;
   }
+
+  /* ── Card base ────────────────────────────────────────────────── */
   .card-base {
     @apply bg-white dark:bg-surface rounded-xl border border-gray-200 dark:border-stroke overflow-hidden;
+  }
+
+  /* Hoverable variant — adds a lift shadow on hover */
+  .card-hover {
+    @apply transition-shadow duration-200 hover:shadow-card-md;
+  }
+
+  /* ── Animation classes ────────────────────────────────────────── */
+  /* Used by modal */
+  .animate-in {
+    animation: dd-modal-in 200ms var(--ease-out) both;
+  }
+
+  /* Backdrop fade */
+  .animate-backdrop {
+    animation: dd-backdrop-in 200ms ease both;
+  }
+
+  /* Dropdown slides down from trigger */
+  .animate-dropdown {
+    animation: dd-dropdown-in 160ms var(--ease-out) both;
+    transform-origin: top center;
+  }
+
+  /* Dropdown slides up from trigger (for dropdowns above) */
+  .animate-dropdown-up {
+    animation: dd-dropdown-up 160ms var(--ease-out) both;
+    transform-origin: bottom center;
+  }
+
+  /* Slide in from right (toasts, panels) */
+  .animate-slide-right-in {
+    animation: dd-slide-right-in 200ms var(--ease-out) both;
+  }
+
+  /* Slide out to right */
+  .animate-slide-right-out {
+    animation: dd-slide-right-out 180ms ease-in both;
+  }
+
+  /* Generic fade in */
+  .animate-fade-in {
+    animation: dd-fade-in 150ms ease both;
+  }
+
+  /* ── Shimmer skeleton ─────────────────────────────────────────── */
+  /* More polished than plain pulse — use alongside animate-pulse */
+  .skeleton-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--bg-surface-raised) 25%,
+      var(--bg-canvas)         50%,
+      var(--bg-surface-raised) 75%
+    );
+    background-size: 200% 100%;
+    animation: dd-skeleton-shimmer 1.4s ease infinite;
+  }
+
+  /* ── Buttons ──────────────────────────────────────────────────── */
+  /* Primary CTA */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg
+           bg-brand-600 text-white text-sm font-medium
+           hover:bg-brand-700 active:bg-brand-700
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none
+           transition-all duration-150;
+  }
+
+  /* Ghost / outline */
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg
+           border border-gray-200 dark:border-stroke
+           text-gray-700 dark:text-ink-2 text-sm font-medium
+           bg-white dark:bg-surface
+           hover:bg-gray-50 dark:hover:bg-surface-high hover:border-gray-300
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
+           disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none
+           transition-all duration-150;
+  }
+
+  /* Danger */
+  .btn-danger {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg
+           bg-red-600 text-white text-sm font-medium
+           hover:bg-red-700 active:bg-red-800
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none
+           transition-all duration-150;
   }
 }
 
 /* ------------------------------------------------------------------ */
 /* Dark mode compatibility layer                                        */
-/*                                                                      */
-/* Maps the most common Tailwind gray utility classes to dark tokens   */
-/* so existing components automatically adopt dark colors without       */
-/* requiring per-element dark: variants on every class.                 */
 /* ------------------------------------------------------------------ */
 
 .dark .bg-white                  { background-color: var(--bg-surface); }
@@ -93,12 +306,12 @@
 
 /* Brand accent backgrounds — map light tints to dark-safe equivalents */
 .dark .bg-brand-50,
-.dark .bg-brand-50\/80         { background-color: rgba(30, 58, 138, 0.15) !important; }
-.dark .bg-brand-100            { background-color: rgba(30, 58, 138, 0.25) !important; }
+.dark .bg-brand-50\/80           { background-color: rgba(30, 58, 138, 0.15) !important; }
+.dark .bg-brand-100              { background-color: rgba(30, 58, 138, 0.25) !important; }
 .dark .border-brand-200,
-.dark .border-brand-300        { border-color: rgba(37, 99, 235, 0.35) !important; }
-.dark .text-brand-700          { color: #93c5fd !important; }
-.dark .text-brand-600          { color: #60a5fa !important; }
+.dark .border-brand-300          { border-color: rgba(37, 99, 235, 0.35) !important; }
+.dark .text-brand-700            { color: #93c5fd !important; }
+.dark .text-brand-600            { color: #60a5fa !important; }
 .dark .hover\:bg-brand-50:hover,
 .dark .hover\:bg-brand-100:hover { background-color: rgba(30, 58, 138, 0.2) !important; }
 
@@ -111,4 +324,4 @@
   color: var(--text-primary);
 }
 .dark input::placeholder,
-.dark textarea::placeholder      { color: var(--text-tertiary); }
+.dark textarea::placeholder       { color: var(--text-tertiary); }

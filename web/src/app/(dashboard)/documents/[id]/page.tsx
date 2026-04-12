@@ -413,7 +413,7 @@ export default function DocumentDetailPage() {
             type="button"
             onClick={handleDownloadLatest}
             disabled={downloading === 'latest'}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 active:scale-[0.97] transition-all duration-150 disabled:opacity-50"
           >
             {downloading === 'latest' ? (
               <svg className="animate-spin" width="12" height="12" fill="none" viewBox="0 0 24 24">
@@ -1175,7 +1175,7 @@ function TagsSection({
           onClick={handleSave}
           disabled={saving || !isTagsDirty}
           title={!isTagsDirty ? 'No changes to save' : undefined}
-          className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150"
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -1387,7 +1387,7 @@ function MetadataSection({
           onClick={handleSave}
           disabled={saving || !isDirty}
           title={!isDirty ? 'No changes to save' : undefined}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150"
         >
           {saving && (
             <svg className="animate-spin" width="12" height="12" fill="none" viewBox="0 0 24 24">
@@ -1622,8 +1622,8 @@ function EditDocumentModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-backdrop">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden animate-in">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">Edit Document</h2>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
@@ -1694,7 +1694,7 @@ function EditDocumentModal({
             <button type="button" onClick={onClose} disabled={saving} className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
               Cancel
             </button>
-            <button type="submit" disabled={saving} className="flex-1 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors disabled:opacity-50">
+            <button type="submit" disabled={saving} className="flex-1 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 active:scale-[0.97] transition-all duration-150 disabled:opacity-50">
               {saving ? 'Saving…' : 'Save changes'}
             </button>
           </div>
@@ -1750,10 +1750,10 @@ function VersionUploadModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-backdrop"
       onClick={handleBackdrop}
     >
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden animate-in">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
@@ -2433,7 +2433,7 @@ function AiExtractionSection({
         type="button"
         onClick={onExtract}
         disabled={extracting}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 transition-colors disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 active:scale-[0.97] transition-all duration-150 disabled:opacity-50"
       >
         {extracting ? <><SpinnerIcon size={12} /> Extracting…</> : label}
       </button>

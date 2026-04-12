@@ -53,7 +53,7 @@ export default function Sidebar() {
       {isOpen && (
         <div
           aria-hidden
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden animate-backdrop"
           onClick={close}
         />
       )}
@@ -116,12 +116,16 @@ export default function Sidebar() {
                 key={href}
                 href={href}
                 className={cn(
-                  'group flex items-center gap-2.5 px-3 h-9 rounded-lg text-sm font-medium transition-all duration-100',
+                  'group relative flex items-center gap-2.5 px-3 h-9 rounded-lg text-sm font-medium transition-all duration-150',
                   active
                     ? 'bg-white/[0.09] text-white'
-                    : 'text-white/50 hover:bg-white/[0.05] hover:text-white/80',
+                    : 'text-white/50 hover:bg-white/[0.05] hover:text-white/75',
                 )}
               >
+                {/* Active indicator dot */}
+                {active && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full bg-brand-400 opacity-90" />
+                )}
                 <span className="flex-shrink-0">
                   <Icon active={active} />
                 </span>

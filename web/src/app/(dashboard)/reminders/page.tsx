@@ -133,10 +133,10 @@ export default function RemindersPage() {
               type="button"
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150',
                 activeTab === tab.id
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700',
+                  ? 'bg-white text-gray-900 shadow-sm scale-[1.01]'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-white/50',
               )}
             >
               {tab.label}

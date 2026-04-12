@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 
 interface ConfirmModalProps {
@@ -23,20 +24,29 @@ export default function ConfirmModal({
   onConfirm,
   onClose,
 }: ConfirmModalProps) {
+  // Close on Escape
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !loading) onClose();
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [loading, onClose]);
+
   function handleBackdrop(e: React.MouseEvent<HTMLDivElement>) {
     if (e.target === e.currentTarget && !loading) onClose();
   }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-backdrop"
       onClick={handleBackdrop}
     >
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6 animate-in">
+      <div className="bg-white dark:bg-surface rounded-xl shadow-xl w-full max-w-sm mx-4 p-6 animate-in">
         {/* Icon + text */}
         <div className="flex items-start gap-4 mb-5">
           {danger && (
-            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 flex-none">
               <svg
                 width="18"
                 height="18"
@@ -53,8 +63,8 @@ export default function ConfirmModal({
             </div>
           )}
           <div>
-            <h2 className="text-base font-semibold text-gray-900">{title}</h2>
-            <p className="mt-1 text-sm text-gray-500 leading-relaxed">{body}</p>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-ink">{title}</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-ink-2 leading-relaxed">{body}</p>
           </div>
         </div>
 
@@ -64,7 +74,7 @@ export default function ConfirmModal({
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-ink-2 border border-gray-200 dark:border-stroke rounded-lg hover:bg-gray-50 dark:hover:bg-surface-high active:scale-[0.97] transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
@@ -73,10 +83,11 @@ export default function ConfirmModal({
             onClick={onConfirm}
             disabled={loading}
             className={cn(
-              'px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50 inline-flex items-center gap-2',
+              'px-4 py-2 text-sm font-medium text-white rounded-lg active:scale-[0.97] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2',
               danger
-                ? 'bg-red-600 hover:bg-red-700'
-                : 'bg-brand-600 hover:bg-brand-700',
+                ? 'bg-red-600 hover:bg-red-700 focus-visible:ring-red-500'
+                : 'bg-brand-600 hover:bg-brand-700 focus-visible:ring-brand-500',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
             )}
           >
             {loading && (

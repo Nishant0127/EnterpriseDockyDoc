@@ -417,7 +417,7 @@ export default function DocumentsPage() {
           <button
             type="button"
             onClick={() => setShowUpload(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 active:scale-[0.97] transition-all duration-150"
           >
             <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
               <path d="M12 5v14M5 12h14" strokeLinecap="round" />
@@ -787,8 +787,8 @@ function FolderModal({
   const parentOptions = folders.filter((f) => !isRename || f.id !== folder?.id);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-backdrop">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6 animate-in">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-gray-900">
             {isRename ? 'Rename Folder' : 'New Folder'}
@@ -915,10 +915,10 @@ function UploadModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-backdrop"
       onClick={handleBackdrop}
     >
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden animate-in">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-900">Upload Document</h2>
@@ -1279,7 +1279,7 @@ function DocumentRow({
 
   return (
     <tr
-      className={cn('hover:bg-gray-50 transition-colors group', dragging && 'opacity-40 bg-gray-50')}
+      className={cn('hover:bg-gray-50 transition-all duration-100 group cursor-default', dragging && 'opacity-40 bg-gray-50')}
       draggable={!!onDragStart}
       onDragStart={onDragStart ? (e) => {
         e.dataTransfer.setData('application/dockydoc-docid', doc.id);

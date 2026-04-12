@@ -97,7 +97,7 @@ export default function WorkspacesPage() {
                   ? 'border-l-brand-600 border-t-brand-300 border-r-brand-300 border-b-brand-300 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-700/40 shadow-sm'
                   : isNew
                   ? 'border-l-green-500 border-t-green-200 border-r-green-200 border-b-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-700/40 shadow-sm'
-                  : 'border-l-gray-200 border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm',
+                  : 'border-l-gray-200 border-gray-200 bg-white hover:border-gray-300 hover:shadow-card-md hover:-translate-y-px',
               )}
             >
               {/* Left */}

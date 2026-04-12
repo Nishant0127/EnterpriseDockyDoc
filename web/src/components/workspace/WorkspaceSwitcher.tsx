@@ -64,8 +64,8 @@ export default function WorkspaceSwitcher() {
         aria-expanded={open}
         aria-haspopup="listbox"
         className={cn(
-          'w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-colors text-left',
-          open ? 'bg-white/[0.08]' : 'hover:bg-white/[0.05]',
+          'w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-all duration-150 text-left',
+          open ? 'bg-white/[0.08]' : 'hover:bg-white/[0.05] active:bg-white/[0.11]',
         )}
       >
         <div className="w-7 h-7 rounded-md bg-brand-600/70 flex items-center justify-center flex-shrink-0">
@@ -97,7 +97,7 @@ export default function WorkspaceSwitcher() {
         <div
           role="listbox"
           aria-label="Switch workspace"
-          className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-surface border border-gray-200 dark:border-stroke rounded-xl shadow-lg overflow-hidden z-[60]"
+          className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-surface border border-gray-200 dark:border-stroke rounded-xl shadow-lg overflow-hidden z-[60] animate-dropdown"
         >
           <div className="px-3 py-2 border-b border-gray-100 dark:border-stroke">
             <p className="text-[10px] font-semibold text-gray-400 dark:text-ink-3 uppercase tracking-widest">
@@ -117,8 +117,8 @@ export default function WorkspaceSwitcher() {
                     onClick={() => handleSwitch(ws.workspaceId)}
                     disabled={isLoading}
                     className={cn(
-                      'w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors',
-                      isActive ? 'bg-brand-50 dark:bg-brand-900/20' : 'hover:bg-gray-50 dark:hover:bg-surface-high',
+                      'w-full flex items-center gap-3 px-3 py-2.5 text-left transition-all duration-100',
+                      isActive ? 'bg-brand-50 dark:bg-brand-900/20' : 'hover:bg-gray-50 dark:hover:bg-surface-high active:bg-gray-100 dark:active:bg-surface-high',
                       isLoading && 'opacity-60 cursor-wait',
                     )}
                   >

@@ -137,7 +137,7 @@ export default function MembersPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowInviteModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 active:scale-[0.97] transition-all duration-150"
             >
               <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -148,7 +148,7 @@ export default function MembersPage() {
             </button>
             <button
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 active:scale-[0.97] transition-all duration-150"
             >
               <span className="text-lg leading-none">+</span>
               Add
@@ -177,7 +177,7 @@ export default function MembersPage() {
             const isOwner = member.role === 'OWNER';
 
             return (
-              <div key={member.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors">
+              <div key={member.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-all duration-100 group">
                 {/* Avatar */}
                 <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-xs font-semibold text-brand-700 flex-shrink-0">
                   {initials(member.firstName, member.lastName)}
@@ -493,8 +493,8 @@ function EditRoleModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-backdrop">
+      <div className="bg-white dark:bg-surface rounded-xl shadow-xl w-full max-w-sm mx-4 p-6 animate-in">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-gray-900">Edit Member</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
@@ -614,8 +614,8 @@ function AddMemberModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-backdrop">
+      <div className="bg-white dark:bg-surface rounded-xl shadow-xl w-full max-w-md mx-4 p-6 animate-in">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-semibold text-gray-900">Add Member</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
@@ -785,13 +785,13 @@ function InviteModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-backdrop">
+      <div className="bg-white dark:bg-surface rounded-xl shadow-xl w-full max-w-md mx-4 p-6 animate-in">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-gray-900">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-ink">
             {created ? 'Invitation Created' : 'Invite to Workspace'}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-ink-2 text-xl leading-none transition-colors active:scale-90">&times;</button>
         </div>
 
         {created && inviteLink ? (
