@@ -478,7 +478,7 @@ export default function DocumentsPage() {
         {/* --------------------------------------------------------- */}
         {/* Folder sidebar                                             */}
         {/* --------------------------------------------------------- */}
-        <aside className="w-52 flex-shrink-0">
+        <aside className="w-56 flex-shrink-0">
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-3 py-2.5 border-b border-gray-100 flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
@@ -1151,7 +1151,7 @@ function FolderRow({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       className={cn(
-        'w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-left transition-colors text-sm',
+        'w-full flex items-start gap-2 px-3 py-1.5 rounded-lg text-left transition-colors text-sm',
         dragHighlight
           ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-400 ring-inset'
           : active
@@ -1160,15 +1160,15 @@ function FolderRow({
       )}
       style={{ paddingLeft: `${12 + indent * 14}px` }}
     >
-      <span className="flex-shrink-0 opacity-70">
+      <span className="flex-shrink-0 opacity-70 mt-px">
         {iconEl ?? <FolderSvgIcon />}
       </span>
-      <span className="flex-1 truncate">{label}</span>
+      <span className="flex-1 min-w-0 break-words leading-snug">{label}</span>
       {dragHighlight && (
-        <span className="text-[10px] font-semibold text-brand-500">Drop</span>
+        <span className="text-[10px] font-semibold text-brand-500 mt-px flex-shrink-0">Drop</span>
       )}
       {!dragHighlight && count !== undefined && (
-        <span className="text-xs text-gray-400 tabular-nums">{count}</span>
+        <span className="text-xs text-gray-400 tabular-nums mt-px flex-shrink-0">{count}</span>
       )}
     </button>
   );
