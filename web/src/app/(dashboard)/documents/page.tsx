@@ -441,7 +441,7 @@ export default function DocumentsPage() {
   return (
     <div>
       {/* Page header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="page-title">
             {showTrash ? 'Trash' : 'Documents'}
@@ -468,7 +468,7 @@ export default function DocumentsPage() {
       </div>
 
       {/* Search bar */}
-      <div className="relative mb-6">
+      <div className="relative mb-7">
         <svg
           className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
           width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
@@ -508,13 +508,13 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      <div className="flex gap-5">
+      <div className="flex gap-6">
         {/* --------------------------------------------------------- */}
         {/* Folder sidebar                                             */}
         {/* --------------------------------------------------------- */}
         <aside className="w-56 flex-shrink-0">
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-3 py-2.5 border-b border-gray-100 flex items-center justify-between">
+            <div className="px-3.5 py-3 border-b border-gray-100 flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
                 Folders
               </p>
@@ -1404,7 +1404,7 @@ function DocumentRow({
   return (
     <div
       className={cn(
-        'group flex items-center gap-3 px-4 py-3.5',
+        'group flex items-center gap-3.5 px-5 py-4',
         'hover:bg-gray-50/70 transition-colors duration-100 cursor-default',
         dragging && 'opacity-40 bg-gray-50/40',
       )}
@@ -1549,7 +1549,7 @@ function TableSkeleton() {
   return (
     <div className="divide-y divide-gray-100/60">
       {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 px-4 py-3.5 animate-pulse">
+        <div key={i} className="flex items-center gap-3.5 px-5 py-4 animate-pulse">
           {/* File icon placeholder */}
           <div className="w-[18px] h-[22px] bg-gray-100 rounded flex-shrink-0" />
           {/* Name + metadata */}

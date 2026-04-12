@@ -126,14 +126,14 @@ export default function MembersPage() {
 
   return (
     <div className="max-w-3xl">
-      <div className="mb-6">
+      <div className="mb-8">
         <h1 className="page-title">Members</h1>
         <p className="page-subtitle">
           {detail.name} &middot; {detail.memberCount} member{detail.memberCount !== 1 ? 's' : ''}
         </p>
       </div>
 
-      <div className="flex items-start justify-between mb-3">
+      <div className="flex items-start justify-between mb-4">
         <div>
           <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
             Active Members
@@ -167,7 +167,7 @@ export default function MembersPage() {
             const isOwner = member.role === 'OWNER';
 
             return (
-              <div key={member.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-all duration-100 group">
+              <div key={member.id} className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-all duration-100 group">
                 {/* Avatar */}
                 <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-xs font-semibold text-brand-700 flex-shrink-0">
                   {initials(member.firstName, member.lastName)}
@@ -234,7 +234,7 @@ export default function MembersPage() {
 
       {/* Pending Invitations — always visible to admins so they know the section exists */}
       {canManage && (
-        <div className="mt-8">
+        <div className="mt-10">
           <div className="flex items-start justify-between mb-3">
             <div>
               <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
@@ -282,7 +282,7 @@ export default function MembersPage() {
                   const expiry = expiryBadge(inv.expiresAt);
 
                   return (
-                    <div key={inv.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors">
+                    <div key={inv.id} className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors">
                       {/* Avatar */}
                       <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-700 flex-shrink-0">
                         {inv.email[0]?.toUpperCase() ?? '?'}
@@ -703,7 +703,7 @@ function PageSkeleton() {
       <div className="h-4 w-48 bg-gray-100 rounded mb-6" />
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden divide-y divide-gray-100">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="flex items-center gap-4 px-5 py-3.5">
+          <div key={i} className="flex items-center gap-4 px-5 py-4">
             <div className="w-9 h-9 rounded-full bg-gray-100" />
             <div className="flex-1 space-y-1.5">
               <div className="h-3.5 w-36 bg-gray-200 rounded" />

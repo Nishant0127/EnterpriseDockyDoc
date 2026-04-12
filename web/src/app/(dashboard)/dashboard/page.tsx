@@ -75,7 +75,7 @@ export default function DashboardPage() {
   const hasExpiring  = (summary?.expiringCount ?? 0) > 0;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-7">
 
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-4">
@@ -113,7 +113,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── 6-stat KPI grid (2 → 3 → 6 columns) ────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         <KpiCard
           label="Documents"
           value={summary?.totalDocuments ?? 0}
@@ -164,11 +164,11 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Uploads-this-week banner + bottom panels ─────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">
 
         {/* Recent Activity — 3 of 5 cols */}
         <div className="lg:col-span-3 bg-white dark:bg-surface rounded-xl border border-gray-200 dark:border-stroke overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-stroke">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 dark:border-stroke">
             <div className="flex items-center gap-2">
               <ActivityIcon className="text-gray-400" />
               <h2 className="text-sm font-semibold text-gray-900">Recent Activity</h2>
@@ -203,7 +203,7 @@ export default function DashboardPage() {
                   : new Date(log.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
                 return (
-                  <div key={log.id} className="flex items-center gap-3 px-4 py-2">
+                  <div key={log.id} className="flex items-center gap-3 px-5 py-2.5">
                     <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', DOT_COLORS[category])} />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-gray-800 truncate">{describeAuditLog(log)}</p>
@@ -223,7 +223,7 @@ export default function DashboardPage() {
           hasExpired ? 'border-red-200 dark:border-red-900/50' : hasExpiring ? 'border-orange-200 dark:border-orange-900/50' : 'border-gray-200 dark:border-stroke',
         )}>
           <div className={cn(
-            'flex items-center justify-between px-4 py-3 border-b',
+            'flex items-center justify-between px-5 py-3.5 border-b',
             hasExpired ? 'border-red-100 bg-red-50' : hasExpiring ? 'border-orange-100 bg-orange-50' : 'border-gray-100',
           )}>
             <div className="flex items-center gap-2">
@@ -259,7 +259,7 @@ export default function DashboardPage() {
                 const isToday    = doc.daysUntilExpiry === 0;
                 const isCritical = doc.daysUntilExpiry <= 7;
                 return (
-                  <div key={doc.id} className="flex items-center gap-2 px-4 py-2">
+                  <div key={doc.id} className="flex items-center gap-2 px-5 py-2.5">
                     <div className="flex-1 min-w-0">
                       <Link
                         href={`/documents/${doc.id}`}
@@ -342,17 +342,17 @@ function KpiCard({
 }) {
   const content = (
     <div className={cn(
-      'bg-white dark:bg-surface rounded-xl border border-gray-200 dark:border-stroke p-4 transition-all duration-150',
+      'bg-white dark:bg-surface rounded-xl border border-gray-200 dark:border-stroke p-5 transition-all duration-150',
       href && 'group-hover:shadow-card-md group-hover:-translate-y-0.5',
     )}>
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-3">
         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide leading-none">{label}</p>
         <div className={cn('w-6 h-6 rounded-md flex items-center justify-center transition-transform duration-150', COLOR_ICON[color], href && 'group-hover:scale-110')}>
           <span className={cn(COLOR_VALUE[color], '[&_svg]:w-3 [&_svg]:h-3')}>{icon}</span>
         </div>
       </div>
       <p className={cn('text-2xl font-bold leading-none', COLOR_VALUE[color])}>{value}</p>
-      <p className="mt-1.5 text-[10px] text-gray-400 truncate">{sub}</p>
+      <p className="mt-2 text-[10px] text-gray-400 truncate">{sub}</p>
     </div>
   );
 

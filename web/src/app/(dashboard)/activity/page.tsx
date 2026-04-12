@@ -201,7 +201,7 @@ export default function ActivityPage() {
   return (
     <div className="max-w-3xl">
       {/* Header */}
-      <div className="mb-5">
+      <div className="mb-7">
         <h1 className="page-title">Activity</h1>
         <p className="page-subtitle">
           A full audit trail of who did what, and when — across all documents and members.
@@ -209,7 +209,7 @@ export default function ActivityPage() {
       </div>
 
       {/* Filter bar */}
-      <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 mb-5">
+      <div className="bg-white rounded-xl border border-gray-200 px-5 py-4 mb-6">
         <div className="flex flex-wrap items-center gap-2">
           {/* Entity type */}
           <select
@@ -299,7 +299,7 @@ export default function ActivityPage() {
             const isOlder = group.label === 'Older';
             const collapsed = isOlder && !olderExpanded;
             return (
-              <div key={group.label} className="mb-5">
+              <div key={group.label} className="mb-7">
                 {/* Group header */}
                 <button
                   type="button"
@@ -385,17 +385,17 @@ function ActivityRow({ log }: { log: AuditLog }) {
     : 'External';
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 transition-colors duration-100 hover:bg-gray-50">
+    <div className="flex items-center gap-3 px-5 py-3 transition-colors duration-100 hover:bg-gray-50">
       {/* Dot */}
       <span className={cn('w-2 h-2 rounded-full flex-shrink-0', CATEGORY_DOT[category])} />
 
       {/* Description */}
       <div className="flex-1 min-w-0">
         <p className="text-sm text-gray-800 truncate">{describeAuditLog(log)}</p>
-        <div className="flex items-center gap-2 mt-0.5">
+        <div className="flex items-center gap-2 mt-1">
           <span
             className={cn(
-              'inline-block text-[9px] font-bold px-1.5 py-px rounded-full uppercase tracking-wide',
+              'inline-block text-[10px] font-medium px-1.5 py-px rounded-full',
               CATEGORY_PILL[category],
             )}
           >
@@ -424,7 +424,7 @@ function ActivitySkeleton() {
   return (
     <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50 animate-pulse overflow-hidden">
       {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 px-4 py-2.5">
+        <div key={i} className="flex items-center gap-3 px-5 py-3">
           <div className="w-2 h-2 rounded-full bg-gray-200 flex-shrink-0" />
           <div className="flex-1 space-y-1.5">
             <div className="h-3.5 w-2/3 bg-gray-200 rounded" />
