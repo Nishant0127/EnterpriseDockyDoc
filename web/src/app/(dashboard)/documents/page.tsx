@@ -355,16 +355,21 @@ export default function DocumentsPage() {
   function handleDeleteFolder(folder: FolderListItem) {
     const docCount = folder.documentCount;
     const childCount = folder.childCount;
-    const parts: string[] = [];
-    if (docCount > 0) parts.push(`${docCount} document${docCount !== 1 ? 's' : ''}`);
-    if (childCount > 0) parts.push(`${childCount} sub-folder${childCount !== 1 ? 's' : ''}`);
-    const contentNote = parts.length > 0
-      ? ` It contains ${parts.join(' and ')} which will also be moved to trash.`
-      : '';
+
+    let contentWarning: string;
+    if (childCount > 0 && docCount > 0) {
+      contentWarning = `It contains ${docCount} document${docCount !== 1 ? 's' : ''} and ${childCount} sub-folder${childCount !== 1 ? 's' : ''} — all nested contents will be moved to trash too.`;
+    } else if (childCount > 0) {
+      contentWarning = `It contains ${childCount} sub-folder${childCount !== 1 ? 's' : ''} and all their nested files — everything inside will be moved to trash.`;
+    } else if (docCount > 0) {
+      contentWarning = `It contains ${docCount} document${docCount !== 1 ? 's' : ''} which will also be moved to trash.`;
+    } else {
+      contentWarning = 'This folder appears to be empty.';
+    }
 
     setPendingConfirm({
       title: 'Move folder to trash',
-      body: `"${folder.name}" will be moved to trash.${contentNote} Everything can be fully restored.`,
+      body: `"${folder.name}" will be moved to trash. ${contentWarning} Everything can be fully restored.`,
       confirmLabel: 'Move to Trash',
       danger: true,
       onConfirm: async () => {
