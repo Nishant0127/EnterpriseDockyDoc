@@ -311,7 +311,9 @@ export default function DocumentsPage() {
     if (!activeWorkspace) return;
     fetchDocuments({
       workspaceId: activeWorkspace.workspaceId,
-      folderId: showTrash ? undefined : (selectedFolderId ?? undefined),
+      folderId: showTrash
+        ? (selectedDeletedFolderId ?? undefined)
+        : (selectedFolderId ?? undefined),
       status: showTrash ? 'DELETED' : undefined,
     })
       .then(setDocuments)
@@ -321,6 +323,9 @@ export default function DocumentsPage() {
   function refreshFolders() {
     if (!activeWorkspace) return;
     fetchFolders(activeWorkspace.workspaceId).then(setFolders).catch(() => {});
+    if (showTrash) {
+      fetchDeletedFolders(activeWorkspace.workspaceId).then(setDeletedFolders).catch(() => {});
+    }
   }
 
   function handleSelectFolder(id: string | null) {
@@ -331,6 +336,10 @@ export default function DocumentsPage() {
   function handleSelectTrash() {
     setShowTrash(true);
     setSelectedFolderId(null);
+    setSelectedDeletedFolderId(null);
+    if (activeWorkspace) {
+      fetchDeletedFolders(activeWorkspace.workspaceId).then(setDeletedFolders).catch(() => {});
+    }
   }
 
   async function handleRestoreDoc(doc: DocumentListItem) {
@@ -344,18 +353,41 @@ export default function DocumentsPage() {
   }
 
   function handleDeleteFolder(folder: FolderListItem) {
+    const docCount = folder.documentCount;
+    const childCount = folder.childCount;
+    const parts: string[] = [];
+    if (docCount > 0) parts.push(`${docCount} document${docCount !== 1 ? 's' : ''}`);
+    if (childCount > 0) parts.push(`${childCount} sub-folder${childCount !== 1 ? 's' : ''}`);
+    const contentNote = parts.length > 0
+      ? ` It contains ${parts.join(' and ')} which will also be moved to trash.`
+      : '';
+
     setPendingConfirm({
-      title: 'Delete folder',
-      body: `"${folder.name}" must be empty to delete. Documents inside must be moved or deleted first.`,
-      confirmLabel: 'Delete Folder',
+      title: 'Move folder to trash',
+      body: `"${folder.name}" will be moved to trash.${contentNote} Everything can be fully restored.`,
+      confirmLabel: 'Move to Trash',
       danger: true,
       onConfirm: async () => {
         await deleteFolder(folder.id);
         if (selectedFolderId === folder.id) setSelectedFolderId(null);
         refreshFolders();
-        toast.success(`Folder "${folder.name}" deleted.`);
+        refreshDocuments();
+        toast.success(`"${folder.name}" moved to trash.`);
       },
     });
+  }
+
+  async function handleRestoreFolder(folder: FolderListItem) {
+    try {
+      await restoreFolder(folder.id);
+      setDeletedFolders((prev) => prev.filter((f) => f.id !== folder.id));
+      if (selectedDeletedFolderId === folder.id) setSelectedDeletedFolderId(null);
+      refreshFolders();
+      refreshDocuments();
+      toast.success(`"${folder.name}" and its contents restored.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Restore failed.');
+    }
   }
 
   function handleDeleteDoc(doc: DocumentListItem) {
@@ -546,11 +578,47 @@ export default function DocumentsPage() {
               <div className="border-t border-gray-100 mt-1 pt-1">
                 <FolderRow
                   label="Trash"
-                  count={showTrash ? documents.length : undefined}
-                  active={showTrash}
-                  onClick={handleSelectTrash}
+                  count={showTrash && selectedDeletedFolderId === null ? documents.length : undefined}
+                  active={showTrash && selectedDeletedFolderId === null}
+                  onClick={() => { handleSelectTrash(); setSelectedDeletedFolderId(null); }}
                   iconEl={<TrashSvgIcon />}
+                  onDragOver={undefined}
+                  onDragLeave={undefined}
+                  onDrop={undefined}
                 />
+                {/* Deleted folders listed under trash */}
+                {showTrash && deletedFolders.length > 0 && (
+                  <div className="mt-0.5 space-y-0.5">
+                    {deletedFolders.map((df) => (
+                      <div key={df.id} className="relative group/df">
+                        <FolderRow
+                          label={df.name}
+                          count={selectedDeletedFolderId === df.id ? documents.length : df.documentCount || undefined}
+                          active={selectedDeletedFolderId === df.id}
+                          onClick={() => {
+                            setSelectedDeletedFolderId(df.id);
+                            fetchDocuments({
+                              workspaceId: activeWorkspace!.workspaceId,
+                              folderId: df.id,
+                              status: 'DELETED',
+                            }).then(setDocuments).catch(() => {});
+                          }}
+                          indent={1}
+                        />
+                        <button
+                          onClick={(e) => { e.stopPropagation(); void handleRestoreFolder(df); }}
+                          title="Restore folder"
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 hidden group-hover/df:flex items-center p-0.5 text-gray-400 hover:text-brand-600 transition-colors bg-white rounded shadow-sm border border-gray-100"
+                        >
+                          <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24">
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M3 3v5h5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </nav>
           </div>
