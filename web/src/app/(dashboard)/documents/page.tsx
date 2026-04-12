@@ -28,22 +28,28 @@ const STATUS_BADGE: Record<DocumentStatus, { label: string; class: string }> = {
   DELETED: { label: 'Deleted', class: 'bg-red-100 text-red-700' },
 };
 
-const FILE_ICON: Record<string, string> = {
-  pdf: '📄',
-  docx: '📝',
-  doc: '📝',
-  xlsx: '📊',
-  xls: '📊',
-  pptx: '📊',
-  png: '🖼',
-  jpg: '🖼',
-  jpeg: '🖼',
-  webp: '🖼',
-  gif: '🖼',
-};
+/** Colored SVG document icon — file type indicated by stroke/fill color. */
+function FileTypeIcon({ fileType, size = 18 }: { fileType: string; size?: number }) {
+  const ext = fileType.toLowerCase();
+  const color =
+    ext === 'pdf'                          ? '#ef4444' :
+    ext === 'docx' || ext === 'doc'        ? '#3b82f6' :
+    ext === 'xlsx' || ext === 'xls'        ? '#22c55e' :
+    ext === 'pptx' || ext === 'ppt'        ? '#f97316' :
+    ['png','jpg','jpeg','webp','gif'].includes(ext) ? '#a855f7' :
+    '#94a3b8';
 
-function fileIcon(fileType: string) {
-  return FILE_ICON[fileType.toLowerCase()] ?? '📁';
+  const w = size;
+  const h = Math.round(size * 1.2);
+  return (
+    <svg width={w} height={h} fill="none" viewBox="0 0 18 22" className="flex-shrink-0">
+      <path
+        d="M11 1H3C1.9 1 1 1.9 1 3v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V7l-6-6z"
+        stroke={color} strokeWidth={1.4} fill={color} fillOpacity={0.1}
+      />
+      <path d="M11 1v6h6" stroke={color} strokeWidth={1.4} strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 function initials(firstName: string, lastName: string) {
@@ -497,7 +503,7 @@ export default function DocumentsPage() {
                 count={!showTrash ? documents.length : undefined}
                 active={selectedFolderId === null && !showTrash}
                 onClick={() => handleSelectFolder(null)}
-                icon="🗂"
+                iconEl={<AllDocsSvgIcon />}
                 dragHighlight={dragOverFolderId === '__root__' && dragDocId !== null}
                 onDragOver={(e) => {
                   if (!e.dataTransfer.types.includes('application/dockydoc-docid')) return;
@@ -541,7 +547,7 @@ export default function DocumentsPage() {
                   count={showTrash ? documents.length : undefined}
                   active={showTrash}
                   onClick={handleSelectTrash}
-                  icon="🗑"
+                  iconEl={<TrashSvgIcon />}
                 />
               </div>
             </nav>
@@ -661,32 +667,32 @@ export default function DocumentsPage() {
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50/60">
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <tr className="border-b border-gray-100/80">
+                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400">
                       Name
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">
+                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400 hidden md:table-cell">
                       Folder
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">
+                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400 hidden lg:table-cell">
                       Owner
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400">
                       Status
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">
-                      Versions
+                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400 hidden sm:table-cell">
+                      Version
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide hidden xl:table-cell">
+                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400 hidden xl:table-cell">
                       Tags
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">
+                    <th className="px-4 pt-3 pb-2.5 text-left text-xs font-medium text-gray-400 hidden lg:table-cell">
                       Created
                     </th>
-                    <th className="px-4 py-3 w-10" />
+                    <th className="px-4 pt-3 pb-2.5 w-10" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-gray-100/60">
                   {displayDocs.map((doc) => (
                     <DocumentRow
                       key={doc.id}
@@ -996,7 +1002,7 @@ function UploadModal({
             >
               {file ? (
                 <div className="flex items-center justify-center gap-2">
-                  <span className="text-lg">{fileIcon(file.name.split('.').pop() ?? '')}</span>
+                  <FileTypeIcon fileType={file.name.split('.').pop() ?? ''} />
                   <div className="text-left">
                     <p className="text-sm font-medium text-gray-800 truncate max-w-xs">{file.name}</p>
                     <p className="text-xs text-gray-400">{(file.size / 1024).toFixed(1)} KB</p>
@@ -1115,12 +1121,39 @@ function UploadModal({
 // Sub-components
 // ------------------------------------------------------------------ //
 
+function FolderSvgIcon() {
+  return (
+    <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function AllDocsSvgIcon() {
+  return (
+    <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" strokeLinecap="round" />
+      <polyline points="14 2 14 8 20 8" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function TrashSvgIcon() {
+  return (
+    <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+      <polyline points="3 6 5 6 21 6" strokeLinecap="round" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6M14 11v6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function FolderRow({
   label,
   count,
   active,
   onClick,
-  icon = '📁',
+  iconEl,
   indent = 0,
   onDragOver,
   onDragLeave,
@@ -1131,7 +1164,7 @@ function FolderRow({
   count?: number;
   active: boolean;
   onClick: () => void;
-  icon?: string;
+  iconEl?: React.ReactNode;
   indent?: number;
   onDragOver?: (e: React.DragEvent<HTMLButtonElement>) => void;
   onDragLeave?: () => void;
@@ -1155,7 +1188,9 @@ function FolderRow({
       )}
       style={{ paddingLeft: `${12 + indent * 14}px` }}
     >
-      <span className="text-base leading-none">{icon}</span>
+      <span className="flex-shrink-0 opacity-70">
+        {iconEl ?? <FolderSvgIcon />}
+      </span>
       <span className="flex-1 truncate">{label}</span>
       {dragHighlight && (
         <span className="text-[10px] font-semibold text-brand-500">Drop</span>
@@ -1326,7 +1361,7 @@ function DocumentRow({
 
   return (
     <tr
-      className={cn('hover:bg-gray-50 transition-all duration-100 group cursor-default', dragging && 'opacity-40 bg-gray-50')}
+      className={cn('hover:bg-gray-50/60 transition-colors duration-100 group cursor-default', dragging && 'opacity-40 bg-gray-50/40')}
       draggable={!!onDragStart}
       onDragStart={onDragStart ? (e) => {
         e.dataTransfer.setData('application/dockydoc-docid', doc.id);
@@ -1336,17 +1371,17 @@ function DocumentRow({
       onDragEnd={onDragEnd}
     >
       {/* Name */}
-      <td className="px-4 py-3">
+      <td className="px-4 py-4">
         <Link
           href={`/documents/${doc.id}${fromParam ? `?from=${fromParam}` : ''}`}
-          className="flex items-center gap-2.5 group"
+          className="flex items-center gap-3 group"
         >
-          <span className="text-lg leading-none">{fileIcon(doc.fileType)}</span>
+          <FileTypeIcon fileType={doc.fileType} />
           <div className="min-w-0">
-            <p className="font-medium text-gray-900 group-hover:text-brand-600 transition-colors truncate">
+            <p className="font-medium text-gray-900 group-hover:text-brand-600 transition-colors truncate leading-snug">
               {doc.name}
             </p>
-            <p className="text-xs text-gray-400 truncate">{doc.fileName}</p>
+            <p className="text-xs text-gray-400 truncate mt-0.5">{doc.fileName}</p>
             {snippet && (
               <p className="text-xs text-gray-500 mt-0.5 italic truncate max-w-xs">
                 {snippet}
@@ -1357,14 +1392,14 @@ function DocumentRow({
       </td>
 
       {/* Folder */}
-      <td className="px-4 py-3 hidden md:table-cell">
+      <td className="px-4 py-4 hidden md:table-cell">
         <span className="text-gray-500 text-xs">
           {doc.folder ? doc.folder.name : <span className="text-gray-300">—</span>}
         </span>
       </td>
 
       {/* Owner */}
-      <td className="px-4 py-3 hidden lg:table-cell">
+      <td className="px-4 py-4 hidden lg:table-cell">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center text-[10px] font-semibold text-brand-700 flex-shrink-0">
             {initials(doc.owner.firstName, doc.owner.lastName)}
@@ -1376,7 +1411,7 @@ function DocumentRow({
       </td>
 
       {/* Status */}
-      <td className="px-4 py-3">
+      <td className="px-4 py-4">
         <div className="flex flex-wrap items-center gap-1">
           <span
             className={cn(
@@ -1400,7 +1435,7 @@ function DocumentRow({
       </td>
 
       {/* Versions */}
-      <td className="px-4 py-3 hidden sm:table-cell">
+      <td className="px-4 py-4 hidden sm:table-cell">
         <span className="text-xs text-gray-500 tabular-nums">
           v{doc.currentVersionNumber}
           {doc.versionCount > 1 && (
@@ -1410,7 +1445,7 @@ function DocumentRow({
       </td>
 
       {/* Tags */}
-      <td className="px-4 py-3 hidden xl:table-cell">
+      <td className="px-4 py-4 hidden xl:table-cell">
         <div className="flex flex-wrap gap-1">
           {doc.tags.slice(0, 3).map((tag) => (
             <span
@@ -1432,12 +1467,12 @@ function DocumentRow({
       </td>
 
       {/* Created */}
-      <td className="px-4 py-3 hidden lg:table-cell">
+      <td className="px-4 py-4 hidden lg:table-cell">
         <span className="text-xs text-gray-400 whitespace-nowrap">{date}</span>
       </td>
 
       {/* Row actions */}
-      <td className="px-2 py-3 w-16">
+      <td className="px-2 py-4 w-16">
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
           {onRestore && (
             <button

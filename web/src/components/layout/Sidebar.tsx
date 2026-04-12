@@ -61,9 +61,9 @@ export default function Sidebar() {
       {/* Sidebar panel */}
       <aside
         className={cn(
-          // Always dark, regardless of light/dark mode
+          // Always dark, regardless of light/dark mode — matches new cool canvas
           'fixed inset-y-0 left-0 z-50 flex flex-col w-[220px] flex-shrink-0',
-          'bg-[#0f1117] border-r border-white/[0.07]',
+          'bg-[#0d1117] border-r border-white/[0.08]',
           // Slide in/out on mobile; always visible on desktop
           'transition-transform duration-200 ease-out',
           'lg:static lg:translate-x-0 lg:z-auto',
@@ -71,7 +71,7 @@ export default function Sidebar() {
         )}
       >
         {/* ── Logo bar ─────────────────────────────────────────────── */}
-        <div className="flex items-center gap-2.5 px-4 h-[52px] border-b border-white/[0.07] flex-shrink-0">
+        <div className="flex items-center gap-2.5 px-4 h-[52px] border-b border-white/[0.08] flex-shrink-0">
           <div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center flex-shrink-0">
             <svg width="13" height="13" fill="none" viewBox="0 0 24 24" className="text-white">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" strokeWidth={2.5} />
@@ -82,7 +82,7 @@ export default function Sidebar() {
         </div>
 
         {/* ── Active workspace ─────────────────────────────────────── */}
-        <div className="px-3 pt-3 pb-2.5 border-b border-white/[0.07] flex-shrink-0">
+        <div className="px-3 pt-3 pb-2.5 border-b border-white/[0.08] flex-shrink-0">
           {isLoading || !activeWorkspace ? (
             <div className="px-2 py-2 space-y-1.5">
               <div className="h-3.5 w-28 bg-white/[0.08] rounded animate-pulse" />
@@ -136,7 +136,7 @@ export default function Sidebar() {
         </nav>
 
         {/* ── User footer ──────────────────────────────────────────── */}
-        <div className="px-4 py-3.5 border-t border-white/[0.07] flex-shrink-0">
+        <div className="px-4 py-3.5 border-t border-white/[0.08] flex-shrink-0">
           {isLoading ? (
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-full bg-white/[0.08] animate-pulse" />
