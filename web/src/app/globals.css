@@ -316,6 +316,12 @@
 .dark .hover\:bg-gray-50:hover,
 .dark .hover\:bg-gray-100:hover  { background-color: var(--bg-surface-raised) !important; }
 
+/* Hover text — prevent dark text appearing on dark hover backgrounds */
+.dark .hover\:text-gray-900:hover,
+.dark .hover\:text-gray-800:hover { color: var(--text-primary) !important; }
+.dark .hover\:text-gray-700:hover,
+.dark .hover\:text-gray-600:hover { color: var(--text-secondary) !important; }
+
 /* Brand accent backgrounds — map light tints to dark-safe equivalents */
 .dark .bg-brand-50,
 .dark .bg-brand-50\/80           { background-color: rgba(37, 99, 235, 0.12) !important; }
