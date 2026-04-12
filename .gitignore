@@ -20,8 +20,8 @@ out/
 .env.production.local
 .env.production
 
-# Prisma
-prisma/migrations/
+# Prisma — migrations MUST be committed so `prisma migrate deploy` works on staging/production
+# Do NOT add prisma/migrations/ here
 
 # Logs
 logs/

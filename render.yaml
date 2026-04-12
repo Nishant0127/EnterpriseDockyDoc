@@ -1,0 +1,67 @@
+# ============================================================
+# Render deployment configuration — DockyDoc API
+#
+# This file defines the Render web service for the NestJS backend.
+# Create two Render services from this repo:
+#   1. dockydoc-api-staging  (auto-deploy from develop branch)
+#   2. dockydoc-api          (auto-deploy from main branch)
+#
+# Set secret env vars (sync: false) in the Render dashboard.
+# See DEPLOYMENT.md for full setup steps.
+# ============================================================
+
+services:
+  - type: web
+    name: dockydoc-api
+    runtime: node
+    region: oregon
+
+    # Render sets ROOT_DIR in the dashboard — set it to "api" when creating
+    # the service. The commands below assume the working directory is api/.
+    buildCommand: npm install && npm run build && npx prisma generate
+    startCommand: npx prisma migrate deploy && node dist/main
+
+    healthCheckPath: /api/v1/health
+
+    # Render injects PORT automatically; do not set it here.
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # ── Required secrets — set these in the Render dashboard ──
+      # (sync: false = value must be entered manually, never from this file)
+      - key: DATABASE_URL
+        sync: false          # Neon production branch connection string
+
+      - key: CORS_ORIGINS
+        sync: false          # e.g. https://app.yourdomain.com
+
+      - key: SHARE_GRANT_SECRET
+        sync: false          # openssl rand -hex 32
+
+      - key: ENCRYPTION_KEY
+        sync: false          # openssl rand -hex 32
+
+      - key: CLERK_SECRET_KEY
+        sync: false          # sk_live_... from Clerk dashboard
+
+      - key: JWT_SECRET
+        sync: false          # openssl rand -hex 32
+
+      # ── Optional ──
+      # - key: REDIS_URL
+      #   sync: false
+      # - key: STORAGE_PROVIDER
+      #   value: s3
+      # - key: S3_BUCKET
+      #   sync: false
+      # - key: S3_REGION
+      #   value: us-east-1
+      # - key: S3_ACCESS_KEY_ID
+      #   sync: false
+      # - key: S3_SECRET_ACCESS_KEY
+      #   sync: false
+      # - key: ANTHROPIC_API_KEY
+      #   sync: false
+      # - key: OPENAI_API_KEY
+      #   sync: false

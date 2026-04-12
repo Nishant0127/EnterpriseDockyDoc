@@ -6,10 +6,34 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
+  // ------------------------------------------------------------------ //
+  // Startup validation — fail fast if critical env vars are missing in
+  // production so misconfigured deploys surface immediately in logs.
+  // ------------------------------------------------------------------ //
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (isProduction) {
+    const required = [
+      'DATABASE_URL',
+      'CORS_ORIGINS',
+      'SHARE_GRANT_SECRET',
+      'ENCRYPTION_KEY',
+      'CLERK_SECRET_KEY',
+    ];
+    const missing = required.filter((k) => !process.env[k]);
+    if (missing.length > 0) {
+      console.error(
+        `FATAL: Missing required environment variables: ${missing.join(', ')}`,
+      );
+      process.exit(1);
+    }
+  }
+
   const app = await NestFactory.create(AppModule);
 
   const port = process.env.PORT ?? 8081;
-  const corsOrigins = process.env.CORS_ORIGINS?.split(',') ?? ['http://localhost:8080'];
+  const corsOrigins = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()) ?? [
+    'http://localhost:8080',
+  ];
 
   // ------------------------------------------------------------------ //
   // Global prefix — all routes under /api/v1
@@ -19,7 +43,6 @@ async function bootstrap() {
   // ------------------------------------------------------------------ //
   // CORS
   // ------------------------------------------------------------------ //
-  const isProduction = process.env.NODE_ENV === 'production';
   const allowedHeaders = ['Content-Type', 'Authorization'];
   // x-dev-user-email is only needed when Clerk is not configured (local dev)
   if (!isProduction) {
@@ -76,9 +99,11 @@ async function bootstrap() {
   // ------------------------------------------------------------------ //
   // Start
   // ------------------------------------------------------------------ //
-  await app.listen(port);
-  console.log(`DockyDoc API  → http://localhost:${port}`);
-  console.log(`Health check  → http://localhost:${port}/api/v1/health`);
+  // Listen on 0.0.0.0 so Render (and other cloud hosts) can route traffic in.
+  // Listening on 127.0.0.1 (the NestJS default) is invisible outside the container.
+  await app.listen(port, '0.0.0.0');
+  console.log(`DockyDoc API  → http://0.0.0.0:${port}`);
+  console.log(`Health check  → http://0.0.0.0:${port}/api/v1/health`);
 }
 
 bootstrap();
