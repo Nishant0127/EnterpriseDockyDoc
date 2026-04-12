@@ -15,7 +15,7 @@ import type { AuditAction, AuditEntityType, AuditLog } from '@/types';
 // Constants
 // ------------------------------------------------------------------ //
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 
 const CATEGORY_DOT: Record<string, string> = {
   create:   'bg-green-500',
@@ -195,6 +195,9 @@ export default function ActivityPage() {
   const showSkeleton = loading && !hasLoadedOnce.current;
   const groups = groupByDate(logs);
 
+  // "Older" group is collapsed by default — expands on click
+  const [olderExpanded, setOlderExpanded] = useState(false);
+
   return (
     <div className="max-w-3xl">
       {/* Header */}
@@ -292,25 +295,50 @@ export default function ActivityPage() {
       ) : (
         <div>
           {/* Grouped timeline */}
-          {groups.map((group) => (
-            <div key={group.label} className="mb-5">
-              {/* Group header */}
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-                  {group.label}
-                </span>
-                <div className="flex-1 h-px bg-gray-100" />
-                <span className="text-[10px] text-gray-300 tabular-nums">{group.items.length}</span>
-              </div>
+          {groups.map((group) => {
+            const isOlder = group.label === 'Older';
+            const collapsed = isOlder && !olderExpanded;
+            return (
+              <div key={group.label} className="mb-5">
+                {/* Group header */}
+                <button
+                  type="button"
+                  onClick={isOlder ? () => setOlderExpanded((v) => !v) : undefined}
+                  className={cn(
+                    'flex items-center gap-3 mb-3 w-full text-left',
+                    isOlder && 'cursor-pointer group',
+                  )}
+                >
+                  <span className={cn(
+                    'text-xs font-semibold uppercase tracking-wide',
+                    isOlder ? 'text-gray-400 group-hover:text-gray-600 transition-colors' : 'text-gray-400',
+                  )}>
+                    {group.label}
+                  </span>
+                  <div className="flex-1 h-px bg-gray-100" />
+                  <span className="text-[10px] text-gray-300 tabular-nums">{group.items.length}</span>
+                  {isOlder && (
+                    <svg
+                      width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2}
+                      viewBox="0 0 24 24"
+                      className={cn('text-gray-400 transition-transform duration-200 flex-shrink-0', olderExpanded ? 'rotate-180' : '')}
+                    >
+                      <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </button>
 
-              {/* Items */}
-              <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50 overflow-hidden">
-                {group.items.map((log) => (
-                  <ActivityRow key={log.id} log={log} />
-                ))}
+                {/* Items — hidden when older group is collapsed */}
+                {!collapsed && (
+                  <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50 overflow-hidden">
+                    {group.items.map((log) => (
+                      <ActivityRow key={log.id} log={log} />
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Load more */}
           {hasMore && (
