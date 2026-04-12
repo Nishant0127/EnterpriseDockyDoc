@@ -201,13 +201,14 @@ model WorkspaceUser {
 // ================================================================== //
 
 model Folder {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   workspaceId    String
   name           String
   parentFolderId String?
   createdById    String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdBy    User      @relation("FolderCreator", fields: [createdById], references: [id])

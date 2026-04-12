@@ -230,6 +230,7 @@ export interface FolderListItem {
   createdBy: FolderCreatedBy;
   documentCount: number;
   childCount: number;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -59,6 +59,7 @@ export class FolderResponseDto {
   @ApiProperty({ type: FolderCreatedByDto }) createdBy!: FolderCreatedByDto;
   @ApiProperty() documentCount!: number;
   @ApiProperty() childCount!: number;
+  @ApiPropertyOptional() deletedAt!: Date | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }

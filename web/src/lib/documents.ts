@@ -60,6 +60,16 @@ export function deleteFolder(id: string): Promise<void> {
   return apiFetch<void>(`/api/v1/folders/${id}`, { method: 'DELETE' });
 }
 
+export function fetchDeletedFolders(workspaceId: string): Promise<FolderListItem[]> {
+  return apiFetch<FolderListItem[]>(
+    `/api/v1/folders?workspaceId=${encodeURIComponent(workspaceId)}&deleted=true`,
+  );
+}
+
+export function restoreFolder(id: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/folders/${id}/restore`, { method: 'POST' });
+}
+
 // ------------------------------------------------------------------ //
 // Documents — list & detail
 // ------------------------------------------------------------------ //

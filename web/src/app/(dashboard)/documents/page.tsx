@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
-import { fetchFolders, fetchDocuments, uploadDocument, searchDocuments, createFolder, renameFolder, deleteFolder, deleteDocument, updateDocument } from '@/lib/documents';
+import { fetchFolders, fetchDocuments, fetchDeletedFolders, restoreFolder, uploadDocument, searchDocuments, createFolder, renameFolder, deleteFolder, deleteDocument, updateDocument } from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
 import ConfirmModal from '@/components/ui/ConfirmModal';
@@ -131,6 +131,8 @@ export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentListItem[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [showTrash, setShowTrash] = useState(false);
+  const [deletedFolders, setDeletedFolders] = useState<FolderListItem[]>([]);
+  const [selectedDeletedFolderId, setSelectedDeletedFolderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);

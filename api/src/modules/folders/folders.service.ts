@@ -17,18 +17,14 @@ import {
 export class FoldersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * List all folders in a workspace (flat list — client builds tree from parentFolderId).
-   * Ordered: root folders first, then children, alphabetically within each level.
-   */
   async findAll(workspaceId: string, user: DevUserPayload): Promise<FolderResponseDto[]> {
     assertWorkspaceMembership(user, workspaceId);
 
     const folders = await this.prisma.folder.findMany({
-      where: { workspaceId },
+      where: { workspaceId, deletedAt: null },
       include: {
         createdBy: { select: { id: true, firstName: true, lastName: true } },
-        _count: { select: { documents: { where: { status: { not: DocumentStatus.DELETED } } }, children: true } },
+        _count: { select: { documents: { where: { status: { not: DocumentStatus.DELETED } } }, children: { where: { deletedAt: null } } } },
       },
       orderBy: [{ parentFolderId: 'asc' }, { name: 'asc' }],
     });
@@ -41,6 +37,33 @@ export class FoldersService {
       createdBy: f.createdBy,
       documentCount: f._count.documents,
       childCount: f._count.children,
+      deletedAt: null,
+      createdAt: f.createdAt,
+      updatedAt: f.updatedAt,
+    }));
+  }
+
+  async findDeleted(workspaceId: string, user: DevUserPayload): Promise<FolderResponseDto[]> {
+    assertWorkspaceMembership(user, workspaceId);
+
+    const folders = await this.prisma.folder.findMany({
+      where: { workspaceId, deletedAt: { not: null } },
+      include: {
+        createdBy: { select: { id: true, firstName: true, lastName: true } },
+        _count: { select: { documents: { where: { status: DocumentStatus.DELETED } }, children: true } },
+      },
+      orderBy: [{ deletedAt: 'desc' }],
+    });
+
+    return folders.map((f) => ({
+      id: f.id,
+      workspaceId: f.workspaceId,
+      name: f.name,
+      parentFolderId: f.parentFolderId,
+      createdBy: f.createdBy,
+      documentCount: f._count.documents,
+      childCount: f._count.children,
+      deletedAt: f.deletedAt,
       createdAt: f.createdAt,
       updatedAt: f.updatedAt,
     }));
@@ -54,8 +77,8 @@ export class FoldersService {
       where: { id },
       include: {
         createdBy: { select: { id: true, firstName: true, lastName: true } },
-        _count: { select: { documents: { where: { status: { not: DocumentStatus.DELETED } } }, children: true } },
-        children: { select: { id: true, name: true }, orderBy: { name: 'asc' } },
+        _count: { select: { documents: { where: { status: { not: DocumentStatus.DELETED } } }, children: { where: { deletedAt: null } } } },
+        children: { where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: 'asc' } },
       },
     });
 
@@ -71,6 +94,7 @@ export class FoldersService {
       documentCount: folder._count.documents,
       childCount: folder._count.children,
       children: folder.children,
+      deletedAt: folder.deletedAt,
       createdAt: folder.createdAt,
       updatedAt: folder.updatedAt,
     };
@@ -113,7 +137,7 @@ export class FoldersService {
       },
       include: {
         createdBy: { select: { id: true, firstName: true, lastName: true } },
-        _count: { select: { documents: { where: { status: { not: DocumentStatus.DELETED } } }, children: true } },
+        _count: { select: { documents: { where: { status: { not: DocumentStatus.DELETED } } }, children: { where: { deletedAt: null } } } },
       },
     });
 
@@ -125,6 +149,7 @@ export class FoldersService {
       createdBy: folder.createdBy,
       documentCount: folder._count.documents,
       childCount: folder._count.children,
+      deletedAt: null,
       createdAt: folder.createdAt,
       updatedAt: folder.updatedAt,
     };
@@ -146,7 +171,7 @@ export class FoldersService {
       data: { name: dto.name },
       include: {
         createdBy: { select: { id: true, firstName: true, lastName: true } },
-        _count: { select: { documents: { where: { status: { not: DocumentStatus.DELETED } } }, children: true } },
+        _count: { select: { documents: { where: { status: { not: DocumentStatus.DELETED } } }, children: { where: { deletedAt: null } } } },
       },
     });
 
@@ -158,40 +183,104 @@ export class FoldersService {
       createdBy: folder.createdBy,
       documentCount: folder._count.documents,
       childCount: folder._count.children,
+      deletedAt: folder.deletedAt,
       createdAt: folder.createdAt,
       updatedAt: folder.updatedAt,
     };
   }
 
   /**
-   * Delete a folder. Fails if the folder has documents or sub-folders.
+   * Soft-delete a folder and all its descendants + mark their documents as DELETED.
    */
   async delete(id: string, user: DevUserPayload): Promise<void> {
     const folder = await this.prisma.folder.findUnique({
       where: { id },
-      include: {
-        _count: {
-          select: {
-            documents: { where: { status: { not: DocumentStatus.DELETED } } },
-            children: true,
-          },
-        },
-      },
+      select: { workspaceId: true, name: true, deletedAt: true },
     });
     if (!folder) throw new NotFoundException(`Folder "${id}" not found`);
+    if (folder.deletedAt) throw new BadRequestException(`Folder is already in trash`);
     assertEditorOrAbove(user, folder.workspaceId);
 
-    if (folder._count.documents > 0) {
-      throw new BadRequestException(
-        `Cannot delete folder "${folder.name}" — it contains ${folder._count.documents} active document(s). Move or delete them first.`,
-      );
-    }
-    if (folder._count.children > 0) {
-      throw new BadRequestException(
-        `Cannot delete folder "${folder.name}" — it has ${folder._count.children} sub-folder(s). Remove them first.`,
-      );
-    }
+    const allFolderIds = await this.collectDescendants(id);
+    const now = new Date();
 
-    await this.prisma.folder.delete({ where: { id } });
+    await this.prisma.$transaction([
+      this.prisma.folder.updateMany({
+        where: { id: { in: allFolderIds } },
+        data: { deletedAt: now },
+      }),
+      this.prisma.document.updateMany({
+        where: {
+          folderId: { in: allFolderIds },
+          status: { not: DocumentStatus.DELETED },
+        },
+        data: { status: DocumentStatus.DELETED },
+      }),
+    ]);
+  }
+
+  /**
+   * Restore a soft-deleted folder and all its descendants + restore their documents to ACTIVE.
+   */
+  async restore(id: string, user: DevUserPayload): Promise<void> {
+    const folder = await this.prisma.folder.findUnique({
+      where: { id },
+      select: { workspaceId: true, name: true, deletedAt: true },
+    });
+    if (!folder) throw new NotFoundException(`Folder "${id}" not found`);
+    if (!folder.deletedAt) throw new BadRequestException(`Folder is not in trash`);
+    assertEditorOrAbove(user, folder.workspaceId);
+
+    const allFolderIds = await this.collectDeletedDescendants(id);
+
+    await this.prisma.$transaction([
+      this.prisma.folder.updateMany({
+        where: { id: { in: allFolderIds } },
+        data: { deletedAt: null },
+      }),
+      this.prisma.document.updateMany({
+        where: {
+          folderId: { in: allFolderIds },
+          status: DocumentStatus.DELETED,
+        },
+        data: { status: DocumentStatus.ACTIVE },
+      }),
+    ]);
+  }
+
+  /** BFS to collect a folder and all its non-deleted descendants. */
+  private async collectDescendants(rootId: string): Promise<string[]> {
+    const ids: string[] = [rootId];
+    const queue: string[] = [rootId];
+    while (queue.length > 0) {
+      const parentId = queue.shift()!;
+      const children = await this.prisma.folder.findMany({
+        where: { parentFolderId: parentId, deletedAt: null },
+        select: { id: true },
+      });
+      for (const child of children) {
+        ids.push(child.id);
+        queue.push(child.id);
+      }
+    }
+    return ids;
+  }
+
+  /** BFS to collect a deleted folder and all its deleted descendants. */
+  private async collectDeletedDescendants(rootId: string): Promise<string[]> {
+    const ids: string[] = [rootId];
+    const queue: string[] = [rootId];
+    while (queue.length > 0) {
+      const parentId = queue.shift()!;
+      const children = await this.prisma.folder.findMany({
+        where: { parentFolderId: parentId, deletedAt: { not: null } },
+        select: { id: true },
+      });
+      for (const child of children) {
+        ids.push(child.id);
+        queue.push(child.id);
+      }
+    }
+    return ids;
   }
 }
