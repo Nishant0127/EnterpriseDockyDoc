@@ -201,7 +201,7 @@ export default function ActivityPage() {
       <div className="mb-5">
         <h1 className="page-title">Activity</h1>
         <p className="page-subtitle">
-          Workspace audit log — all critical actions in one place.
+          A full audit trail of who did what, and when — across all documents and members.
         </p>
       </div>
 
@@ -271,21 +271,22 @@ export default function ActivityPage() {
       {showSkeleton ? (
         <ActivitySkeleton />
       ) : logs.length === 0 ? (
-        <div className="text-center py-14">
-          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+        <div className="flex flex-col items-center justify-center text-center py-14 px-6">
+          <div className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
             <ClockIcon className="text-gray-400" />
           </div>
-          <p className="text-sm text-gray-500">
-            {hasFilters ? 'No activity matches these filters.' : 'No activity yet.'}
+          <p className="text-sm font-medium text-gray-700 mb-1">
+            {hasFilters ? 'No matching activity' : 'No activity yet'}
           </p>
-          {hasFilters ? (
-            <button onClick={clearFilters} className="mt-2 text-xs text-brand-600 hover:underline">
-              Clear filters
+          <p className="text-xs text-gray-400 max-w-xs leading-relaxed">
+            {hasFilters
+              ? 'Try adjusting or clearing your filters to see more results.'
+              : 'Every action in this workspace — uploads, edits, shares, member changes, and downloads — appears here automatically.'}
+          </p>
+          {hasFilters && (
+            <button onClick={clearFilters} className="mt-3 text-xs text-brand-600 hover:underline font-medium">
+              Clear all filters
             </button>
-          ) : (
-            <p className="text-xs text-gray-400 mt-1">
-              Upload a document or make a change to see activity here.
-            </p>
           )}
         </div>
       ) : (

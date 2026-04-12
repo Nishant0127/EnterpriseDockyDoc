@@ -1488,13 +1488,16 @@ function ExpiryReminderSection({
   return (
     <Section title="Expiry &amp; Reminders">
       {!expiryDate && !renewalDueDate && !isReminderEnabled && (
-        <p className="text-xs text-gray-400 italic mb-4">No expiry dates or reminders configured.</p>
+        <p className="text-xs text-gray-400 mb-4">
+          Set expiry dates below and enable reminders to get notified before this document lapses.
+        </p>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">
+          <label className="block text-xs font-medium text-gray-700 mb-1">
             Expiry date
           </label>
+          <p className="text-[10px] text-gray-400 mb-1.5">Auto-filled when detected by AI</p>
           <input
             type="date"
             value={expiryDate}
@@ -1503,9 +1506,10 @@ function ExpiryReminderSection({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">
+          <label className="block text-xs font-medium text-gray-700 mb-1">
             Renewal due date
           </label>
+          <p className="text-[10px] text-gray-400 mb-1.5">Auto-filled when detected by AI</p>
           <input
             type="date"
             value={renewalDueDate}
@@ -2441,39 +2445,52 @@ function AiExtractionSection({
   }
 
   return (
-    <Section title="AI Intelligence">
+    <Section title="AI Analysis">
       {/* ── status: none ──────────────────────────────────────────── */}
       {status === 'none' && (
         <div className="space-y-3">
-          <p className="text-xs text-gray-400 leading-relaxed">
-            Extract key fields, dates, and insights automatically from this document.
+          <p className="text-xs text-gray-500 leading-relaxed">
+            Scan with AI to automatically identify expiry dates, key parties, contract numbers, and more — no manual entry needed.
           </p>
-          <ExtractButton />
+          <div className="flex items-center gap-2">
+            <ExtractButton />
+            <span className="text-[10px] text-gray-400">Takes 5–15 seconds</span>
+          </div>
         </div>
       )}
 
       {/* ── status: running ───────────────────────────────────────── */}
       {status === 'running' && (
-        <div className="flex items-center gap-2 text-xs text-gray-500 py-1">
-          <SpinnerIcon size={14} />
-          <span>Extracting…</span>
+        <div className="flex items-start gap-2.5 p-3 rounded-lg bg-brand-50 border border-brand-100">
+          <span className="text-brand-500 flex-shrink-0 mt-0.5"><SpinnerIcon size={14} /></span>
+          <div>
+            <p className="text-xs font-medium text-brand-700">Analyzing document…</p>
+            <p className="text-[10px] text-brand-500 mt-0.5">Reading content and extracting key fields. This takes about 5–15 seconds.</p>
+          </div>
         </div>
       )}
 
       {/* ── status: disabled ──────────────────────────────────────── */}
       {status === 'disabled' && (
-        <p className="text-xs text-gray-400">
-          AI unavailable — <code className="font-mono text-[10px] bg-gray-100 px-1 rounded">ANTHROPIC_API_KEY</code> not configured.
-        </p>
+        <div className="flex items-start gap-2.5 p-3 rounded-lg bg-gray-50 border border-gray-100">
+          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className="text-gray-400 flex-shrink-0 mt-0.5">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 8v4M12 16h.01" strokeLinecap="round" />
+          </svg>
+          <div>
+            <p className="text-xs font-medium text-gray-600">AI analysis not available</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">Contact your workspace admin to enable AI features.</p>
+          </div>
+        </div>
       )}
 
       {/* ── status: failed ────────────────────────────────────────── */}
       {status === 'failed' && (
         <div className="space-y-2.5">
           <p className="text-xs text-red-600">
-            {extraction?.error ?? 'Extraction failed. Please try again.'}
+            {extraction?.error ?? 'Analysis failed — the document may be corrupted or in an unsupported format.'}
           </p>
-          <ExtractButton label="Retry Extraction" />
+          <ExtractButton label="Try again" />
         </div>
       )}
 
@@ -2621,10 +2638,13 @@ function AiExtractionSection({
               {extraction.suggestedFolder && (
                 <>
                   <ConfidenceBadge confidence={(extraction.confidenceByField ?? {}).suggestedFolder ?? 0} />
-                  <span className="text-[10px] text-gray-400 italic truncate ml-auto">
-                    AI: &ldquo;{extraction.suggestedFolder}&rdquo;
+                  <span className="text-[10px] text-gray-400 truncate ml-auto">
+                    AI suggests &ldquo;{extraction.suggestedFolder}&rdquo;
                   </span>
                 </>
+              )}
+              {!extraction.suggestedFolder && !isAppliedByAnyone('suggestedFolder') && (
+                <span className="text-[10px] text-gray-400 ml-auto italic">AI suggests best match</span>
               )}
               {isAppliedByAnyone('suggestedFolder') && (
                 <span className={cn('ml-auto text-[10px] font-semibold', userApplied.includes('suggestedFolder') ? 'text-blue-600' : 'text-green-600')}>

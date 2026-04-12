@@ -183,7 +183,10 @@ export default function DashboardPage() {
             </Link>
           </div>
           {activity.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm text-gray-400">No activity yet.</div>
+            <div className="px-4 py-10 text-center">
+              <p className="text-sm text-gray-500 font-medium">No activity yet</p>
+              <p className="text-xs text-gray-400 mt-1">Upload a document or invite a team member to get started.</p>
+            </div>
           ) : (
             <div className="divide-y divide-gray-50">
               {activity.map((log) => {
@@ -245,8 +248,9 @@ export default function DashboardPage() {
             </Link>
           </div>
           {expiring.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm text-gray-400">
-              No documents expiring soon.
+            <div className="px-4 py-10 text-center">
+              <p className="text-sm text-green-600 font-medium">All clear</p>
+              <p className="text-xs text-gray-400 mt-1">No documents expiring in the next 90 days.</p>
             </div>
           ) : (
             <div className="divide-y divide-gray-50">

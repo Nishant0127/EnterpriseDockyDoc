@@ -120,7 +120,7 @@ export default function RemindersPage() {
       <div className="mb-6">
         <h1 className="page-title">Reminders</h1>
         <p className="page-subtitle">
-          {activeWorkspace.workspaceName} &middot; expiring documents and upcoming reminders
+          {activeWorkspace.workspaceName} &middot; never miss a renewal or expiry again
         </p>
       </div>
 
@@ -178,10 +178,20 @@ export default function RemindersPage() {
               <span className="ml-auto text-xs font-medium text-gray-400">{reminders.length}</span>
             </div>
             {reminders.length === 0 ? (
-              <div className="px-5 py-10 text-center">
-                <p className="text-3xl mb-2">🔔</p>
-                <p className="text-sm text-gray-400">No pending reminders.</p>
-                <p className="text-xs text-gray-300 mt-1">Set reminders on documents with expiry dates.</p>
+              <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+                <div className="w-11 h-11 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" className="text-gray-400">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                  </svg>
+                </div>
+                <p className="text-sm font-medium text-gray-700 mb-1">No reminders scheduled yet</p>
+                <p className="text-xs text-gray-400 leading-relaxed max-w-xs">
+                  Open any document, set an expiry date, and add a reminder — we&apos;ll notify you before it lapses.
+                </p>
+                <Link href="/documents" className="mt-3 text-xs text-brand-600 hover:underline font-medium">
+                  Go to Documents →
+                </Link>
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
@@ -202,10 +212,17 @@ export default function RemindersPage() {
               <span className="ml-auto text-xs font-medium text-gray-400">{expiringSoon.length}</span>
             </div>
             {expiringSoon.length === 0 ? (
-              <div className="px-5 py-10 text-center">
-                <p className="text-3xl mb-2">📅</p>
-                <p className="text-sm text-gray-400">
-                  No documents expiring in the next {TIME_FILTERS.find((f) => f.days === expiringDays)?.label ?? `${expiringDays} days`}.
+              <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+                <div className="w-11 h-11 rounded-full bg-green-50 flex items-center justify-center mb-3">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" className="text-green-500">
+                    <path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+                <p className="text-sm font-medium text-gray-700 mb-1">
+                  All clear for the next {TIME_FILTERS.find((f) => f.days === expiringDays)?.label ?? `${expiringDays} days`}
+                </p>
+                <p className="text-xs text-gray-400 leading-relaxed max-w-xs">
+                  No documents are expiring in this window. Add expiry dates on your documents to track them here.
                 </p>
               </div>
             ) : (
@@ -224,9 +241,17 @@ export default function RemindersPage() {
               <span className="ml-auto text-xs font-medium text-gray-400">{expired.length}</span>
             </div>
             {expired.length === 0 ? (
-              <div className="px-5 py-10 text-center">
-                <p className="text-3xl mb-2">✅</p>
-                <p className="text-sm text-gray-400">No expired documents.</p>
+              <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+                <div className="w-11 h-11 rounded-full bg-green-50 flex items-center justify-center mb-3">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" className="text-green-500">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" strokeLinecap="round" />
+                    <path d="M22 4 12 14.01l-3-3" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+                <p className="text-sm font-medium text-gray-700 mb-1">No expired documents</p>
+                <p className="text-xs text-gray-400 leading-relaxed max-w-xs">
+                  Everything is up to date. Expired documents appear here so you can renew or archive them.
+                </p>
               </div>
             ) : (
               <div className="divide-y divide-gray-100">

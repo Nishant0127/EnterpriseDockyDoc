@@ -576,41 +576,88 @@ export default function DocumentsPage() {
             {loading || searching ? (
               <TableSkeleton />
             ) : displayDocs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                <span className="text-4xl mb-3">{isSearching ? '🔍' : '📂'}</span>
-                <p className="text-sm">
-                  {isSearching
-                    ? `No results for "${searchQuery}"`
-                    : 'No documents found'}
-                </p>
-                {isSearching && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="mt-2 text-xs text-brand-600 hover:underline"
-                  >
-                    Clear search
-                  </button>
+              <>
+                {isSearching ? (
+                  /* No search results */
+                  <div className="flex flex-col items-center justify-center py-14 text-center px-6">
+                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+                      <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className="text-gray-400">
+                        <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" strokeLinecap="round" />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-medium text-gray-700 mb-1">No results for &ldquo;{searchQuery}&rdquo;</p>
+                    <p className="text-xs text-gray-400 mb-3">Try different keywords, or check for typos.</p>
+                    <button type="button" onClick={() => setSearchQuery('')} className="text-xs text-brand-600 hover:underline font-medium">
+                      Clear search
+                    </button>
+                  </div>
+                ) : showTrash ? (
+                  /* Empty trash */
+                  <div className="flex flex-col items-center justify-center py-14 text-center">
+                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+                      <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className="text-gray-400">
+                        <polyline points="3 6 5 6 21 6" strokeLinecap="round" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" strokeLinecap="round" />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-medium text-gray-700 mb-1">Trash is empty</p>
+                    <p className="text-xs text-gray-400">Deleted documents appear here before they're permanently removed.</p>
+                  </div>
+                ) : selectedFolderId ? (
+                  /* Empty folder */
+                  <div className="flex flex-col items-center justify-center py-14 text-center px-6">
+                    <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center mb-3">
+                      <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className="text-gray-400">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-medium text-gray-700 mb-1">This folder is empty</p>
+                    <p className="text-xs text-gray-400 mb-4">Upload a document or drag one here from the list.</p>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => setShowUpload(true)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 active:scale-[0.97] transition-all duration-150"
+                      >
+                        <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                          <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                        </svg>
+                        Upload Document
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  /* First-time / no documents in workspace */
+                  <div className="flex flex-col items-center justify-center py-16 text-center px-8">
+                    <div className="w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center mb-4">
+                      <svg width="26" height="26" fill="none" stroke="#2563eb" strokeWidth={1.6} viewBox="0 0 24 24">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" strokeLinejoin="round" />
+                        <path d="M12 12v5M9.5 14.5 12 12l2.5 2.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                    <h3 className="text-sm font-semibold text-gray-900 mb-2">No documents yet</h3>
+                    <p className="text-sm text-gray-500 leading-relaxed max-w-xs mb-5">
+                      Upload contracts, certificates, or policies. DockyDoc tracks expiry dates, extracts key details with AI, and alerts you before anything lapses.
+                    </p>
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowUpload(true)}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 active:scale-[0.97] transition-all duration-150"
+                      >
+                        <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                          <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                        </svg>
+                        Upload your first document
+                      </button>
+                    ) : (
+                      <p className="text-xs text-gray-400">You don&apos;t have upload permissions in this workspace.</p>
+                    )}
+                    <p className="mt-3 text-xs text-gray-400">Supports PDF, Word, Excel, PowerPoint, and images</p>
+                  </div>
                 )}
-                {!isSearching && selectedFolderId && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedFolderId(null)}
-                    className="mt-2 text-xs text-brand-600 hover:underline"
-                  >
-                    Clear folder filter
-                  </button>
-                )}
-                {!isSearching && (
-                  <button
-                    type="button"
-                    onClick={() => setShowUpload(true)}
-                    className="mt-3 text-xs text-brand-600 hover:underline"
-                  >
-                    Upload your first document →
-                  </button>
-                )}
-              </div>
+              </>
             ) : (
               <table className="w-full text-sm">
                 <thead>

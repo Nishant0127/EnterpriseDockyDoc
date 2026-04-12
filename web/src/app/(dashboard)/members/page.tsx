@@ -130,7 +130,7 @@ export default function MembersPage() {
         <div>
           <h1 className="page-title">Members</h1>
           <p className="page-subtitle">
-            {detail.name} &middot; {detail.memberCount} member{detail.memberCount !== 1 ? 's' : ''}
+            {detail.name} &middot; {detail.memberCount} member{detail.memberCount !== 1 ? 's' : ''}{canManage ? ' — invite people and manage roles' : ''}
           </p>
         </div>
         {canManage && (
@@ -157,12 +157,15 @@ export default function MembersPage() {
         )}
       </div>
 
-      <h2 className="text-sm font-semibold text-gray-700 mb-3">
-        Active Members
-        <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-brand-100 text-brand-700">
-          {sortedMembers.length}
-        </span>
-      </h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+          Active Members
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-brand-100 text-brand-700">
+            {sortedMembers.length}
+          </span>
+        </h2>
+        <p className="text-xs text-gray-400">Roles control what each person can see and do</p>
+      </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="divide-y divide-gray-100">
