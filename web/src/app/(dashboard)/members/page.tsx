@@ -126,45 +126,32 @@ export default function MembersPage() {
 
   return (
     <div className="max-w-3xl">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="page-title">Members</h1>
-          <p className="page-subtitle">
-            {detail.name} &middot; {detail.memberCount} member{detail.memberCount !== 1 ? 's' : ''}{canManage ? ' — invite people and manage roles' : ''}
-          </p>
-        </div>
-        {canManage && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowInviteModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 active:scale-[0.97] transition-all duration-150"
-            >
-              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                <circle cx="12" cy="7" r="4"/>
-                <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
-              </svg>
-              Invite
-            </button>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 active:scale-[0.97] transition-all duration-150"
-            >
-              <span className="text-lg leading-none">+</span>
-              Add
-            </button>
-          </div>
-        )}
+      <div className="mb-6">
+        <h1 className="page-title">Members</h1>
+        <p className="page-subtitle">
+          {detail.name} &middot; {detail.memberCount} member{detail.memberCount !== 1 ? 's' : ''}
+        </p>
       </div>
 
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-          Active Members
-          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-brand-100 text-brand-700">
-            {sortedMembers.length}
-          </span>
-        </h2>
-        <p className="text-xs text-gray-400">Roles control what each person can see and do</p>
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            Active Members
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-brand-100 text-brand-700">
+              {sortedMembers.length}
+            </span>
+          </h2>
+          <p className="text-xs text-gray-400 mt-0.5">Roles control what each person can see and do</p>
+        </div>
+        {canManage && (
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 active:scale-[0.97] transition-all duration-150 flex-shrink-0"
+          >
+            <span className="text-base leading-none">+</span>
+            Add
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -248,20 +235,28 @@ export default function MembersPage() {
       {/* Pending Invitations — always visible to admins so they know the section exists */}
       {canManage && (
         <div className="mt-8">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-700">
-              Pending Invitations
-              {invitations.length > 0 && (
-                <span className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
-                  {invitations.length}
-                </span>
-              )}
-            </h2>
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                Pending Invitations
+                {invitations.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                    {invitations.length}
+                  </span>
+                )}
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">Invited users appear here until they accept</p>
+            </div>
             <button
               onClick={() => setShowInviteModal(true)}
-              className="text-xs text-brand-600 hover:text-brand-700 font-medium hover:underline"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 active:scale-[0.97] transition-all duration-150 flex-shrink-0"
             >
-              + Send invite
+              <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+                <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
+              </svg>
+              Invite
             </button>
           </div>
 
@@ -276,7 +271,7 @@ export default function MembersPage() {
                   </svg>
                 </div>
                 <p className="text-sm text-gray-500 font-medium">No pending invitations</p>
-                <p className="text-xs text-gray-400 mt-1">Invited users will appear here until they accept</p>
+                <p className="text-xs text-gray-400 mt-1">Send an invite link to bring people into this workspace</p>
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
@@ -287,7 +282,7 @@ export default function MembersPage() {
                   const expiry = expiryBadge(inv.expiresAt);
 
                   return (
-                    <div key={inv.id} className="flex items-center gap-3 px-5 py-4 hover:bg-gray-50 transition-colors">
+                    <div key={inv.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors">
                       {/* Avatar */}
                       <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-700 flex-shrink-0">
                         {inv.email[0]?.toUpperCase() ?? '?'}
