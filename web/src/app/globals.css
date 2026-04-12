@@ -30,11 +30,11 @@
     --bg-canvas:         #0d1117;              /* deep cool dark */
     --bg-surface:        #161b22;              /* card surface */
     --bg-surface-raised: #21262d;              /* elevated/hover */
-    --border-default:    rgba(255,255,255,0.10); /* crisp low-opacity border */
-    --border-muted:      rgba(255,255,255,0.06);
-    --text-primary:      #e6edf3;              /* soft cool white */
-    --text-secondary:    #8b949e;              /* medium slate */
-    --text-tertiary:     #484f58;              /* quiet slate */
+    --border-default:    rgba(255,255,255,0.12); /* visible card edges */
+    --border-muted:      rgba(255,255,255,0.07);
+    --text-primary:      #f0f6fc;              /* near-white — high contrast */
+    --text-secondary:    #9dabb8;              /* readable mid-tone */
+    --text-tertiary:     #848d97;              /* FIXED: was #484f58 (~2:1), now ~5.4:1 */
   }
 
   html {
@@ -308,6 +308,9 @@
 .dark .text-gray-600             { color: var(--text-secondary); }
 .dark .text-gray-500,
 .dark .text-gray-400             { color: var(--text-tertiary); }
+/* gray-300 and gray-200 would be near-white on dark — keep them dim */
+.dark .text-gray-300             { color: var(--text-tertiary); }
+.dark .text-gray-200             { color: rgba(255,255,255,0.18); }
 
 /* Hover surfaces */
 .dark .hover\:bg-gray-50:hover,
@@ -325,22 +328,49 @@
 .dark .hover\:bg-brand-100:hover { background-color: rgba(37, 99, 235, 0.15) !important; }
 
 /* Status badge backgrounds — map light semantic tints to dark-safe versions */
+/* 100-shade badges */
 .dark .bg-green-100  { background-color: rgba(34, 197, 94, 0.15) !important; }
 .dark .bg-yellow-100 { background-color: rgba(234, 179, 8, 0.15) !important; }
 .dark .bg-red-100    { background-color: rgba(239, 68, 68, 0.15) !important; }
 .dark .bg-orange-100 { background-color: rgba(249, 115, 22, 0.15) !important; }
 .dark .bg-amber-100  { background-color: rgba(245, 158, 11, 0.15) !important; }
-.dark .bg-blue-50    { background-color: rgba(59, 130, 246, 0.12) !important; }
 .dark .bg-purple-100 { background-color: rgba(168, 85, 247, 0.15) !important; }
+/* 50-shade badges (activity pills, dashboard KPI icons) */
+.dark .bg-green-50   { background-color: rgba(34, 197, 94, 0.10) !important; }
+.dark .bg-red-50     { background-color: rgba(239, 68, 68, 0.10) !important; }
+.dark .bg-orange-50  { background-color: rgba(249, 115, 22, 0.10) !important; }
+.dark .bg-amber-50   { background-color: rgba(245, 158, 11, 0.10) !important; }
+.dark .bg-blue-50    { background-color: rgba(59, 130, 246, 0.10) !important; }
+.dark .bg-purple-50  { background-color: rgba(168, 85, 247, 0.10) !important; }
+.dark .bg-teal-50    { background-color: rgba(20, 184, 166, 0.10) !important; }
+.dark .bg-teal-100   { background-color: rgba(20, 184, 166, 0.18) !important; }
+.dark .bg-indigo-50  { background-color: rgba(99, 102, 241, 0.10) !important; }
 
+/* Text colors */
+.dark .text-green-600  { color: #4ade80 !important; }
 .dark .text-green-700  { color: #4ade80 !important; }
 .dark .text-yellow-700 { color: #facc15 !important; }
 .dark .text-red-700    { color: #f87171 !important; }
 .dark .text-orange-700 { color: #fb923c !important; }
+.dark .text-orange-600 { color: #fb923c !important; }
 .dark .text-amber-700  { color: #fbbf24 !important; }
 .dark .text-blue-600   { color: #60a5fa !important; }
 .dark .text-blue-700   { color: #93c5fd !important; }
+.dark .text-purple-600 { color: #c084fc !important; }
 .dark .text-purple-700 { color: #c084fc !important; }
+.dark .text-teal-600   { color: #2dd4bf !important; }
+.dark .text-teal-700   { color: #2dd4bf !important; }
+
+/* Gradient stops */
+.dark .from-brand-50 { --tw-gradient-from: rgba(37, 99, 235, 0.14) var(--tw-gradient-from-position) !important; }
+.dark .to-indigo-50  { --tw-gradient-to: rgba(99, 102, 241, 0.08) var(--tw-gradient-to-position) !important; }
+
+/* Borders */
+.dark .border-red-100    { border-color: rgba(239, 68, 68, 0.20) !important; }
+.dark .border-red-200    { border-color: rgba(239, 68, 68, 0.35) !important; }
+.dark .border-orange-100 { border-color: rgba(249, 115, 22, 0.20) !important; }
+.dark .border-orange-200 { border-color: rgba(249, 115, 22, 0.35) !important; }
+.dark .border-brand-100  { border-color: rgba(59, 130, 246, 0.20) !important; }
 
 /* Inputs */
 .dark input:not([type=checkbox]):not([type=radio]),
