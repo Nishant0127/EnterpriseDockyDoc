@@ -1,0 +1,16 @@
+{
+  "name": "enterprisedockydoc",
+  "version": "1.0.0",
+  "description": "Enterprise documentation platform powered by Neon serverless Postgres",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "migrate": "node scripts/migrate.js",
+    "seed": "node scripts/seed.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4",
+    "dotenv": "^16.4.7"
+  }
+}
