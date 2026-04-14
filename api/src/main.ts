@@ -35,6 +35,8 @@ async function bootstrap() {
     'http://localhost:8080',
   ];
 
+  console.log(`CORS allowed origins: ${corsOrigins.join(', ')}`);
+
   // ------------------------------------------------------------------ //
   // Global prefix — all routes under /api/v1
   // ------------------------------------------------------------------ //
@@ -49,7 +51,12 @@ async function bootstrap() {
     allowedHeaders.push('x-dev-user-email');
   }
   app.enableCors({
-    origin: corsOrigins,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (server-to-server, health checks)
+      if (!origin) return callback(null, true);
+      if (corsOrigins.includes(origin)) return callback(null, true);
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders,

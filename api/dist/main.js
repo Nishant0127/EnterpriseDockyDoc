@@ -27,13 +27,20 @@ async function bootstrap() {
     const corsOrigins = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()) ?? [
         'http://localhost:8080',
     ];
+    console.log(`CORS allowed origins: ${corsOrigins.join(', ')}`);
     app.setGlobalPrefix('api/v1');
     const allowedHeaders = ['Content-Type', 'Authorization'];
     if (!isProduction) {
         allowedHeaders.push('x-dev-user-email');
     }
     app.enableCors({
-        origin: corsOrigins,
+        origin: (origin, callback) => {
+            if (!origin)
+                return callback(null, true);
+            if (corsOrigins.includes(origin))
+                return callback(null, true);
+            callback(new Error(`Origin ${origin} not allowed by CORS`));
+        },
         credentials: true,
         methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
         allowedHeaders,
