@@ -9,8 +9,6 @@ import { PLAN_TOKEN_LIMITS } from '../workspaces/dto/ai-settings.dto';
 import { OcrService } from '../document-intelligence/ocr.service';
 import { ExtractionService } from '../document-intelligence/extraction.service';
 import type { ConfidenceByField } from '../document-intelligence/extraction.service';
-import { STORAGE_SERVICE } from '../storage/storage.module';
-import type { IStorageService } from '../storage/storage.interface';
 
 // ------------------------------------------------------------------ //
 // Metadata key constants
