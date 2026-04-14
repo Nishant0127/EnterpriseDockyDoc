@@ -34,11 +34,21 @@ async function bootstrap() {
     if (!isClerkConfigured) {
         allowedHeaders.push('x-dev-user-email');
     }
+    function isOriginAllowed(origin, allowed) {
+        return allowed.some((entry) => {
+            if (!entry.includes('*'))
+                return entry === origin;
+            const pattern = entry
+                .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+                .replace(/\*/g, '[^.]+');
+            return new RegExp(`^${pattern}$`).test(origin);
+        });
+    }
     app.enableCors({
         origin: (origin, callback) => {
             if (!origin)
                 return callback(null, true);
-            if (corsOrigins.includes(origin))
+            if (isOriginAllowed(origin, corsOrigins))
                 return callback(null, true);
             callback(new Error(`Origin ${origin} not allowed by CORS`));
         },

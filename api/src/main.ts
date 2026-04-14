@@ -59,11 +59,30 @@ async function bootstrap() {
   if (!isClerkConfigured) {
     allowedHeaders.push('x-dev-user-email');
   }
+
+  /**
+   * Match an incoming origin against the allowed-origins list.
+   * Entries may contain a single `*` wildcard that matches any sequence of
+   * characters except `.` — so "https://enterprise-docky-*-nishant0127s-projects.vercel.app"
+   * covers all Vercel preview/hash deployments without opening the door to
+   * unrelated vercel.app sites.
+   */
+  function isOriginAllowed(origin: string, allowed: string[]): boolean {
+    return allowed.some((entry) => {
+      if (!entry.includes('*')) return entry === origin;
+      // Escape regex special chars, then replace * with [^.]+ (no dots)
+      const pattern = entry
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '[^.]+');
+      return new RegExp(`^${pattern}$`).test(origin);
+    });
+  }
+
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (server-to-server, health checks)
       if (!origin) return callback(null, true);
-      if (corsOrigins.includes(origin)) return callback(null, true);
+      if (isOriginAllowed(origin, corsOrigins)) return callback(null, true);
       callback(new Error(`Origin ${origin} not allowed by CORS`));
     },
     credentials: true,
