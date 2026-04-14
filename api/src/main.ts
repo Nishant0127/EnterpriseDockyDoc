@@ -38,6 +38,12 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   const port = process.env.PORT ?? 8081;
+  // CORS_ORIGINS is a comma-separated list of exact origins OR wildcard patterns.
+  // Wildcard (*) matches any sequence of non-dot characters within a single domain
+  // segment.  Example value for Render:
+  //   https://enterprise-docky-doc.vercel.app,
+  //   https://enterprise-docky-doc-git-main-nishant0127s-projects.vercel.app,
+  //   https://enterprise-docky-*-nishant0127s-projects.vercel.app
   const corsOrigins = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()) ?? [
     'http://localhost:8080',
   ];
