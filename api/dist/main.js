@@ -8,13 +8,13 @@ const http_exception_filter_1 = require("./common/filters/http-exception.filter"
 const logging_interceptor_1 = require("./common/interceptors/logging.interceptor");
 async function bootstrap() {
     const isProduction = process.env.NODE_ENV === 'production';
+    const isClerkConfigured = Boolean(process.env.CLERK_SECRET_KEY);
     if (isProduction) {
         const required = [
             'DATABASE_URL',
             'CORS_ORIGINS',
             'SHARE_GRANT_SECRET',
             'ENCRYPTION_KEY',
-            'CLERK_SECRET_KEY',
         ];
         const missing = required.filter((k) => !process.env[k]);
         if (missing.length > 0) {
@@ -22,6 +22,7 @@ async function bootstrap() {
             process.exit(1);
         }
     }
+    console.log(`Auth mode: ${isClerkConfigured ? 'Clerk JWT (CLERK_SECRET_KEY set)' : 'dev x-dev-user-email fallback (no CLERK_SECRET_KEY)'}`);
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     const port = process.env.PORT ?? 8081;
     const corsOrigins = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()) ?? [
@@ -30,7 +31,7 @@ async function bootstrap() {
     console.log(`CORS allowed origins: ${corsOrigins.join(', ')}`);
     app.setGlobalPrefix('api/v1');
     const allowedHeaders = ['Content-Type', 'Authorization'];
-    if (!isProduction) {
+    if (!isClerkConfigured) {
         allowedHeaders.push('x-dev-user-email');
     }
     app.enableCors({

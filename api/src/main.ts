@@ -7,17 +7,22 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
   // ------------------------------------------------------------------ //
-  // Startup validation — fail fast if critical env vars are missing in
-  // production so misconfigured deploys surface immediately in logs.
+  // Auth mode — drives both CORS and the auth guard.
+  // When CLERK_SECRET_KEY is present, Clerk JWT verification is active.
+  // When absent, the x-dev-user-email dev-fallback header is used instead.
   // ------------------------------------------------------------------ //
   const isProduction = process.env.NODE_ENV === 'production';
+  const isClerkConfigured = Boolean(process.env.CLERK_SECRET_KEY);
+
   if (isProduction) {
     const required = [
       'DATABASE_URL',
       'CORS_ORIGINS',
       'SHARE_GRANT_SECRET',
       'ENCRYPTION_KEY',
-      'CLERK_SECRET_KEY',
+      // CLERK_SECRET_KEY is intentionally optional here — omit it to keep the
+      // x-dev-user-email dev-fallback active even in production (useful for
+      // staging / initial bring-up before Clerk is wired in).
     ];
     const missing = required.filter((k) => !process.env[k]);
     if (missing.length > 0) {
@@ -27,6 +32,8 @@ async function bootstrap() {
       process.exit(1);
     }
   }
+
+  console.log(`Auth mode: ${isClerkConfigured ? 'Clerk JWT (CLERK_SECRET_KEY set)' : 'dev x-dev-user-email fallback (no CLERK_SECRET_KEY)'}`);
 
   const app = await NestFactory.create(AppModule);
 
@@ -46,8 +53,10 @@ async function bootstrap() {
   // CORS
   // ------------------------------------------------------------------ //
   const allowedHeaders = ['Content-Type', 'Authorization'];
-  // x-dev-user-email is only needed when Clerk is not configured (local dev)
-  if (!isProduction) {
+  // x-dev-user-email must be allowed in CORS whenever the auth guard accepts it
+  // (i.e. when CLERK_SECRET_KEY is absent).  Using CLERK_SECRET_KEY — not NODE_ENV —
+  // keeps the CORS policy in sync with the ClerkAuthGuard's own decision.
+  if (!isClerkConfigured) {
     allowedHeaders.push('x-dev-user-email');
   }
   app.enableCors({
