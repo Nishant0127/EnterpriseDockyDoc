@@ -22,7 +22,7 @@ let HealthController = class HealthController {
     }
     check() {
         return this.health.check([
-            () => this.prismaHealth.pingCheck('database', this.prisma),
+            () => this.prismaHealth.pingCheck('database', this.prisma, { timeout: 10000 }),
         ]);
     }
 };
