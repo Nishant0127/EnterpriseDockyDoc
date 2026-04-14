@@ -4,10 +4,13 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081';
 
 /**
  * DEV ONLY — the email used to impersonate a user via x-dev-user-email header.
- * Only sent when no Clerk session token is available (i.e., Clerk is not configured).
+ * Only sent when Clerk is not configured (i.e., NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is absent).
  */
 const DEV_USER_EMAIL =
   process.env.NEXT_PUBLIC_DEV_USER_EMAIL ?? 'alice@acmecorp.com';
+
+/** True when Clerk is wired up (production / staging). */
+const IS_CLERK_CONFIGURED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 // ------------------------------------------------------------------ //
 // Token helpers
@@ -57,8 +60,8 @@ async function buildAuthHeaders(extra?: HeadersInit): Promise<Headers> {
   const token = await getClerkToken();
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
-  } else {
-    // DEV ONLY — no Clerk session; impersonate via email header
+  } else if (!IS_CLERK_CONFIGURED) {
+    // DEV ONLY — Clerk is not configured; impersonate via email header
     headers.set('x-dev-user-email', DEV_USER_EMAIL);
   }
   return headers;

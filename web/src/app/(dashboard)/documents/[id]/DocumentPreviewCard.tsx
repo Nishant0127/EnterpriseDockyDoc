@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081';
 const DEV_EMAIL = process.env.NEXT_PUBLIC_DEV_USER_EMAIL ?? 'alice@acmecorp.com';
+const IS_CLERK_CONFIGURED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 /** Mirror of getClerkToken() in api.ts — avoids importing that module here. */
 async function getClerkToken(): Promise<string | null> {
@@ -75,7 +76,7 @@ export default function DocumentPreviewCard({ documentId, versionNumber, fileNam
         const token = await getClerkToken();
         if (token) {
           headers.set('Authorization', `Bearer ${token}`);
-        } else {
+        } else if (!IS_CLERK_CONFIGURED) {
           headers.set('x-dev-user-email', DEV_EMAIL);
         }
 
