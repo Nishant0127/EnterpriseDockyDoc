@@ -18,7 +18,7 @@ services:
 
     # Render sets ROOT_DIR in the dashboard — set it to "api" when creating
     # the service. The commands below assume the working directory is api/.
-    buildCommand: npm install && npm run build && npx prisma generate
+    buildCommand: npm install && rm -f tsconfig.build.tsbuildinfo dist/tsconfig.build.tsbuildinfo && npm run build && npx prisma generate
     startCommand: npx prisma migrate deploy && node dist/main
 
     healthCheckPath: /api/v1/health
