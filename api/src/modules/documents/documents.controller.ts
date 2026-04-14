@@ -63,6 +63,7 @@ const ALLOWED_MIME_TYPES = new Set([
   'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'image/jpeg',
+  'image/jpg',  // non-standard alias for JPEG — sent by some mobile OS / browsers
   'image/png',
   'image/gif',
   'image/webp',
@@ -73,18 +74,45 @@ const ALLOWED_MIME_TYPES = new Set([
   'application/octet-stream',
 ]);
 
+// MIME types that have no text OCR support — AI extraction will be skipped
+const OCR_UNSUPPORTED_TYPES = new Set([
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/zip',
+]);
+
+// Formats explicitly NOT supported — tell the user clearly
+const EXPLICITLY_UNSUPPORTED = new Set([
+  'image/heic',
+  'image/heif',
+  'image/tiff',
+  'image/avif',
+]);
+
 function uploadFileInterceptor() {
   return FileInterceptor('file', {
     storage: undefined, // use default memoryStorage
     limits: { fileSize: MAX_FILE_SIZE },
     fileFilter: (_req, file, callback) => {
+      if (EXPLICITLY_UNSUPPORTED.has(file.mimetype)) {
+        callback(
+          new BadRequestException(
+            `File type "${file.mimetype}" is not supported. ` +
+              `HEIC/HEIF images must be converted to JPEG or PNG before uploading.`,
+          ),
+          false,
+        );
+        return;
+      }
       if (ALLOWED_MIME_TYPES.has(file.mimetype)) {
         callback(null, true);
       } else {
         callback(
           new BadRequestException(
             `File type "${file.mimetype}" is not allowed. ` +
-              `Accepted: PDF, Word, Excel, PowerPoint, images, text, CSV, ZIP, JSON.`,
+              `Accepted: PDF, Word, JPEG, PNG, WebP, text, CSV, ZIP, JSON.`,
           ),
           false,
         );

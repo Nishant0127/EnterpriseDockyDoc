@@ -275,6 +275,23 @@ export class AiService {
       }
 
       // ---- 4. OCR --------------------------------------------------- //
+      // Skip OCR for formats with no text-extraction support (Excel, PowerPoint, ZIP)
+      const OCR_UNSUPPORTED = new Set([
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/zip',
+      ]);
+
+      if (mimeType && OCR_UNSUPPORTED.has(mimeType)) {
+        this.logger.warn(
+          `extractDocument ${documentId}: MIME type "${mimeType}" has no OCR support — skipping extraction, marking disabled`,
+        );
+        await this.upsertMeta(documentId, AI_KEYS.STATUS, 'disabled');
+        return this.buildDisabledResult();
+      }
+
       let ocrOutput = fileBuffer
         ? await this.ocrService.extract(fileBuffer, mimeType, doc.name)
         : null;
