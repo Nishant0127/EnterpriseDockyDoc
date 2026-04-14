@@ -21,8 +21,9 @@ export class LocalStorageService implements IStorageService {
   private readonly uploadDir: string;
 
   constructor() {
-    // process.cwd() is the api/ directory when started via npm/nest CLI
-    this.uploadDir = path.join(process.cwd(), 'uploads');
+    // UPLOAD_DIR env var lets you point to a Render Persistent Disk mount point
+    // (e.g. /var/data/uploads).  Falls back to <api-cwd>/uploads for local dev.
+    this.uploadDir = process.env.UPLOAD_DIR ?? path.join(process.cwd(), 'uploads');
     fs.mkdirSync(this.uploadDir, { recursive: true });
     this.logger.log(`Storage root → ${this.uploadDir}`);
   }
