@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Readable } from 'stream';
 import type { IStorageService } from './storage.interface';
 
 /**
@@ -41,6 +42,18 @@ export class LocalStorageService implements IStorageService {
       .split('/')
       .filter((s) => s.length > 0 && s !== '..' && s !== '.');
     return path.join(this.uploadDir, ...segments);
+  }
+
+  async getStream(key: string): Promise<Readable> {
+    return fs.createReadStream(this.getAbsolutePath(key));
+  }
+
+  async getBuffer(key: string): Promise<Buffer> {
+    return fs.promises.readFile(this.getAbsolutePath(key));
+  }
+
+  async existsAsync(key: string): Promise<boolean> {
+    return fs.existsSync(this.getAbsolutePath(key));
   }
 
   async delete(key: string): Promise<void> {

@@ -75,6 +75,29 @@ export class S3StorageService implements IStorageService {
     return localPath;
   }
 
+  async getStream(key: string): Promise<Readable> {
+    const res = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    return res.Body as Readable;
+  }
+
+  async getBuffer(key: string): Promise<Buffer> {
+    const res = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    const chunks: Buffer[] = [];
+    for await (const chunk of res.Body as Readable) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+
+  async existsAsync(key: string): Promise<boolean> {
+    try {
+      await this.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async delete(key: string): Promise<void> {
     try {
       await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
@@ -86,17 +109,5 @@ export class S3StorageService implements IStorageService {
     if (existsSync(cached)) fs.unlinkSync(cached);
   }
 
-  exists(key: string): boolean {
-    // For S3 — synchronous check is on cache only; use existsAsync for real check
-    return existsSync(this.getAbsolutePath(key));
-  }
-
-  async existsAsync(key: string): Promise<boolean> {
-    try {
-      await this.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
-      return true;
-    } catch {
-      return false;
-    }
-  }
 }
+

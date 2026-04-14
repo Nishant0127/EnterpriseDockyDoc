@@ -27,7 +27,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { Inject } from '@nestjs/common';
 import { DocumentsService } from './documents.service';
+import { STORAGE_SERVICE } from '../storage/storage.module';
+import type { IStorageService } from '../storage/storage.interface';
 import {
   CreateDocumentDto,
   DocumentDetailDto,
@@ -101,6 +104,7 @@ export class DocumentsController {
   constructor(
     private readonly documentsService: DocumentsService,
     private readonly auditService: AuditService,
+    @Inject(STORAGE_SERVICE) private readonly storage: IStorageService,
   ) {}
 
   // ------------------------------------------------------------------ //
@@ -180,19 +184,16 @@ export class DocumentsController {
     @CurrentUser() user: DevUserPayload,
     @Res() res: Response,
   ): Promise<void> {
-    const { absolutePath, fileName, mimeType } =
+    const { storageKey, fileName, mimeType } =
       await this.documentsService.getDownloadInfo(id, user);
 
     res.setHeader('Content-Type', mimeType);
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(fileName)}"`,
-    );
-    res.sendFile(absolutePath, (err) => {
-      if (err && !res.headersSent) {
-        res.status(500).json({ message: 'Failed to stream file' });
-      }
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    const stream = await this.storage.getStream(storageKey);
+    stream.on('error', () => {
+      if (!res.headersSent) res.status(500).json({ message: 'Failed to stream file' });
     });
+    stream.pipe(res);
   }
 
   // ------------------------------------------------------------------ //
@@ -211,19 +212,16 @@ export class DocumentsController {
     @CurrentUser() user: DevUserPayload,
     @Res() res: Response,
   ): Promise<void> {
-    const { absolutePath, fileName, mimeType } =
+    const { storageKey, fileName, mimeType } =
       await this.documentsService.getVersionDownloadInfo(id, versionNumber, user);
 
     res.setHeader('Content-Type', mimeType);
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(fileName)}"`,
-    );
-    res.sendFile(absolutePath, (err) => {
-      if (err && !res.headersSent) {
-        res.status(500).json({ message: 'Failed to stream file' });
-      }
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    const stream = await this.storage.getStream(storageKey);
+    stream.on('error', () => {
+      if (!res.headersSent) res.status(500).json({ message: 'Failed to stream file' });
     });
+    stream.pipe(res);
   }
 
   // ------------------------------------------------------------------ //

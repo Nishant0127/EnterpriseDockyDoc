@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -9,6 +9,8 @@ import { PLAN_TOKEN_LIMITS } from '../workspaces/dto/ai-settings.dto';
 import { OcrService } from '../document-intelligence/ocr.service';
 import { ExtractionService } from '../document-intelligence/extraction.service';
 import type { ConfidenceByField } from '../document-intelligence/extraction.service';
+import { STORAGE_SERVICE } from '../storage/storage.module';
+import type { IStorageService } from '../storage/storage.interface';
 
 // ------------------------------------------------------------------ //
 // Metadata key constants
@@ -120,6 +122,7 @@ export class AiService {
     private readonly encryption: EncryptionService,
     private readonly ocrService: OcrService,
     private readonly extractionService: ExtractionService,
+    @Inject(STORAGE_SERVICE) private readonly storage: IStorageService,
   ) {
     const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
     this.client = apiKey ? new Anthropic({ apiKey }) : null;
@@ -257,19 +260,14 @@ export class AiService {
 
       let fileBuffer: Buffer | null = null;
       if (storageKey) {
-        // Resolve path the same way LocalStorageService does (strips traversal segments)
-        const segments = storageKey
-          .split('/')
-          .filter((s) => s.length > 0 && s !== '..' && s !== '.');
-        const filePath = path.join(process.cwd(), 'uploads', ...segments);
         try {
-          fileBuffer = fs.readFileSync(filePath);
+          fileBuffer = await this.storage.getBuffer(storageKey);
           this.logger.log(
-            `extractDocument ${documentId}: read ${fileBuffer.length} bytes from ${filePath}`,
+            `extractDocument ${documentId}: read ${fileBuffer.length} bytes (key="${storageKey}")`,
           );
         } catch {
           this.logger.warn(
-            `extractDocument ${documentId}: could not read file at "${filePath}" — file may not exist yet`,
+            `extractDocument ${documentId}: could not read file for key "${storageKey}" — file may not exist`,
           );
         }
       } else {
@@ -1042,14 +1040,12 @@ Respond with JSON:
     let fileError: string | null = null;
 
     if (storageKey) {
-      const segments = storageKey.split('/').filter((s) => s.length > 0 && s !== '..' && s !== '.');
-      const filePath = path.join(process.cwd(), 'uploads', ...segments);
       try {
-        fileBuffer = fs.readFileSync(filePath);
-        steps.push({ step: '2_file', status: 'ok', path: filePath, bytes: fileBuffer.length });
+        fileBuffer = await this.storage.getBuffer(storageKey);
+        steps.push({ step: '2_file', status: 'ok', key: storageKey, bytes: fileBuffer.length });
       } catch (e) {
         fileError = (e as Error).message;
-        steps.push({ step: '2_file', status: 'error', path: filePath, error: fileError });
+        steps.push({ step: '2_file', status: 'error', key: storageKey, error: fileError });
       }
     } else {
       steps.push({ step: '2_file', status: 'no_storage_key', storageKey });
