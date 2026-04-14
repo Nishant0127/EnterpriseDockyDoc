@@ -44,6 +44,11 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 
+# Prisma seed compilation artifacts (ts-node output next to source)
+api/prisma/seed.js
+api/prisma/seed.js.map
+api/prisma/seed.d.ts
+
 # Testing
 coverage/
 
