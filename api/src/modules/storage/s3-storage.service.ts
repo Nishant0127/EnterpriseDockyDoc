@@ -7,11 +7,10 @@ import {
   DeleteObjectCommand,
   HeadObjectCommand,
 } from '@aws-sdk/client-s3';
-import { createWriteStream, existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
-import * as fs from 'fs';
+import { existsSync, mkdirSync, unlinkSync } from 'fs';
+import { join, dirname } from 'path';
+import type { Readable } from 'stream';
 import type { IStorageService } from './storage.interface';
-import { Readable } from 'stream';
 
 @Injectable()
 export class S3StorageService implements IStorageService {
@@ -40,39 +39,8 @@ export class S3StorageService implements IStorageService {
   }
 
   async save(key: string, buffer: Buffer): Promise<void> {
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: buffer,
-      }),
-    );
+    await this.s3.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: buffer }));
     this.logger.debug(`Uploaded ${key} to S3 bucket ${this.bucket}`);
-  }
-
-  getAbsolutePath(key: string): string {
-    // Return cache path — caller must ensure download first via downloadToCache
-    return join(this.cacheDir, key.replace(/\//g, '_'));
-  }
-
-  async downloadToCache(key: string): Promise<string> {
-    const localPath = this.getAbsolutePath(key);
-    const dir = require('path').dirname(localPath);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-
-    const res = await this.s3.send(
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
-    );
-
-    await new Promise<void>((resolve, reject) => {
-      const stream = res.Body as Readable;
-      const write = createWriteStream(localPath);
-      stream.pipe(write);
-      write.on('finish', resolve);
-      write.on('error', reject);
-    });
-
-    return localPath;
   }
 
   async getStream(key: string): Promise<Readable> {
@@ -87,6 +55,11 @@ export class S3StorageService implements IStorageService {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
     return Buffer.concat(chunks);
+  }
+
+  getAbsolutePath(key: string): string {
+    // Returns a local cache path — not usable for S3 files unless downloadToCache() called first
+    return join(this.cacheDir, key.replace(/\//g, '_'));
   }
 
   async existsAsync(key: string): Promise<boolean> {
@@ -104,10 +77,26 @@ export class S3StorageService implements IStorageService {
     } catch (err) {
       this.logger.warn(`Failed to delete ${key} from S3: ${err}`);
     }
-    // Remove from cache if present
+    // Remove from local cache if present
     const cached = this.getAbsolutePath(key);
-    if (existsSync(cached)) fs.unlinkSync(cached);
+    if (existsSync(cached)) unlinkSync(cached);
   }
 
-}
+  /** Download an S3 object to the local cache and return the local path. */
+  async downloadToCache(key: string): Promise<string> {
+    const { createWriteStream } = await import('fs');
+    const localPath = this.getAbsolutePath(key);
+    const dir = dirname(localPath);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
+    const res = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    await new Promise<void>((resolve, reject) => {
+      const stream = res.Body as Readable;
+      const write = createWriteStream(localPath);
+      stream.pipe(write);
+      write.on('finish', resolve);
+      write.on('error', reject);
+    });
+    return localPath;
+  }
+}

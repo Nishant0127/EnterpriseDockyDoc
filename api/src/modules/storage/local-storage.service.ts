@@ -7,12 +7,8 @@ import type { IStorageService } from './storage.interface';
 /**
  * LocalStorageService — stores files on the local filesystem.
  *
- * Files are kept under <api-cwd>/uploads/{storageKey}.
- *
- * How to swap for S3 later:
- *   1. Create S3StorageService implementing IStorageService.
- *   2. Replace LocalStorageService with S3StorageService in StorageModule providers/exports.
- *   3. No other code changes required.
+ * Files are kept under UPLOAD_DIR (env) or <api-cwd>/uploads/{storageKey}.
+ * Set UPLOAD_DIR=/var/data/uploads to use a Render Persistent Disk mount.
  *
  * Security note: getAbsolutePath() strips '..' segments to prevent path traversal.
  */
@@ -36,20 +32,20 @@ export class LocalStorageService implements IStorageService {
     this.logger.debug(`Saved ${buffer.length} B → ${filePath}`);
   }
 
-  getAbsolutePath(key: string): string {
-    // Strip empty segments and directory traversal attempts
-    const segments = key
-      .split('/')
-      .filter((s) => s.length > 0 && s !== '..' && s !== '.');
-    return path.join(this.uploadDir, ...segments);
-  }
-
   async getStream(key: string): Promise<Readable> {
     return fs.createReadStream(this.getAbsolutePath(key));
   }
 
   async getBuffer(key: string): Promise<Buffer> {
     return fs.promises.readFile(this.getAbsolutePath(key));
+  }
+
+  getAbsolutePath(key: string): string {
+    // Strip empty segments and directory traversal attempts
+    const segments = key
+      .split('/')
+      .filter((s) => s.length > 0 && s !== '..' && s !== '.');
+    return path.join(this.uploadDir, ...segments);
   }
 
   async existsAsync(key: string): Promise<boolean> {
@@ -62,9 +58,5 @@ export class LocalStorageService implements IStorageService {
       fs.unlinkSync(filePath);
       this.logger.debug(`Deleted: ${filePath}`);
     }
-  }
-
-  exists(key: string): boolean {
-    return fs.existsSync(this.getAbsolutePath(key));
   }
 }
