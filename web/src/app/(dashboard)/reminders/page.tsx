@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
@@ -60,7 +60,7 @@ function daysLabel(days: number): { text: string; class: string } {
 // Page
 // ------------------------------------------------------------------ //
 
-export default function RemindersPage() {
+function RemindersPageInner() {
   const { activeWorkspace, isLoading: userLoading } = useUser();
   const searchParams = useSearchParams();
   const [expiring, setExpiring] = useState<ExpiringDocument[]>([]);
@@ -262,6 +262,14 @@ export default function RemindersPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function RemindersPage() {
+  return (
+    <Suspense>
+      <RemindersPageInner />
+    </Suspense>
   );
 }
 

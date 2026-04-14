@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { fetchDocument, downloadDocument, downloadDocumentVersion, deleteDocumentVersion, uploadDocumentVersion, setDocumentReminders, updateDocument, deleteDocument, shredDocument, fetchFolders, createFolder, fetchTags, createTag, setDocumentTags, setDocumentMetadata } from '@/lib/documents';
@@ -108,7 +108,7 @@ interface AiExtractionResult {
 // Page
 // ------------------------------------------------------------------ //
 
-export default function DocumentDetailPage() {
+function DocumentDetailPageInner() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -855,6 +855,14 @@ export default function DocumentDetailPage() {
 // ------------------------------------------------------------------ //
 // Tags section
 // ------------------------------------------------------------------ //
+
+export default function DocumentDetailPage() {
+  return (
+    <Suspense>
+      <DocumentDetailPageInner />
+    </Suspense>
+  );
+}
 
 // ------------------------------------------------------------------ //
 // Tag color helpers

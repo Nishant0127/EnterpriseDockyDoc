@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
@@ -120,7 +120,7 @@ function Breadcrumb({
 // Page
 // ------------------------------------------------------------------ //
 
-export default function DocumentsPage() {
+function DocumentsPageInner() {
   const { activeWorkspace, isLoading: userLoading } = useUser();
   const searchParams = useSearchParams();
   const toast = useToast();
@@ -945,6 +945,14 @@ function FolderModal({
         </form>
       </div>
     </div>
+  );
+}
+
+export default function DocumentsPage() {
+  return (
+    <Suspense>
+      <DocumentsPageInner />
+    </Suspense>
   );
 }
 
