@@ -407,7 +407,7 @@ export class SharesService {
     grant?: string,
     ipAddress?: string,
     userAgent?: string,
-  ): Promise<{ absolutePath: string; fileName: string; mimeType: string }> {
+  ): Promise<{ storageKey: string; fileName: string; mimeType: string }> {
     const share = await this.findValidPublicShare(token);
 
     if (!share.allowDownload) {
@@ -433,7 +433,7 @@ export class SharesService {
 
     if (!version) throw new NotFoundException('No file version found');
 
-    if (!this.storage.exists(version.storageKey)) {
+    if (!(await this.storage.existsAsync(version.storageKey))) {
       throw new NotFoundException('File not found in storage');
     }
 
@@ -457,7 +457,7 @@ export class SharesService {
     });
 
     return {
-      absolutePath: this.storage.getAbsolutePath(version.storageKey),
+      storageKey: version.storageKey,
       fileName: share.document.fileName,
       mimeType: version.mimeType,
     };

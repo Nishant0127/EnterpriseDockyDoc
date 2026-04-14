@@ -6,9 +6,10 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { EncryptionService } from '../../common/services/encryption.service';
 import { DocumentIntelligenceModule } from '../document-intelligence/document-intelligence.module';
 import { ReportsModule } from '../reports/reports.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
-  imports: [ConfigModule, PrismaModule, DocumentIntelligenceModule, ReportsModule],
+  imports: [ConfigModule, PrismaModule, DocumentIntelligenceModule, ReportsModule, StorageModule],
   controllers: [AiController],
   providers: [AiService, EncryptionService],
   exports: [AiService],

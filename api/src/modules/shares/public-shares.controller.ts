@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Inject,
   Param,
   Post,
   Query,
@@ -17,6 +18,8 @@ import {
 } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { SharesService } from './shares.service';
+import { STORAGE_SERVICE } from '../storage/storage.module';
+import type { IStorageService } from '../storage/storage.interface';
 import {
   PublicShareInfoDto,
   VerifySharePasswordDto,
@@ -34,7 +37,10 @@ import {
 @ApiTags('Public Shares')
 @Controller('public/shares')
 export class PublicSharesController {
-  constructor(private readonly sharesService: SharesService) {}
+  constructor(
+    private readonly sharesService: SharesService,
+    @Inject(STORAGE_SERVICE) private readonly storage: IStorageService,
+  ) {}
 
   /**
    * GET /api/v1/public/shares/:token
@@ -99,7 +105,7 @@ export class PublicSharesController {
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    const { absolutePath, fileName, mimeType } =
+    const { storageKey, fileName, mimeType } =
       await this.sharesService.getPublicShareDownloadInfo(
         token,
         grant,
@@ -108,14 +114,11 @@ export class PublicSharesController {
       );
 
     res.setHeader('Content-Type', mimeType);
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(fileName)}"`,
-    );
-    res.sendFile(absolutePath, (err) => {
-      if (err && !res.headersSent) {
-        res.status(500).json({ message: 'Failed to stream file' });
-      }
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    const stream = await this.storage.getStream(storageKey);
+    stream.on('error', () => {
+      if (!res.headersSent) res.status(500).json({ message: 'Failed to stream file' });
     });
+    stream.pipe(res);
   }
 }

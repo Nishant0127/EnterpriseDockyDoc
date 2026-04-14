@@ -333,7 +333,7 @@ export class DocumentsService {
   async getDownloadInfo(
     id: string,
     user: DevUserPayload,
-  ): Promise<{ absolutePath: string; fileName: string; mimeType: string }> {
+  ): Promise<{ storageKey: string; fileName: string; mimeType: string }> {
     const doc = await this.prisma.document.findUnique({
       where: { id },
       include: {
@@ -350,7 +350,7 @@ export class DocumentsService {
     const version = doc.versions[0];
     if (!version) throw new NotFoundException(`No versions found for document "${id}"`);
 
-    if (!this.storage.exists(version.storageKey)) {
+    if (!(await this.storage.existsAsync(version.storageKey))) {
       throw new NotFoundException(
         `File not found in storage. The document may have been created before file upload was supported.`,
       );
@@ -365,18 +365,14 @@ export class DocumentsService {
       metadata: { documentName: doc.fileName, version: version.versionNumber },
     });
 
-    return {
-      absolutePath: this.storage.getAbsolutePath(version.storageKey),
-      fileName: doc.fileName,
-      mimeType: version.mimeType,
-    };
+    return { storageKey: version.storageKey, fileName: doc.fileName, mimeType: version.mimeType };
   }
 
   async getVersionDownloadInfo(
     id: string,
     versionNumber: number,
     user: DevUserPayload,
-  ): Promise<{ absolutePath: string; fileName: string; mimeType: string }> {
+  ): Promise<{ storageKey: string; fileName: string; mimeType: string }> {
     const doc = await this.prisma.document.findUnique({ where: { id } });
     if (!doc) throw new NotFoundException(`Document "${id}" not found`);
     assertWorkspaceMembership(user, doc.workspaceId);
@@ -389,17 +385,11 @@ export class DocumentsService {
       throw new NotFoundException(`Version ${versionNumber} not found for document "${id}"`);
     }
 
-    if (!this.storage.exists(version.storageKey)) {
-      throw new NotFoundException(
-        `File not found in storage for version ${versionNumber}.`,
-      );
+    if (!(await this.storage.existsAsync(version.storageKey))) {
+      throw new NotFoundException(`File not found in storage for version ${versionNumber}.`);
     }
 
-    return {
-      absolutePath: this.storage.getAbsolutePath(version.storageKey),
-      fileName: doc.fileName,
-      mimeType: version.mimeType,
-    };
+    return { storageKey: version.storageKey, fileName: doc.fileName, mimeType: version.mimeType };
   }
 
   // ------------------------------------------------------------------ //
