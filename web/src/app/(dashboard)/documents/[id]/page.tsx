@@ -261,12 +261,15 @@ function DocumentDetailPageInner() {
       .then((d) => {
         setDoc(d);
         setPreviewVersion((prev: number | null) => prev ?? d.currentVersionNumber);
-        // Load extraction and auto-poll if already running
+        // Load extraction — also start polling if status is 'none' but document was just created
+        // (background extraction may not have written its first DB status row yet)
+        const docAgeMs = Date.now() - new Date((d as { createdAt?: string }).createdAt ?? 0).getTime();
+        const isRecentlyCreated = docAgeMs < 45_000; // within 45 seconds
         apiFetch<AiExtractionResult>(`/api/v1/ai/documents/${params.id}/extraction`)
           .then((result) => {
             prevAiStatusRef.current = result.status;
             setAiExtraction(result);
-            if (result.status === 'running') {
+            if (result.status === 'running' || (result.status === 'none' && isRecentlyCreated)) {
               startAiPolling();
             }
           })

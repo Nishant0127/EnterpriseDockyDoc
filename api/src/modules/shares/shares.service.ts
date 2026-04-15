@@ -433,10 +433,7 @@ export class SharesService {
 
     if (!version) throw new NotFoundException('No file version found');
 
-    if (!(await this.storage.existsAsync(version.storageKey))) {
-      throw new NotFoundException('File not found in storage');
-    }
-
+    // Note: skipping existsAsync check — controller stream handler catches missing-file errors
     // Log download access
     await this.prisma.shareAccessLog.create({
       data: {

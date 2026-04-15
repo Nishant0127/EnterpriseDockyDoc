@@ -217,11 +217,16 @@ export class DocumentsController {
 
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
-    const stream = await this.storage.getStream(storageKey);
-    stream.on('error', () => {
-      if (!res.headersSent) res.status(500).json({ message: 'Failed to stream file' });
-    });
-    stream.pipe(res);
+    try {
+      const stream = await this.storage.getStream(storageKey);
+      stream.on('error', (err) => {
+        if (!res.headersSent) res.status(500).json({ message: 'Failed to stream file' });
+        else res.destroy(err);
+      });
+      stream.pipe(res);
+    } catch {
+      if (!res.headersSent) res.status(404).json({ message: 'File not found in storage' });
+    }
   }
 
   // ------------------------------------------------------------------ //
@@ -245,11 +250,16 @@ export class DocumentsController {
 
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
-    const stream = await this.storage.getStream(storageKey);
-    stream.on('error', () => {
-      if (!res.headersSent) res.status(500).json({ message: 'Failed to stream file' });
-    });
-    stream.pipe(res);
+    try {
+      const stream = await this.storage.getStream(storageKey);
+      stream.on('error', (err) => {
+        if (!res.headersSent) res.status(500).json({ message: 'Failed to stream file' });
+        else res.destroy(err);
+      });
+      stream.pipe(res);
+    } catch {
+      if (!res.headersSent) res.status(404).json({ message: 'File not found in storage' });
+    }
   }
 
   // ------------------------------------------------------------------ //

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DocumentStatus } from '@prisma/client';
 import * as path from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -72,6 +72,8 @@ function fileExtension(originalName: string): string {
 
 @Injectable()
 export class DocumentsService {
+  private readonly logger = new Logger(DocumentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: LocalStorageService,
@@ -176,9 +178,14 @@ export class DocumentsService {
   ): Promise<DocumentDetailDto> {
     assertEditorOrAbove(user, dto.workspaceId);
 
+    const uploadStart = Date.now();
+    const fileSizeMb = (file.size / 1024 / 1024).toFixed(2);
+    this.logger.log(`Upload start: "${file.originalname}" (${fileSizeMb} MB, ${file.mimetype})`);
+
     const ext = fileExtension(file.originalname);
 
     // 1. Create DB records in a transaction
+    const t0 = Date.now();
     const { docId, storageKey } = await this.prisma.$transaction(async (tx) => {
       const doc = await tx.document.create({
         data: {
@@ -238,14 +245,17 @@ export class DocumentsService {
 
       return { docId: doc.id, storageKey };
     });
+    this.logger.debug(`Upload DB tx: ${Date.now() - t0}ms (docId=${docId})`);
 
     // 2. Persist file after transaction commits
+    const t1 = Date.now();
     await this.storage.save(storageKey, file.buffer);
+    this.logger.debug(`Upload storage save: ${Date.now() - t1}ms (key=${storageKey})`);
 
     // 3. Index for search (non-blocking — never fails the upload)
     void this.indexer.indexDocument(docId, file);
 
-    // Trigger AI extraction asynchronously (fire-and-forget)
+    // 4. Trigger AI extraction asynchronously (fire-and-forget — never blocks upload response)
     void this.aiService.extractDocument(docId).catch(() => {});
 
     this.audit.log({
@@ -257,7 +267,13 @@ export class DocumentsService {
       metadata: { documentName: dto.name, fileName: file.originalname },
     });
 
-    return this.findById(docId, user);
+    const t2 = Date.now();
+    const result = await this.findById(docId, user);
+    this.logger.log(
+      `Upload complete: "${file.originalname}" → docId=${docId} total=${Date.now() - uploadStart}ms ` +
+      `(db=${t1 - t0}ms, storage=${t2 - t1}ms, response=${Date.now() - t2}ms)`,
+    );
+    return result;
   }
 
   // ------------------------------------------------------------------ //
@@ -310,8 +326,7 @@ export class DocumentsService {
 
     // Re-run AI extraction on the new version (fire-and-forget)
     void this.aiService.extractDocument(id).catch((err) => {
-      // Non-fatal — version upload already succeeded
-      console.warn(`[DocumentsService] AI re-extraction failed after version upload for ${id}: ${(err as Error).message}`);
+      this.logger.warn(`AI re-extraction failed after version upload for ${id}: ${(err as Error).message}`);
     });
 
     this.audit.log({
@@ -350,12 +365,8 @@ export class DocumentsService {
     const version = doc.versions[0];
     if (!version) throw new NotFoundException(`No versions found for document "${id}"`);
 
-    if (!(await this.storage.existsAsync(version.storageKey))) {
-      throw new NotFoundException(
-        `File not found in storage. The document may have been created before file upload was supported.`,
-      );
-    }
-
+    // Note: we don't call existsAsync here — that would be an extra S3 HeadObject round-trip.
+    // The controller's stream error handler will catch missing-file errors at stream time.
     this.audit.log({
       workspaceId: doc.workspaceId,
       userId: user.id,
@@ -383,10 +394,6 @@ export class DocumentsService {
 
     if (!version) {
       throw new NotFoundException(`Version ${versionNumber} not found for document "${id}"`);
-    }
-
-    if (!(await this.storage.existsAsync(version.storageKey))) {
-      throw new NotFoundException(`File not found in storage for version ${versionNumber}.`);
     }
 
     return { storageKey: version.storageKey, fileName: doc.fileName, mimeType: version.mimeType };
