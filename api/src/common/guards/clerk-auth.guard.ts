@@ -100,8 +100,42 @@ export class ClerkAuthGuard implements CanActivate {
       throw new UnauthorizedException('Account is deactivated');
     }
 
+    // If the authenticated user has no workspace memberships, auto-create a personal
+    // workspace so they always land on a working dashboard (handles existing DB users
+    // who signed up before workspace auto-creation was introduced).
+    if (user.workspaces.length === 0) {
+      user = await this.ensurePersonalWorkspace(user);
+    }
+
     (request as Request & { devUser: DevUserPayload }).devUser = user;
     return true;
+  }
+
+  private async ensurePersonalWorkspace(user: DevUserPayload): Promise<DevUserPayload> {
+    const firstName = user.firstName?.trim() || user.email.split('@')[0];
+    const workspaceName = firstName ? `${firstName}'s Workspace` : 'My Workspace';
+    const slug =
+      workspaceName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) +
+      '-' + Math.random().toString(36).slice(2, 7);
+
+    return this.prisma.$transaction(async (tx) => {
+      const workspace = await tx.workspace.create({
+        data: { name: workspaceName, slug, type: 'PERSONAL', status: 'ACTIVE' },
+      });
+      await tx.workspaceUser.create({
+        data: { workspaceId: workspace.id, userId: user.id, role: 'OWNER', status: 'ACTIVE' },
+      });
+      return tx.user.findUniqueOrThrow({
+        where: { id: user.id },
+        include: {
+          workspaces: {
+            where: { status: 'ACTIVE' },
+            include: { workspace: true },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
+    });
   }
 
   /**
