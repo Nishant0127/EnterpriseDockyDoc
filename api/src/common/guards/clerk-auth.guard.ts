@@ -2,6 +2,7 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -24,6 +25,8 @@ const WORKSPACE_INCLUDE = {
 
 @Injectable()
 export class ClerkAuthGuard implements CanActivate {
+  private readonly logger = new Logger(ClerkAuthGuard.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -70,19 +73,20 @@ export class ClerkAuthGuard implements CanActivate {
     });
 
     if (!user) {
-      // Slow path: first login — look up by email and link Clerk ID
+      this.logger.log(`[Auth] First login for clerkId=${clerkUserId} — running linkClerkUser`);
       user = await this.linkClerkUser(clerkUserId, secretKey);
+    } else {
+      this.logger.log(`[Auth] Fast-path login: userId=${user.id} email=${user.email} workspaces=${user.workspaces.length}`);
     }
 
     if (!user.isActive) {
       throw new UnauthorizedException('Account is deactivated');
     }
 
-    // Auto-create a personal workspace for any authenticated user with none.
-    // Handles existing DB users who had no workspace (e.g. pre-provisioned,
-    // or created before workspace auto-creation was introduced).
     if (user.workspaces.length === 0) {
+      this.logger.log(`[Auth] User ${user.email} has no workspace — creating personal workspace`);
       user = await this.ensurePersonalWorkspace(user);
+      this.logger.log(`[Auth] Personal workspace created for ${user.email}: ${user.workspaces[0]?.workspace?.name}`);
     }
 
     (request as Request & { devUser: DevUserPayload }).devUser = user;
