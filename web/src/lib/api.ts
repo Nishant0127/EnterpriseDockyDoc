@@ -1,6 +1,11 @@
 import type { CurrentUser, SwitchWorkspaceResponse, WorkspaceMembership } from '@/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081';
+// Browser: empty string → same-origin Next.js proxy (/api/v1/* route) — no CORS.
+// SSR / server actions: fall back to the configured backend URL directly.
+const API_URL =
+  typeof window !== 'undefined'
+    ? ''
+    : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081');
 
 /**
  * DEV ONLY — the email used to impersonate a user via x-dev-user-email header.
