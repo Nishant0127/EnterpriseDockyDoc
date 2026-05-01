@@ -1,6 +1,12 @@
 import type { CurrentUser, SwitchWorkspaceResponse, WorkspaceMembership } from '@/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081';
+// In the browser, requests go to the same origin (Next.js rewrites proxy them
+// to the Render API via next.config.ts). In local dev without the proxy, fall
+// back to the explicit env var or localhost.
+const API_URL =
+  typeof window !== 'undefined'
+    ? ''
+    : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081');
 
 /**
  * DEV ONLY — the email used to impersonate a user via x-dev-user-email header.

@@ -15,7 +15,7 @@ import type { WorkspaceSummary, ExpiringDocument, AuditLog } from '@/types';
 // ------------------------------------------------------------------ //
 
 export default function DashboardPage() {
-  const { activeWorkspace, user, isLoading: userLoading } = useUser();
+  const { activeWorkspace, user, isLoading: userLoading, error: userError } = useUser();
   const [summary, setSummary] = useState<WorkspaceSummary | null>(null);
   const [expiring, setExpiring] = useState<ExpiringDocument[]>([]);
   const [activity, setActivity] = useState<AuditLog[]>([]);
@@ -47,6 +47,30 @@ export default function DashboardPage() {
 
   const loading = userLoading || dataLoading;
   if (loading) return <DashboardSkeleton />;
+
+  // API unreachable — show a clear error rather than the misleading "No workspace" state
+  if (userError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-red-50 flex items-center justify-center">
+          <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" className="text-red-400">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+        </div>
+        <h2 className="text-sm font-semibold text-gray-700">Could not connect to the API</h2>
+        <p className="mt-1 text-xs text-gray-400 max-w-xs">{userError}</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="mt-4 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   // User has no accessible workspaces (new user, or removed from all workspaces)
   if (!activeWorkspace) {
