@@ -43,6 +43,53 @@ export class WorkspacesService {
   ) {}
 
   // ------------------------------------------------------------------ //
+  // Create
+  // ------------------------------------------------------------------ //
+
+  async create(name: string, user: DevUserPayload): Promise<WorkspaceResponseDto> {
+    const slug = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 48) + '-' + Math.random().toString(36).slice(2, 7);
+
+    const workspace = await this.prisma.$transaction(async (tx) => {
+      const ws = await tx.workspace.create({
+        data: { name, slug, type: 'PERSONAL', status: 'ACTIVE' },
+      });
+      await tx.workspaceUser.create({
+        data: {
+          workspaceId: ws.id,
+          userId: user.id,
+          role: WorkspaceUserRole.OWNER,
+          status: WorkspaceUserStatus.ACTIVE,
+        },
+      });
+      return ws;
+    });
+
+    this.audit.log({
+      workspaceId: workspace.id,
+      userId: user.id,
+      action: AuditAction.MEMBER_ADDED,
+      entityType: AuditEntityType.WORKSPACE,
+      entityId: workspace.id,
+      metadata: { workspaceName: name },
+    });
+
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      slug: workspace.slug,
+      type: workspace.type,
+      status: workspace.status,
+      memberCount: 1,
+      createdAt: workspace.createdAt,
+      updatedAt: workspace.updatedAt,
+    };
+  }
+
+  // ------------------------------------------------------------------ //
   // Read
   // ------------------------------------------------------------------ //
 

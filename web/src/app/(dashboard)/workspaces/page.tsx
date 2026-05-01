@@ -14,13 +14,18 @@ const TYPE_BADGE: Record<WorkspaceType, { label: string; class: string }> = {
 };
 
 export default function WorkspacesPage() {
-  const { user, activeWorkspace, switchWorkspace, isLoading: userLoading } = useUser();
+  const { user, activeWorkspace, switchWorkspace, refreshUser, isLoading: userLoading } = useUser();
   const toast = useToast();
   const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState<string | null>(null);
   const [justSwitched, setJustSwitched] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Create workspace state
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     apiFetch<WorkspaceListItem[]>('/api/v1/workspaces')
@@ -37,12 +42,35 @@ export default function WorkspacesPage() {
       const ws = workspaces.find((w) => w.id === id);
       toast.success(ws ? `Switched to "${ws.name}".` : 'Workspace switched.');
       setJustSwitched(id);
-      // Clear the "just switched" highlight after 2.5 s
       setTimeout(() => setJustSwitched(null), 2500);
     } catch {
       toast.error('Failed to switch workspace. Please try again.');
     } finally {
       setSwitching(null);
+    }
+  }
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
+    setCreating(true);
+    try {
+      const created = await apiFetch<WorkspaceListItem>('/api/v1/workspaces', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      setWorkspaces((prev) => [created, ...prev]);
+      setNewName('');
+      setShowCreate(false);
+      toast.success(`Workspace "${created.name}" created.`);
+      // Switch to the new workspace immediately
+      await refreshUser(created.id);
+      await switchWorkspace(created.id);
+    } catch {
+      toast.error('Failed to create workspace. Please try again.');
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -57,20 +85,71 @@ export default function WorkspacesPage() {
   return (
     <div className="max-w-3xl">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="page-title">Workspaces</h1>
-        <p className="page-subtitle">
-          {user?.firstName} {user?.lastName} &middot; {workspaces.length} workspace
-          {workspaces.length !== 1 ? 's' : ''}
-        </p>
-        {/* Active workspace indicator — always visible at the top */}
-        {activeWorkspace && (
-          <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-brand-50 border border-brand-200 text-xs text-brand-700 font-medium">
-            <span className="w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0" />
-            Active: {activeWorkspace.workspaceName}
-          </div>
-        )}
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="page-title">Workspaces</h1>
+          <p className="page-subtitle">
+            {user?.firstName} {user?.lastName} &middot; {workspaces.length} workspace
+            {workspaces.length !== 1 ? 's' : ''}
+          </p>
+          {activeWorkspace && (
+            <div className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-brand-50 border border-brand-200 text-xs text-brand-700 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0" />
+              Active: {activeWorkspace.workspaceName}
+            </div>
+          )}
+        </div>
+
+        {/* Create button */}
+        <button
+          type="button"
+          onClick={() => setShowCreate((v) => !v)}
+          className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 transition-colors"
+        >
+          <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+            <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+          </svg>
+          New Workspace
+        </button>
       </div>
+
+      {/* Create form */}
+      {showCreate && (
+        <form
+          onSubmit={handleCreate}
+          className="mb-5 rounded-xl border border-brand-200 bg-brand-50 p-4 flex items-end gap-3"
+        >
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Workspace name
+            </label>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="e.g. My Documents"
+              maxLength={60}
+              required
+              autoFocus
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={creating || !newName.trim()}
+            className="px-4 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors"
+          >
+            {creating ? 'Creating…' : 'Create'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowCreate(false); setNewName(''); }}
+            className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-500 hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+        </form>
+      )}
 
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -78,20 +157,35 @@ export default function WorkspacesPage() {
         </div>
       )}
 
+      {/* Empty state */}
+      {workspaces.length === 0 && !error && (
+        <div className="py-16 text-center rounded-xl border-2 border-dashed border-gray-200">
+          <p className="text-sm text-gray-500 mb-3">You don&apos;t have any workspaces yet.</p>
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+            </svg>
+            Create your first workspace
+          </button>
+        </div>
+      )}
+
       <div className="space-y-3">
         {sorted.map((ws) => {
           const badge      = TYPE_BADGE[ws.type];
           const isActive   = ws.id === activeWorkspace?.workspaceId;
-          const isNew      = ws.id === justSwitched;   // just-switched highlight
+          const isNew      = ws.id === justSwitched;
           const membership = user?.workspaces.find((m) => m.workspaceId === ws.id);
 
           return (
             <div
               key={ws.id}
               className={cn(
-                // Base
                 'relative flex items-center justify-between rounded-xl border p-4 transition-all duration-300',
-                // Left accent bar for active — strong visual anchor
                 'border-l-4',
                 isActive && !isNew
                   ? 'border-l-brand-600 border-t-brand-300 border-r-brand-300 border-b-brand-300 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-700/40 shadow-sm'
@@ -102,7 +196,6 @@ export default function WorkspacesPage() {
             >
               {/* Left */}
               <div className="flex items-center gap-4 min-w-0">
-                {/* Avatar */}
                 <div
                   className={cn(
                     'w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 transition-colors duration-300',
@@ -114,7 +207,6 @@ export default function WorkspacesPage() {
                   )}
                 >
                   {isNew ? (
-                    // Checkmark on "just switched"
                     <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
@@ -123,7 +215,6 @@ export default function WorkspacesPage() {
                   )}
                 </div>
 
-                {/* Name + meta */}
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold text-gray-900 truncate">{ws.name}</p>

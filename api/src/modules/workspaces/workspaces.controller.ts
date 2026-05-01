@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -36,6 +37,22 @@ import { UpdateAiSettingsDto, AiSettingsResponseDto } from './dto/ai-settings.dt
 @Controller('workspaces')
 export class WorkspacesController {
   constructor(private readonly workspacesService: WorkspacesService) {}
+
+  /**
+   * POST /api/v1/workspaces
+   * Create a new workspace. The caller becomes the OWNER.
+   */
+  @Post()
+  @UseGuards(DevAuthGuard)
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a new workspace (caller becomes OWNER)' })
+  @ApiResponse({ status: 201, type: WorkspaceResponseDto })
+  create(
+    @Body() dto: { name: string },
+    @CurrentUser() user: DevUserPayload,
+  ): Promise<WorkspaceResponseDto> {
+    return this.workspacesService.create(dto.name, user);
+  }
 
   /**
    * GET /api/v1/workspaces
