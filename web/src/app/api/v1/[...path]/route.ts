@@ -26,6 +26,11 @@ const FORWARDED_REQUEST_HEADERS = [
   'x-dev-user-email',
 ];
 
+// Allow up to 60s for Render free-tier cold starts. Hobby plan caps at 10s,
+// Pro at 60s — Vercel will silently clamp this to whatever the plan allows.
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 async function proxy(
   req: NextRequest,
   params: { path: string[] },
@@ -43,20 +48,29 @@ async function proxy(
     if (value) forwardHeaders.set(name, value);
   }
 
-  const hasBody = !['GET', 'HEAD'].includes(req.method);
+  // Buffer the body — simpler and more compatible than streaming with
+  // duplex:'half' on Vercel's Node runtime.
+  let body: ArrayBuffer | undefined;
+  if (!['GET', 'HEAD'].includes(req.method)) {
+    body = await req.arrayBuffer();
+    if (body.byteLength === 0) body = undefined;
+  }
 
   let upstream: Response;
   try {
     upstream = await fetch(targetUrl.toString(), {
       method: req.method,
       headers: forwardHeaders,
-      ...(hasBody
-        ? { body: req.body, duplex: 'half' }
-        : {}),
-    } as RequestInit & { duplex?: string });
-  } catch {
+      body,
+      cache: 'no-store',
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json(
-      { message: 'Upstream API unreachable', url: targetUrl.origin },
+      {
+        message: `Upstream API unreachable: ${message}`,
+        backendUrl: targetUrl.origin,
+      },
       { status: 502 },
     );
   }
@@ -67,7 +81,10 @@ async function proxy(
   const cd = upstream.headers.get('content-disposition');
   if (cd) responseHeaders.set('content-disposition', cd);
 
-  return new NextResponse(upstream.body, {
+  // Buffer the response body too — matches the request side and avoids
+  // stream-lifetime weirdness when the upstream Response is GC'd.
+  const responseBody = await upstream.arrayBuffer();
+  return new NextResponse(responseBody, {
     status: upstream.status,
     headers: responseHeaders,
   });
