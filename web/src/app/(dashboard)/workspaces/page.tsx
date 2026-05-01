@@ -64,9 +64,8 @@ export default function WorkspacesPage() {
       setNewName('');
       setShowCreate(false);
       toast.success(`Workspace "${created.name}" created.`);
-      // Switch to the new workspace immediately
+      // refreshUser(id) atomically re-fetches the user AND switches to the new workspace
       await refreshUser(created.id);
-      await switchWorkspace(created.id);
     } catch {
       toast.error('Failed to create workspace. Please try again.');
     } finally {

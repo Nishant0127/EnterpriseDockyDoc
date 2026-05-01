@@ -473,7 +473,7 @@ function ActivityIcon({ className }: { className?: string } = {}) {
 // ------------------------------------------------------------------ //
 
 function NoWorkspaceState() {
-  const { refreshUser, switchWorkspace } = useUser();
+  const { refreshUser } = useUser();
   const toast = useToast();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
@@ -491,10 +491,11 @@ function NoWorkspaceState() {
         body: JSON.stringify({ name: trimmed }),
       });
       toast.success(`Workspace "${created.name}" created!`);
+      // refreshUser(id) atomically re-fetches user AND activates the new workspace
       await refreshUser(created.id);
-      await switchWorkspace(created.id);
     } catch {
       toast.error('Failed to create workspace. Please try again.');
+    } finally {
       setCreating(false);
     }
   }

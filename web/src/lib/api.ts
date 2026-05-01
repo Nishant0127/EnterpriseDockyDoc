@@ -19,16 +19,23 @@ const IS_CLERK_CONFIGURED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KE
 /**
  * Get the Clerk session token when Clerk is active.
  *
- * Uses `window.Clerk.session.getToken()` — the official Clerk pattern for
- * obtaining tokens outside of React hooks / components.
- * Returns null in SSR, when Clerk is not configured, or when no session exists.
+ * Polls until window.Clerk is defined (the SDK loads asynchronously after
+ * hydration). Once loaded, returns the session token or null if not signed in.
+ * Returns null in SSR or when Clerk is not configured.
  */
 async function getClerkToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
+  if (!IS_CLERK_CONFIGURED) return null;
   try {
     type ClerkGlobal = {
       session?: { getToken: () => Promise<string | null> } | null;
     };
+    // Wait up to 3s for the Clerk SDK to finish loading
+    let attempts = 0;
+    while ((window as typeof window & { Clerk?: ClerkGlobal }).Clerk === undefined && attempts < 30) {
+      await new Promise((r) => setTimeout(r, 100));
+      attempts++;
+    }
     const clerk = (window as typeof window & { Clerk?: ClerkGlobal }).Clerk;
     return (await clerk?.session?.getToken()) ?? null;
   } catch {

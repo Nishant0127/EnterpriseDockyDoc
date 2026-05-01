@@ -9,6 +9,14 @@ import {
 } from 'class-validator';
 import { WorkspaceUserRole, WorkspaceUserStatus } from '@prisma/client';
 
+export class CreateWorkspaceDto {
+  @ApiProperty({ description: 'Workspace name', maxLength: 100 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name!: string;
+}
+
 export class UpdateWorkspaceDto {
   @ApiPropertyOptional({ description: 'New workspace name', maxLength: 100 })
   @IsOptional()
