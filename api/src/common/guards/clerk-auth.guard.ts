@@ -131,18 +131,33 @@ export class ClerkAuthGuard implements CanActivate {
 
     if (!existing) {
       // New user authenticating via Clerk for the first time.
-      // Create their DB record so they can accept workspace invitations.
+      // Create their DB record and a personal workspace so they land on the dashboard.
       const firstName = clerkUser.firstName?.trim() || email.split('@')[0];
       const lastName = clerkUser.lastName?.trim() || '';
-      return this.prisma.user.create({
-        data: { email, clerkId: clerkUserId, firstName, lastName, isActive: true },
-        include: {
-          workspaces: {
-            where: { status: 'ACTIVE' },
-            include: { workspace: true },
-            orderBy: { createdAt: 'asc' },
+      const workspaceName = firstName ? `${firstName}'s Workspace` : 'My Workspace';
+      const slug = workspaceName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
+        + '-' + Math.random().toString(36).slice(2, 7);
+
+      return this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: { email, clerkId: clerkUserId, firstName, lastName, isActive: true },
+        });
+        const workspace = await tx.workspace.create({
+          data: { name: workspaceName, slug, type: 'PERSONAL', status: 'ACTIVE' },
+        });
+        await tx.workspaceUser.create({
+          data: { workspaceId: workspace.id, userId: user.id, role: 'OWNER', status: 'ACTIVE' },
+        });
+        return tx.user.findUniqueOrThrow({
+          where: { id: user.id },
+          include: {
+            workspaces: {
+              where: { status: 'ACTIVE' },
+              include: { workspace: true },
+              orderBy: { createdAt: 'asc' },
+            },
           },
-        },
+        });
       });
     }
 
