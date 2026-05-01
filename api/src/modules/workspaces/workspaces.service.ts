@@ -47,45 +47,54 @@ export class WorkspacesService {
   // ------------------------------------------------------------------ //
 
   async create(name: string, user: DevUserPayload): Promise<WorkspaceResponseDto> {
-    const slug = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 48) + '-' + Math.random().toString(36).slice(2, 7);
+    const makeSlug = () =>
+      name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) +
+      '-' + Math.random().toString(36).slice(2, 7);
 
-    const workspace = await this.prisma.$transaction(async (tx) => {
-      const ws = await tx.workspace.create({
-        data: { name, slug, type: 'PERSONAL', status: 'ACTIVE' },
-      });
-      await tx.workspaceUser.create({
-        data: {
-          workspaceId: ws.id,
-          userId: user.id,
-          role: WorkspaceUserRole.OWNER,
-          status: WorkspaceUserStatus.ACTIVE,
-        },
-      });
-      return ws;
-    });
+    let workspace: Awaited<ReturnType<typeof this.prisma.workspace.create>>;
+    // Retry up to 3 times on slug collision (P2002 unique constraint)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        workspace = await this.prisma.$transaction(async (tx) => {
+          const ws = await tx.workspace.create({
+            data: { name, slug: makeSlug(), type: 'PERSONAL', status: 'ACTIVE' },
+          });
+          await tx.workspaceUser.create({
+            data: {
+              workspaceId: ws.id,
+              userId: user.id,
+              role: WorkspaceUserRole.OWNER,
+              status: WorkspaceUserStatus.ACTIVE,
+            },
+          });
+          return ws;
+        });
+        break;
+      } catch (err: unknown) {
+        const pe = err as { code?: string; meta?: { target?: string[] } };
+        if (pe?.code === 'P2002' && pe?.meta?.target?.includes('slug') && attempt < 2) continue;
+        throw err;
+      }
+    }
 
     this.audit.log({
-      workspaceId: workspace.id,
+      workspaceId: workspace!.id,
       userId: user.id,
       action: AuditAction.MEMBER_ADDED,
       entityType: AuditEntityType.WORKSPACE,
-      entityId: workspace.id,
+      entityId: workspace!.id,
       metadata: { workspaceName: name },
     });
 
     return {
-      id: workspace.id,
-      name: workspace.name,
-      slug: workspace.slug,
-      type: workspace.type,
-      status: workspace.status,
+      id: workspace!.id,
+      name: workspace!.name,
+      slug: workspace!.slug,
+      type: workspace!.type,
+      status: workspace!.status,
       memberCount: 1,
-      createdAt: workspace.createdAt,
-      updatedAt: workspace.updatedAt,
+      createdAt: workspace!.createdAt,
+      updatedAt: workspace!.updatedAt,
     };
   }
 
@@ -107,7 +116,7 @@ export class WorkspacesService {
         status: 'ACTIVE',
       },
       include: {
-        _count: { select: { members: true } },
+        _count: { select: { members: { where: { status: 'ACTIVE' as const } } } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -241,7 +250,7 @@ export class WorkspacesService {
 
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },
-      include: { _count: { select: { members: true } } },
+      include: { _count: { select: { members: { where: { status: 'ACTIVE' as const } } } } },
     });
     if (!workspace) throw new NotFoundException(`Workspace "${workspaceId}" not found`);
 
@@ -250,7 +259,7 @@ export class WorkspacesService {
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
       },
-      include: { _count: { select: { members: true } } },
+      include: { _count: { select: { members: { where: { status: 'ACTIVE' as const } } } } },
     });
 
     return {

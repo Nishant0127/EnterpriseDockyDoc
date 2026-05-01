@@ -26,6 +26,7 @@ import {
   WorkspaceDetailResponseDto,
   WorkspaceSummaryDto,
 } from './dto/workspace-response.dto';
+import { WorkspaceUserStatus } from '@prisma/client';
 import { CreateWorkspaceDto, AddWorkspaceMemberDto, UpdateWorkspaceMemberDto, UpdateWorkspaceDto } from './dto/add-member.dto';
 import { UpdateAiSettingsDto, AiSettingsResponseDto } from './dto/ai-settings.dto';
 
@@ -188,7 +189,7 @@ export class WorkspacesController {
     await this.workspacesService.updateMember(
       id,
       memberId,
-      { status: 'REMOVED' as any },
+      { status: WorkspaceUserStatus.REMOVED },
       user,
     );
   }
