@@ -23,6 +23,7 @@ const isPublicRoute = createRouteMatcher([
   '/s/(.*)',            // public share links
   '/join/(.*)',         // workspace invitation acceptance
   '/api/health(.*)',   // health-check endpoint
+  '/api/v1/(.*)',      // Render backend API — auth is handled by ClerkAuthGuard there
 ]);
 
 export default clerkMiddleware(async (auth, request) => {

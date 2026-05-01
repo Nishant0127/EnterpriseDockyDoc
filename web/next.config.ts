@@ -1,36 +1,25 @@
 import type { NextConfig } from 'next';
 
-// The upstream API URL — used server-side for rewrites only (never in the bundle).
-// Override via API_URL or NEXT_PUBLIC_API_URL env var in Vercel / Render.
-const UPSTREAM_API =
-  process.env.API_URL ??
-  process.env.NEXT_PUBLIC_API_URL ??
-  (process.env.NODE_ENV === 'production'
-    ? 'https://dockydoc-api-staging.onrender.com'
-    : 'http://localhost:8081');
-
 const nextConfig: NextConfig = {
-  // Strict mode catches common bugs early
   reactStrictMode: true,
 
+  // Bake environment variables into the client bundle at build time.
+  // Values set in the Vercel / hosting dashboard take precedence because
+  // Next.js merges actual process.env BEFORE evaluating this block.
   env: {
     NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME ?? 'DockyDoc',
+    // Default to the staging Render URL so Vercel builds work without any
+    // dashboard env-var configuration. Override via NEXT_PUBLIC_API_URL in
+    // the Vercel environment settings when promoting to a different backend.
+    NEXT_PUBLIC_API_URL:
+      process.env.NEXT_PUBLIC_API_URL ??
+      (process.env.NODE_ENV === 'production'
+        ? 'https://dockydoc-api-staging.onrender.com'
+        : 'http://localhost:8081'),
   },
 
   images: {
     remotePatterns: [],
-  },
-
-  // Proxy /api/v1/* through the Next.js server so the browser never needs to
-  // know (or hard-code) the Render URL.  CORS and NEXT_PUBLIC_API_URL issues
-  // are eliminated because requests go same-origin to Vercel.
-  async rewrites() {
-    return [
-      {
-        source: '/api/v1/:path*',
-        destination: `${UPSTREAM_API}/api/v1/:path*`,
-      },
-    ];
   },
 };
 
