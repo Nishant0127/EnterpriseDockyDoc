@@ -7,6 +7,7 @@ import { fetchWorkspaceSummary, fetchExpiringDocuments } from '@/lib/documents';
 import { fetchWorkspaceActivity } from '@/lib/audit';
 import { describeAuditLog, auditActionCategory } from '@/lib/audit';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/Toast';
 import type { WorkspaceSummary, ExpiringDocument, AuditLog } from '@/types';
 
 // ------------------------------------------------------------------ //
@@ -49,26 +50,7 @@ export default function DashboardPage() {
 
   // User has no accessible workspaces (new user, or removed from all workspaces)
   if (!activeWorkspace) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 text-center">
-        <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-gray-100 flex items-center justify-center">
-          <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" className="text-gray-400">
-            <rect x="2" y="7" width="20" height="14" rx="2" />
-            <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
-          </svg>
-        </div>
-        <h2 className="text-sm font-semibold text-gray-700">No workspace selected</h2>
-        <p className="mt-1 text-xs text-gray-400 max-w-xs">
-          You don&apos;t belong to any workspace yet. Accept an invitation or create one to get started.
-        </p>
-        <a
-          href="/workspaces"
-          className="mt-4 inline-flex items-center gap-1 text-sm text-brand-600 hover:underline"
-        >
-          Go to Workspaces →
-        </a>
-      </div>
-    );
+    return <NoWorkspaceState />;
   }
 
   const hasExpired   = (summary?.expiredCount  ?? 0) > 0;
@@ -483,5 +465,94 @@ function ActivityIcon({ className }: { className?: string } = {}) {
     <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" className={className}>
       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// No workspace state — with inline create form
+// ------------------------------------------------------------------ //
+
+function NoWorkspaceState() {
+  const { refreshUser, switchWorkspace } = useUser();
+  const toast = useToast();
+  const [showForm, setShowForm] = useState(false);
+  const [name, setName] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setCreating(true);
+    try {
+      const { apiFetch } = await import('@/lib/api');
+      const created = await apiFetch<{ id: string; name: string }>('/api/v1/workspaces', {
+        method: 'POST',
+        body: JSON.stringify({ name: trimmed }),
+      });
+      toast.success(`Workspace "${created.name}" created!`);
+      await refreshUser(created.id);
+      await switchWorkspace(created.id);
+    } catch {
+      toast.error('Failed to create workspace. Please try again.');
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center py-24 text-center">
+      <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-gray-100 flex items-center justify-center">
+        <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" className="text-gray-400">
+          <rect x="2" y="7" width="20" height="14" rx="2" />
+          <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+        </svg>
+      </div>
+      <h2 className="text-sm font-semibold text-gray-700">No workspace selected</h2>
+      <p className="mt-1 text-xs text-gray-400 max-w-xs">
+        You don&apos;t belong to any workspace yet. Create one to get started.
+      </p>
+
+      {!showForm ? (
+        <button
+          type="button"
+          onClick={() => setShowForm(true)}
+          className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition-colors"
+        >
+          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+            <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+          </svg>
+          Create Workspace
+        </button>
+      ) : (
+        <form onSubmit={handleCreate} className="mt-5 flex flex-col items-center gap-2 w-full max-w-xs">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Workspace name"
+            maxLength={60}
+            required
+            autoFocus
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <div className="flex gap-2 w-full">
+            <button
+              type="submit"
+              disabled={creating || !name.trim()}
+              className="flex-1 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors"
+            >
+              {creating ? 'Creating…' : 'Create'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-500 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
   );
 }
