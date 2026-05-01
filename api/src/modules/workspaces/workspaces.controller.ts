@@ -26,7 +26,7 @@ import {
   WorkspaceDetailResponseDto,
   WorkspaceSummaryDto,
 } from './dto/workspace-response.dto';
-import { AddWorkspaceMemberDto, UpdateWorkspaceMemberDto, UpdateWorkspaceDto } from './dto/add-member.dto';
+import { CreateWorkspaceDto, AddWorkspaceMemberDto, UpdateWorkspaceMemberDto, UpdateWorkspaceDto } from './dto/add-member.dto';
 import { UpdateAiSettingsDto, AiSettingsResponseDto } from './dto/ai-settings.dto';
 
 /**
@@ -48,7 +48,7 @@ export class WorkspacesController {
   @ApiOperation({ summary: 'Create a new workspace (caller becomes OWNER)' })
   @ApiResponse({ status: 201, type: WorkspaceResponseDto })
   create(
-    @Body() dto: { name: string },
+    @Body() dto: CreateWorkspaceDto,
     @CurrentUser() user: DevUserPayload,
   ): Promise<WorkspaceResponseDto> {
     return this.workspacesService.create(dto.name, user);
