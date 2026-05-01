@@ -9,16 +9,19 @@ import { NextRequest, NextResponse } from 'next/server';
  *
  * BACKEND_URL resolution order:
  *   1. API_URL env var (Vercel dashboard → server-side only, no NEXT_PUBLIC_)
- *   2. NEXT_PUBLIC_API_URL env var (legacy; still works)
- *   3. Hardcoded staging URL (zero-config fallback for Vercel deploys)
- *   4. localhost:8081 (local dev without any env vars)
+ *   2. In production: hardcoded staging URL.  We deliberately IGNORE
+ *      NEXT_PUBLIC_API_URL in prod because old Vercel configs often set
+ *      it to localhost — which now points at the Vercel container itself
+ *      (where there's no API), not the user's laptop.
+ *   3. In dev: NEXT_PUBLIC_API_URL (legacy compat) or localhost:8081.
  */
-const BACKEND_URL =
-  process.env.API_URL ??
-  process.env.NEXT_PUBLIC_API_URL ??
-  (process.env.NODE_ENV === 'production'
-    ? 'https://dockydoc-api-staging.onrender.com'
-    : 'http://localhost:8081');
+const BACKEND_URL = (() => {
+  if (process.env.API_URL) return process.env.API_URL;
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://dockydoc-api-staging.onrender.com';
+  }
+  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081';
+})();
 
 const FORWARDED_REQUEST_HEADERS = [
   'authorization',
