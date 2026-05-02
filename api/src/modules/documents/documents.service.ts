@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DocumentStatus } from '@prisma/client';
 import * as path from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
-import { LocalStorageService } from '../storage/local-storage.service';
+import { STORAGE_SERVICE } from '../storage/storage.module';
+import type { IStorageService } from '../storage/storage.interface';
 import { SearchIndexerService } from '../search/search-indexer.service';
 import { AuditService, AuditAction, AuditEntityType } from '../audit/audit.service';
 import { AiService } from '../ai/ai.service';
@@ -76,7 +77,7 @@ export class DocumentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly storage: LocalStorageService,
+    @Inject(STORAGE_SERVICE) private readonly storage: IStorageService,
     private readonly indexer: SearchIndexerService,
     private readonly audit: AuditService,
     private readonly aiService: AiService,

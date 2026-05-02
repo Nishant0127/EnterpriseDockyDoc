@@ -4,13 +4,15 @@ import {
   ForbiddenException,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { DocumentStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { LocalStorageService } from '../storage/local-storage.service';
+import { STORAGE_SERVICE } from '../storage/storage.module';
+import type { IStorageService } from '../storage/storage.interface';
 import { AuditService, AuditAction, AuditEntityType } from '../audit/audit.service';
 import {
   assertWorkspaceMembership,
@@ -68,7 +70,7 @@ export class SharesService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly storage: LocalStorageService,
+    @Inject(STORAGE_SERVICE) private readonly storage: IStorageService,
     private readonly audit: AuditService,
   ) {
     // Validate required secrets at startup — fail fast rather than silently using an insecure default
