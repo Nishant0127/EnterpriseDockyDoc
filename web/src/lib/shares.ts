@@ -11,7 +11,7 @@ import type {
   VerifyShareResponse,
 } from '@/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081';
+const API_URL = ''; // Relative → Next.js /api/v1/* proxy → no CORS
 
 // ------------------------------------------------------------------ //
 // Authenticated (workspace member) endpoints
