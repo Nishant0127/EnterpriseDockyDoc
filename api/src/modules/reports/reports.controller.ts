@@ -25,6 +25,15 @@ class ReportQueryDto {
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
+  @Get('expired-documents')
+  @ApiOperation({ summary: 'Documents that have already expired' })
+  expiredDocuments(
+    @Query() q: ReportQueryDto,
+    @CurrentUser() user: DevUserPayload,
+  ) {
+    return this.reportsService.getExpiredDocuments(q.workspaceId, user);
+  }
+
   @Get('expiring-documents')
   @ApiOperation({ summary: 'Documents expiring within N days' })
   expiringDocuments(

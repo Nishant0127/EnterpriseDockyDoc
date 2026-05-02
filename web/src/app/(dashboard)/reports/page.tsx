@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import { apiFetch } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import type { ExpiredDocumentItem, ExpiredDocumentsReport } from '@/lib/documents';
 
 // ------------------------------------------------------------------ //
 // Types
@@ -114,6 +115,7 @@ interface AiInsights {
 }
 
 type ReportId =
+  | 'expired-docs'
   | 'expiring-docs'
   | 'document-activity'
   | 'storage-usage'
@@ -126,6 +128,13 @@ type ReportId =
 // ------------------------------------------------------------------ //
 
 const REPORTS: { id: ReportId; title: string; description: string; icon: string; category: string }[] = [
+  {
+    id: 'expired-docs',
+    title: 'Expired Documents',
+    description: 'Documents whose expiry date has already passed. These are retained and still accessible.',
+    icon: '🗂️',
+    category: 'Compliance',
+  },
   {
     id: 'expiring-docs',
     title: 'Expiring Documents',
@@ -192,6 +201,7 @@ export default function ReportsPage() {
   const [aiError, setAiError] = useState<string | null>(null);
 
   const REPORT_TYPE_MAP: Record<ReportId, string> = {
+    'expired-docs': 'expired_documents',
     'expiring-docs': 'expiring_documents',
     'document-activity': 'document_activity',
     'storage-usage': 'storage_usage',
@@ -210,6 +220,7 @@ export default function ReportsPage() {
 
     const wid = activeWorkspace.workspaceId;
     const endpointMap: Record<ReportId, string> = {
+      'expired-docs': `/api/v1/reports/expired-documents?workspaceId=${wid}`,
       'expiring-docs': `/api/v1/reports/expiring-documents?workspaceId=${wid}&days=90`,
       'document-activity': `/api/v1/reports/document-activity?workspaceId=${wid}&days=30`,
       'storage-usage': `/api/v1/reports/storage-usage?workspaceId=${wid}`,
@@ -389,6 +400,7 @@ export default function ReportsPage() {
 
 function ReportView({ id, data }: { id: ReportId; data: unknown }) {
   switch (id) {
+    case 'expired-docs': return <ExpiredDocsView data={data as ExpiredDocumentsReport} />;
     case 'expiring-docs': return <ExpiringDocsView data={data as ExpiringReport} />;
     case 'document-activity': return <ActivityView data={data as ActivityReport} />;
     case 'storage-usage': return <StorageView data={data as StorageReport} />;
@@ -397,6 +409,63 @@ function ReportView({ id, data }: { id: ReportId; data: unknown }) {
     case 'compliance-audit': return <ComplianceView data={data as ComplianceReport} />;
     default: return null;
   }
+}
+
+// ------------------------------------------------------------------ //
+// Expired Documents
+// ------------------------------------------------------------------ //
+
+function ExpiredDocsView({ data }: { data: ExpiredDocumentsReport }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <p className="text-sm font-semibold text-gray-900">{data.total} expired document{data.total !== 1 ? 's' : ''}</p>
+        <span className="text-xs text-gray-400">Documents are retained and remain accessible</span>
+      </div>
+      {data.items.length === 0 ? (
+        <div className="px-5 py-8 text-center text-sm text-gray-400">No expired documents found.</div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-100">
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Document</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Owner</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Folder</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Expired</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {data.items.map((item: ExpiredDocumentItem) => (
+              <tr key={item.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3">
+                  <a href={`/documents/${item.id}`} className="font-medium text-gray-900 hover:text-brand-600">{item.name}</a>
+                  <p className="text-xs text-gray-400">{item.fileType.toUpperCase()}</p>
+                </td>
+                <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{item.owner}</td>
+                <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{item.folder ?? '—'}</td>
+                <td className="px-4 py-3">
+                  <span className="text-xs font-semibold text-red-600">
+                    {new Date(item.expiryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </span>
+                  <p className="text-xs text-red-400">{item.daysSinceExpiry}d ago</p>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={cn(
+                    'text-xs px-2 py-0.5 rounded-full font-medium',
+                    item.status === 'ACTIVE' ? 'bg-blue-50 text-blue-700' :
+                    item.status === 'ARCHIVED' ? 'bg-gray-100 text-gray-600' : 'bg-gray-100 text-gray-400',
+                  )}>
+                    {item.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
 }
 
 // ------------------------------------------------------------------ //

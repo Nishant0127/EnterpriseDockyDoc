@@ -263,6 +263,7 @@ model DocumentVersion {
   storageKey    String
   fileSizeBytes BigInt
   mimeType      String
+  contentHash   String?
   uploadedById  String
   createdAt     DateTime @default(now())
 
@@ -270,6 +271,7 @@ model DocumentVersion {
   uploadedBy User     @relation("VersionUploader", fields: [uploadedById], references: [id])
 
   @@unique([documentId, versionNumber])
+  @@index([contentHash])
   @@map("document_versions")
 }
 

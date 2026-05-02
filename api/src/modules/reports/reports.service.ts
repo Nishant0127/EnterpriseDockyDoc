@@ -13,6 +13,39 @@ export class ReportsService {
     if (!membership) throw new ForbiddenException('Not a member of this workspace');
   }
 
+  async getExpiredDocuments(workspaceId: string, user: DevUserPayload) {
+    await this.assertMember(workspaceId, user.id);
+    const now = new Date();
+
+    const docs = await this.prisma.document.findMany({
+      where: {
+        workspaceId,
+        status: { not: 'DELETED' },
+        expiryDate: { lt: now },
+      },
+      include: { owner: { select: { firstName: true, lastName: true, email: true } }, folder: { select: { name: true } } },
+      orderBy: { expiryDate: 'desc' },
+    });
+
+    return {
+      reportType: 'expired_documents',
+      generatedAt: new Date().toISOString(),
+      total: docs.length,
+      items: docs.map((d) => ({
+        id: d.id,
+        name: d.name,
+        fileType: d.fileType,
+        expiryDate: d.expiryDate,
+        daysSinceExpiry: d.expiryDate
+          ? Math.floor((Date.now() - d.expiryDate.getTime()) / 86_400_000)
+          : null,
+        owner: `${d.owner.firstName} ${d.owner.lastName}`,
+        folder: d.folder?.name ?? null,
+        status: d.status,
+      })),
+    };
+  }
+
   async getExpiringDocuments(workspaceId: string, user: DevUserPayload, days = 30) {
     await this.assertMember(workspaceId, user.id);
     const cutoff = new Date();

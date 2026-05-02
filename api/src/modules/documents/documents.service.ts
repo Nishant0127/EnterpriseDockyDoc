@@ -1,6 +1,7 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DocumentStatus } from '@prisma/client';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { STORAGE_SERVICE } from '../storage/storage.module';
 import type { IStorageService } from '../storage/storage.interface';
@@ -69,6 +70,11 @@ function buildStorageKey(
 /** Extract file extension from original filename, defaulting to 'bin'. */
 function fileExtension(originalName: string): string {
   return path.extname(originalName).replace('.', '').toLowerCase() || 'bin';
+}
+
+/** Compute SHA-256 hex digest of a buffer. */
+function sha256(buf: Buffer): string {
+  return createHash('sha256').update(buf).digest('hex');
 }
 
 @Injectable()
@@ -176,12 +182,31 @@ export class DocumentsService {
     dto: UploadDocumentDto,
     file: Express.Multer.File,
     user: DevUserPayload,
+    force = false,
   ): Promise<DocumentDetailDto> {
     assertEditorOrAbove(user, dto.workspaceId);
 
     const uploadStart = Date.now();
     const fileSizeMb = (file.size / 1024 / 1024).toFixed(2);
     this.logger.log(`Upload start: "${file.originalname}" (${fileSizeMb} MB, ${file.mimetype})`);
+
+    const contentHash = sha256(file.buffer);
+
+    // Duplicate check: find any version with the same hash in this workspace
+    if (!force) {
+      const duplicate = await this.prisma.documentVersion.findFirst({
+        where: { contentHash, document: { workspaceId: dto.workspaceId, status: { not: DocumentStatus.DELETED } } },
+        include: { document: { select: { id: true, name: true, currentVersionNumber: true } } },
+      });
+      if (duplicate) {
+        throw new ConflictException({
+          message: `This file already exists as "${duplicate.document.name}" (v${duplicate.versionNumber})`,
+          existingDocumentId: duplicate.document.id,
+          existingDocumentName: duplicate.document.name,
+          existingVersionNumber: duplicate.versionNumber,
+        });
+      }
+    }
 
     const ext = fileExtension(file.originalname);
 
@@ -211,6 +236,7 @@ export class DocumentsService {
           storageKey,
           fileSizeBytes: BigInt(file.size),
           mimeType: file.mimetype,
+          contentHash,
           uploadedById: user.id,
         },
       });
@@ -286,10 +312,29 @@ export class DocumentsService {
     file: Express.Multer.File,
     _dto: UploadVersionDto,
     user: DevUserPayload,
+    force = false,
   ): Promise<DocumentDetailDto> {
     const existing = await this.prisma.document.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Document "${id}" not found`);
     assertEditorOrAbove(user, existing.workspaceId);
+
+    const contentHash = sha256(file.buffer);
+
+    // Duplicate check: same file content already exists somewhere in this workspace
+    if (!force) {
+      const duplicate = await this.prisma.documentVersion.findFirst({
+        where: { contentHash, document: { workspaceId: existing.workspaceId, status: { not: DocumentStatus.DELETED } } },
+        include: { document: { select: { id: true, name: true } } },
+      });
+      if (duplicate) {
+        throw new ConflictException({
+          message: `This file already exists as "${duplicate.document.name}" (v${duplicate.versionNumber})`,
+          existingDocumentId: duplicate.document.id,
+          existingDocumentName: duplicate.document.name,
+          existingVersionNumber: duplicate.versionNumber,
+        });
+      }
+    }
 
     const nextVersion = existing.currentVersionNumber + 1;
 
@@ -308,6 +353,7 @@ export class DocumentsService {
           storageKey,
           fileSizeBytes: BigInt(file.size),
           mimeType: file.mimetype,
+          contentHash,
           uploadedById: user.id,
         },
       });

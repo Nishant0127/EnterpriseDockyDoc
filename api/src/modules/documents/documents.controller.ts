@@ -177,9 +177,10 @@ export class DocumentsController {
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadDocumentDto,
     @CurrentUser() user: DevUserPayload,
+    @Query('force') force?: string,
   ): Promise<DocumentDetailDto> {
     if (!file) throw new BadRequestException('No file provided');
-    return this.documentsService.upload(dto, file, user);
+    return this.documentsService.upload(dto, file, user, force === 'true');
   }
 
   // ------------------------------------------------------------------ //
@@ -302,9 +303,10 @@ export class DocumentsController {
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadVersionDto,
     @CurrentUser() user: DevUserPayload,
+    @Query('force') force?: string,
   ): Promise<DocumentDetailDto> {
     if (!file) throw new BadRequestException('No file provided');
-    return this.documentsService.uploadVersion(id, file, dto, user);
+    return this.documentsService.uploadVersion(id, file, dto, user, force === 'true');
   }
 
   // ------------------------------------------------------------------ //

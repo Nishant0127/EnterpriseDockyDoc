@@ -108,8 +108,8 @@ export async function apiFetch<T>(
   });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body?.message ?? res.statusText);
+    const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new ApiError(res.status, (body?.message as string) ?? res.statusText, body);
   }
 
   // 204 No Content — no body to parse
@@ -137,8 +137,8 @@ export async function apiUpload<T>(
   });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body?.message ?? res.statusText);
+    const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throw new ApiError(res.status, (body?.message as string) ?? res.statusText, body);
   }
 
   return res.json() as Promise<T>;
@@ -205,6 +205,7 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly data?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ApiError';

@@ -8,6 +8,7 @@ import { fetchFolders, fetchDocuments, fetchDeletedFolders, restoreFolder, uploa
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
 import ConfirmModal from '@/components/ui/ConfirmModal';
+import { ApiError } from '@/lib/api';
 import type { DocumentListItem, DocumentStatus, FolderListItem, SearchResult } from '@/types';
 
 interface PendingConfirm {
@@ -982,6 +983,7 @@ function UploadModal({
   const [folderId, setFolderId] = useState(defaultFolderId ?? '');
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [duplicate, setDuplicate] = useState<{ existingDocumentId: string; existingDocumentName: string; existingVersionNumber: number } | null>(null);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
@@ -992,8 +994,7 @@ function UploadModal({
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function doUpload(force = false) {
     if (!file) { setError('Please select a file.'); return; }
     if (!name.trim()) { setError('Document name is required.'); return; }
 
@@ -1007,13 +1008,26 @@ function UploadModal({
         file,
         description: description.trim() || undefined,
         folderId: folderId || undefined,
-      });
+      }, force);
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
+      if (err instanceof ApiError && err.status === 409 && err.data) {
+        setDuplicate({
+          existingDocumentId: err.data.existingDocumentId as string,
+          existingDocumentName: err.data.existingDocumentName as string,
+          existingVersionNumber: err.data.existingVersionNumber as number,
+        });
+      } else {
+        setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
+      }
     } finally {
       setUploading(false);
     }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await doUpload(false);
   }
 
   // Close on backdrop click
@@ -1135,6 +1149,38 @@ function UploadModal({
           {error && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
               {error}
+            </div>
+          )}
+
+          {/* Duplicate warning */}
+          {duplicate && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm">
+              <p className="font-semibold text-amber-800 mb-1">Duplicate file detected</p>
+              <p className="text-amber-700 text-xs mb-3">
+                This file already exists as <a href={`/documents/${duplicate.existingDocumentId}`} className="underline font-medium" target="_blank" rel="noreferrer">{duplicate.existingDocumentName}</a> (v{duplicate.existingVersionNumber}).
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setDuplicate(null); void doUpload(true); }}
+                  className="px-3 py-1.5 rounded-md bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 transition-colors"
+                >
+                  Upload anyway
+                </button>
+                <a
+                  href={`/documents/${duplicate.existingDocumentId}`}
+                  className="px-3 py-1.5 rounded-md border border-amber-300 text-amber-700 text-xs font-medium hover:bg-amber-100 transition-colors"
+                >
+                  Open existing
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setDuplicate(null)}
+                  className="px-3 py-1.5 rounded-md border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
 

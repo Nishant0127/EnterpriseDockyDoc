@@ -24,6 +24,24 @@ import type {
   WorkspaceUserRole,
 } from '@/types';
 
+export interface ExpiredDocumentItem {
+  id: string;
+  name: string;
+  fileType: string;
+  expiryDate: string;
+  daysSinceExpiry: number;
+  owner: string;
+  folder: string | null;
+  status: string;
+}
+
+export interface ExpiredDocumentsReport {
+  reportType: string;
+  generatedAt: string;
+  total: number;
+  items: ExpiredDocumentItem[];
+}
+
 // ------------------------------------------------------------------ //
 // Folders
 // ------------------------------------------------------------------ //
@@ -132,8 +150,9 @@ export interface UploadDocumentParams {
 /**
  * Upload a new document with file binary.
  * Sends multipart/form-data to POST /api/v1/documents/upload.
+ * Pass force=true to skip duplicate detection.
  */
-export function uploadDocument(params: UploadDocumentParams): Promise<DocumentDetail> {
+export function uploadDocument(params: UploadDocumentParams, force = false): Promise<DocumentDetail> {
   const form = new FormData();
   form.append('file', params.file);
   form.append('workspaceId', params.workspaceId);
@@ -143,23 +162,34 @@ export function uploadDocument(params: UploadDocumentParams): Promise<DocumentDe
   if (params.tags?.length) form.append('tags', params.tags.join(','));
   if (params.metadata?.length) form.append('metadata', JSON.stringify(params.metadata));
 
-  return apiUpload<DocumentDetail>('/api/v1/documents/upload', form);
+  const url = force ? '/api/v1/documents/upload?force=true' : '/api/v1/documents/upload';
+  return apiUpload<DocumentDetail>(url, form);
 }
 
 /**
  * Upload a new version of an existing document.
  * Sends multipart/form-data to POST /api/v1/documents/:id/versions.
+ * Pass force=true to skip duplicate detection.
  */
 export function uploadDocumentVersion(
   documentId: string,
   file: File,
   notes?: string,
+  force = false,
 ): Promise<DocumentDetail> {
   const form = new FormData();
   form.append('file', file);
   if (notes) form.append('notes', notes);
 
-  return apiUpload<DocumentDetail>(`/api/v1/documents/${documentId}/versions`, form);
+  const url = force
+    ? `/api/v1/documents/${documentId}/versions?force=true`
+    : `/api/v1/documents/${documentId}/versions`;
+  return apiUpload<DocumentDetail>(url, form);
+}
+
+/** Fetch expired documents for the workspace. */
+export function fetchExpiredDocuments(workspaceId: string): Promise<ExpiredDocumentsReport> {
+  return apiFetch<ExpiredDocumentsReport>(`/api/v1/reports/expired-documents?workspaceId=${workspaceId}`);
 }
 
 // ------------------------------------------------------------------ //

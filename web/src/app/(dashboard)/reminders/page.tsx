@@ -4,9 +4,10 @@ import { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useUser } from '@/context/UserContext';
-import { fetchExpiringDocuments, fetchWorkspaceReminders } from '@/lib/documents';
+import { fetchExpiringDocuments, fetchExpiredDocuments, fetchWorkspaceReminders } from '@/lib/documents';
 import { cn } from '@/lib/utils';
 import type { ExpiringDocument, UpcomingReminder } from '@/types';
+import type { ExpiredDocumentItem } from '@/lib/documents';
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -64,6 +65,7 @@ function RemindersPageInner() {
   const { activeWorkspace, isLoading: userLoading } = useUser();
   const searchParams = useSearchParams();
   const [expiring, setExpiring] = useState<ExpiringDocument[]>([]);
+  const [expired, setExpiredDocs] = useState<ExpiredDocumentItem[]>([]);
   const [reminders, setReminders] = useState<UpcomingReminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,10 +83,12 @@ function RemindersPageInner() {
     Promise.all([
       fetchExpiringDocuments(activeWorkspace.workspaceId),
       fetchWorkspaceReminders(activeWorkspace.workspaceId),
+      fetchExpiredDocuments(activeWorkspace.workspaceId),
     ])
-      .then(([exp, rem]) => {
+      .then(([exp, rem, expiredReport]) => {
         setExpiring(exp);
         setReminders(rem);
+        setExpiredDocs(expiredReport.items);
       })
       .catch(() => setError('Failed to load reminders. Is the API running?'))
       .finally(() => setLoading(false));
@@ -104,7 +108,6 @@ function RemindersPageInner() {
     );
   }
 
-  const expired = expiring.filter((d) => d.daysUntilExpiry < 0);
   const expiringSoon = expiring.filter(
     (d) => d.daysUntilExpiry >= 0 && d.daysUntilExpiry <= expiringDays,
   );
@@ -238,6 +241,7 @@ function RemindersPageInner() {
             <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-100">
               <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
               <h2 className="text-sm font-semibold text-gray-900">Expired</h2>
+              <span className="text-xs text-gray-400 ml-1">— retained, still accessible</span>
               <span className="ml-auto text-xs font-medium text-gray-400">{expired.length}</span>
             </div>
             {expired.length === 0 ? (
@@ -255,7 +259,7 @@ function RemindersPageInner() {
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {expired.map((doc) => <ExpiringDocRow key={doc.id} doc={doc} />)}
+                {expired.map((doc) => <ExpiredDocRow key={doc.id} doc={doc} />)}
               </div>
             )}
           </>
@@ -312,6 +316,39 @@ function ExpiringDocRow({ doc }: { doc: ExpiringDocument }) {
           <p className="text-xs text-gray-500">{formatDate(doc.renewalDueDate)}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ //
+// Expired document row
+// ------------------------------------------------------------------ //
+
+function ExpiredDocRow({ doc }: { doc: ExpiredDocumentItem }) {
+  return (
+    <div className="flex items-center gap-4 px-5 py-3.5">
+      <div className="flex-1 min-w-0">
+        <Link
+          href={`/documents/${doc.id}`}
+          className="text-sm font-medium text-gray-900 hover:text-brand-600 transition-colors truncate block"
+        >
+          {doc.name}
+        </Link>
+        <div className="flex items-center gap-2 mt-0.5">
+          {doc.folder && <span className="text-xs text-gray-400">{doc.folder}</span>}
+          <span className="text-xs text-gray-400">{doc.owner}</span>
+        </div>
+      </div>
+      <div className="flex-shrink-0 text-right">
+        <p className="text-xs text-gray-500">{formatDate(doc.expiryDate)}</p>
+        <p className="text-xs font-semibold text-red-600">{doc.daysSinceExpiry}d ago</p>
+      </div>
+      <span className={cn(
+        'flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium hidden sm:inline',
+        doc.status === 'ACTIVE' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-500',
+      )}>
+        {doc.status}
+      </span>
     </div>
   );
 }
