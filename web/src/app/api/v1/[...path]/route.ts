@@ -9,22 +9,30 @@ import { NextRequest, NextResponse } from 'next/server';
  *
  * BACKEND_URL resolution order:
  *   1. API_URL env var (Vercel dashboard → server-side only, no NEXT_PUBLIC_)
- *   2. NEXT_PUBLIC_API_URL env var (legacy; still works)
- *   3. Hardcoded staging URL (zero-config fallback for Vercel deploys)
- *   4. localhost:8081 (local dev without any env vars)
+ *   2. In production: hardcoded staging URL.  We deliberately IGNORE
+ *      NEXT_PUBLIC_API_URL in prod because old Vercel configs often set
+ *      it to localhost — which now points at the Vercel container itself
+ *      (where there's no API), not the user's laptop.
+ *   3. In dev: NEXT_PUBLIC_API_URL (legacy compat) or localhost:8081.
  */
-const BACKEND_URL =
-  process.env.API_URL ??
-  process.env.NEXT_PUBLIC_API_URL ??
-  (process.env.NODE_ENV === 'production'
-    ? 'https://dockydoc-api-staging.onrender.com'
-    : 'http://localhost:8081');
+const BACKEND_URL = (() => {
+  if (process.env.API_URL) return process.env.API_URL;
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://dockydoc-api-staging.onrender.com';
+  }
+  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8081';
+})();
 
 const FORWARDED_REQUEST_HEADERS = [
   'authorization',
   'content-type',
   'x-dev-user-email',
 ];
+
+// Allow up to 60s for Render free-tier cold starts. Hobby plan caps at 10s,
+// Pro at 60s — Vercel will silently clamp this to whatever the plan allows.
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
 
 async function proxy(
   req: NextRequest,
@@ -43,20 +51,29 @@ async function proxy(
     if (value) forwardHeaders.set(name, value);
   }
 
-  const hasBody = !['GET', 'HEAD'].includes(req.method);
+  // Buffer the body — simpler and more compatible than streaming with
+  // duplex:'half' on Vercel's Node runtime.
+  let body: ArrayBuffer | undefined;
+  if (!['GET', 'HEAD'].includes(req.method)) {
+    body = await req.arrayBuffer();
+    if (body.byteLength === 0) body = undefined;
+  }
 
   let upstream: Response;
   try {
     upstream = await fetch(targetUrl.toString(), {
       method: req.method,
       headers: forwardHeaders,
-      ...(hasBody
-        ? { body: req.body, duplex: 'half' }
-        : {}),
-    } as RequestInit & { duplex?: string });
-  } catch {
+      body,
+      cache: 'no-store',
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json(
-      { message: 'Upstream API unreachable', url: targetUrl.origin },
+      {
+        message: `Upstream API unreachable: ${message}`,
+        backendUrl: targetUrl.origin,
+      },
       { status: 502 },
     );
   }
@@ -67,7 +84,10 @@ async function proxy(
   const cd = upstream.headers.get('content-disposition');
   if (cd) responseHeaders.set('content-disposition', cd);
 
-  return new NextResponse(upstream.body, {
+  // Buffer the response body too — matches the request side and avoids
+  // stream-lifetime weirdness when the upstream Response is GC'd.
+  const responseBody = await upstream.arrayBuffer();
+  return new NextResponse(responseBody, {
     status: upstream.status,
     headers: responseHeaders,
   });

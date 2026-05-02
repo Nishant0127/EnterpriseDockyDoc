@@ -35,6 +35,8 @@ export default clerkMiddleware(async (auth, request) => {
 });
 
 export const config = {
-  // Apply to all routes except Next.js internals and static assets
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)'],
+  // Apply to all routes except Next.js internals, static assets, AND /api/v1/*.
+  // /api/v1/* is our backend proxy — it must run with zero Clerk overhead so
+  // streaming bodies and Authorization headers pass through untouched.
+  matcher: ['/((?!api/v1|_next/static|_next/image|favicon.ico|.*\\..*).*)'],
 };
